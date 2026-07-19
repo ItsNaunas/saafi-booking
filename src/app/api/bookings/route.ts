@@ -93,7 +93,9 @@ async function storeBooking(
   record: BookingRecord
 ): Promise<{ ok: boolean; reference: string }> {
   const url = process.env.SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  // Prefer the service key; fall back to the publishable key, which can ONLY
+  // insert bookings via the insert-only RLS policy (no reads) — fine for Phase 1.
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_PUBLISHABLE_KEY;
   const reference = `SAAFI-${Date.now().toString(36).toUpperCase()}`;
 
   if (url && key) {
@@ -103,7 +105,9 @@ async function storeBooking(
         apikey: key,
         Authorization: `Bearer ${key}`,
         "Content-Type": "application/json",
-        Prefer: "return=representation",
+        // minimal: the publishable key has insert-only RLS (no select),
+        // so asking for the row back would 401 — and we don't need it.
+        Prefer: "return=minimal",
       },
       body: JSON.stringify({
         reference,

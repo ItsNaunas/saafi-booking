@@ -62,11 +62,17 @@ create table if not exists service_areas (
   created_at timestamptz not null default now()
 );
 
--- Lock everything down: the app writes with the service-role key only.
+-- Lock everything down; the public site only gets insert-on-bookings.
 alter table customers enable row level security;
 alter table bookings enable row level security;
 alter table pricing_config enable row level security;
 alter table service_areas enable row level security;
+
+-- The booking form (publishable key = anon role) may CREATE requests, never read.
+-- Everything else stays service-role-only until the Phase 2 admin lands.
+create policy "public can request bookings"
+  on bookings for insert to anon
+  with check (status = 'requested');
 
 create index if not exists bookings_status_idx on bookings (status);
 create index if not exists bookings_preferred_date_idx on bookings (preferred_date);
