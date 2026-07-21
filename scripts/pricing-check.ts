@@ -26,6 +26,13 @@ check("postcode SW1A 2AA", looksLikeUkPostcode("SW1A 2AA"), true);
 check("postcode BANANA", looksLikeUkPostcode("BANANA"), false);
 check("service area (empty cfg)", inServiceArea("IG1 1AA"), true);
 
+// Tier A: frequency discounts + add-ons
+check("weekly discount: 3h own products", quotePrice(3, true, undefined, "weekly", 0), 48.6);
+check("weekly + addons (discount skips addons)", quotePrice(3, true, undefined, "weekly", 40), 88.6);
+check("fortnightly 5%: 2h", quotePrice(2, true, undefined, "fortnightly", 0), 34.2);
+check("one_off unchanged", quotePrice(2, true, undefined, "one_off", 0), 36);
+check("addons flat on one_off", quotePrice(2, true, undefined, "one_off", 25), 61);
+
 if (failed) {
   console.error(`\n${failed} check(s) FAILED`);
   process.exit(1);

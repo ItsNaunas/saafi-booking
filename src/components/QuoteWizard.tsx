@@ -10,11 +10,14 @@ import {
   looksLikeUkPostcode,
   inServiceArea,
   clampHours,
+  FREQUENCY_LABEL,
   type RoomCounts,
   type PricingConfig,
+  type Frequency,
+  type Addon,
 } from "@/lib/pricing";
 
-const STEPS = ["Postcode", "Rooms", "Hours", "Products", "Details", "Quote"] as const;
+const STEPS = ["Postcode", "Rooms", "Hours", "Extras", "How often", "Details", "Quote"] as const;
 
 type RoomKey = keyof RoomCounts;
 
@@ -24,7 +27,13 @@ const ROOM_TABS: { key: RoomKey; label: string }[] = [
   { key: "livingRooms", label: "Living rooms" },
 ];
 
-export default function QuoteWizard({ cfg = pricingConfig }: { cfg?: PricingConfig }) {
+export default function QuoteWizard({
+  cfg = pricingConfig,
+  addons = [],
+}: {
+  cfg?: PricingConfig;
+  addons?: Addon[];
+}) {
   const [step, setStep] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -40,6 +49,8 @@ export default function QuoteWizard({ cfg = pricingConfig }: { cfg?: PricingConf
   const [roomTab, setRoomTab] = useState<RoomKey>("bedrooms");
   const [hours, setHours] = useState<number | null>(null); // null = follow recommendation
   const [customerProvidesProducts, setCustomerProvidesProducts] = useState(true);
+  const [selectedAddons, setSelectedAddons] = useState<string[]>([]);
+  const [frequency, setFrequency] = useState<Frequency>("one_off");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
@@ -50,9 +61,13 @@ export default function QuoteWizard({ cfg = pricingConfig }: { cfg?: PricingConf
 
   const recommended = useMemo(() => recommendedHours(rooms, cfg), [rooms, cfg]);
   const chosenHours = hours ?? recommended;
+  const addonsTotal = useMemo(
+    () => addons.filter((a) => selectedAddons.includes(a.key)).reduce((s, a) => s + a.price, 0),
+    [addons, selectedAddons]
+  );
   const price = useMemo(
-    () => quotePrice(chosenHours, customerProvidesProducts, cfg),
-    [chosenHours, customerProvidesProducts, cfg]
+    () => quotePrice(chosenHours, customerProvidesProducts, cfg, frequency, addonsTotal),
+    [chosenHours, customerProvidesProducts, cfg, frequency, addonsTotal]
   );
 
   function next() {
@@ -105,6 +120,8 @@ export default function QuoteWizard({ cfg = pricingConfig }: { cfg?: PricingConf
           rooms,
           hours: chosenHours,
           customerProvidesProducts,
+          addons: selectedAddons,
+          frequency,
           name,
           email,
           phone,
@@ -246,7 +263,7 @@ export default function QuoteWizard({ cfg = pricingConfig }: { cfg?: PricingConf
         )}
 
         {step === 3 && (
-          <StepShell title="Cleaning products" subtitle="Yours, or shall we bring ours?">
+          <StepShell title="Products & extras" subtitle="Yours or ours — and any add-ons?">
             <div className="grid gap-3">
               <ChoiceCard
                 active={customerProvidesProducts}
@@ -261,11 +278,67 @@ export default function QuoteWizard({ cfg = pricingConfig }: { cfg?: PricingConf
                 onClick={() => setCustomerProvidesProducts(false)}
               />
             </div>
+            {addons.length > 0 && (
+              <>
+                <p className="mt-5 mb-2 text-sm font-medium text-slate-700">
+                  Popular extras <span className="text-slate-400">(optional)</span>
+                </p>
+                <div className="grid gap-2">
+                  {addons.map((a) => {
+                    const on = selectedAddons.includes(a.key);
+                    return (
+                      <button
+                        key={a.key}
+                        onClick={() =>
+                          setSelectedAddons(
+                            on ? selectedAddons.filter((k) => k !== a.key) : [...selectedAddons, a.key]
+                          )
+                        }
+                        className={`flex items-center justify-between rounded-xl border-2 px-4 py-2.5 text-left text-sm transition ${
+                          on ? "border-emerald-500 bg-emerald-50" : "border-slate-200 hover:border-slate-300"
+                        }`}
+                      >
+                        <span className="font-medium text-slate-800">{a.label}</span>
+                        <span className={on ? "font-semibold text-emerald-700" : "text-slate-500"}>
+                          +{formatGBP(a.price)}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </>
+            )}
             <Nav onBack={back} onNext={next} />
           </StepShell>
         )}
 
         {step === 4 && (
+          <StepShell
+            title="How often?"
+            subtitle="Regular cleans get a discount on every visit."
+          >
+            <div className="grid gap-3">
+              {(Object.keys(FREQUENCY_LABEL) as Frequency[]).map((f) => {
+                const pct = cfg.discounts[f] ?? 0;
+                const perClean = quotePrice(chosenHours, customerProvidesProducts, cfg, f, addonsTotal);
+                return (
+                  <ChoiceCard
+                    key={f}
+                    active={frequency === f}
+                    title={
+                      pct > 0 ? `${FREQUENCY_LABEL[f]} — save ${pct}%` : FREQUENCY_LABEL[f]
+                    }
+                    subtitle={`${formatGBP(perClean)} per clean`}
+                    onClick={() => setFrequency(f)}
+                  />
+                );
+              })}
+            </div>
+            <Nav onBack={back} onNext={next} />
+          </StepShell>
+        )}
+
+        {step === 5 && (
           <StepShell title="Your details" subtitle="So we can confirm your clean by phone.">
             <div className="grid gap-3">
               <Input label="Full name" value={name} onChange={setName} autoComplete="name" />
@@ -299,15 +372,18 @@ export default function QuoteWizard({ cfg = pricingConfig }: { cfg?: PricingConf
           </StepShell>
         )}
 
-        {step === 5 && (
+        {step === 6 && (
           <StepShell title="Your quote" subtitle="Request the booking and we'll confirm by phone.">
             <div className="rounded-xl bg-emerald-50 p-5 text-center ring-1 ring-emerald-100">
-              <div className="text-sm font-medium text-emerald-800">Estimated price</div>
+              <div className="text-sm font-medium text-emerald-800">
+                {frequency === "one_off" ? "Estimated price" : "Estimated price per clean"}
+              </div>
               <div className="text-4xl font-bold text-emerald-700">{formatGBP(price)}</div>
               <div className="mt-1 text-xs text-emerald-800/70">
                 {chosenHours}h × {formatGBP(cfg.hourlyRate)}/h
-                {!customerProvidesProducts &&
-                  ` + ${formatGBP(cfg.productSurcharge)} products`}
+                {!customerProvidesProducts && ` + ${formatGBP(cfg.productSurcharge)} products`}
+                {addonsTotal > 0 && ` + ${formatGBP(addonsTotal)} extras`}
+                {(cfg.discounts[frequency] ?? 0) > 0 && ` − ${cfg.discounts[frequency]}% ${FREQUENCY_LABEL[frequency].toLowerCase()} discount`}
               </div>
             </div>
             <dl className="mt-4 space-y-2 text-sm">
@@ -318,7 +394,14 @@ export default function QuoteWizard({ cfg = pricingConfig }: { cfg?: PricingConf
               />
               <Row k="Always included" v="Kitchen, lounge & common areas" />
               <Row k="Products" v={customerProvidesProducts ? "Customer provides" : "We bring ours"} />
-              <Row k="Preferred date" v={preferredDate} />
+              {selectedAddons.length > 0 && (
+                <Row
+                  k="Extras"
+                  v={addons.filter((a) => selectedAddons.includes(a.key)).map((a) => a.label).join(", ")}
+                />
+              )}
+              <Row k="Frequency" v={FREQUENCY_LABEL[frequency]} />
+              <Row k={frequency === "one_off" ? "Preferred date" : "First clean"} v={preferredDate} />
               <Row k="Contact" v={`${name} · ${phone}`} />
             </dl>
             <Nav onBack={back} onNext={submit} nextLabel="Request booking" busy={busy} />

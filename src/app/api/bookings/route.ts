@@ -7,9 +7,11 @@ import {
   normalisePostcode,
   quotePrice,
   clampHours,
+  FREQUENCY_LABEL,
   type RoomCounts,
+  type Frequency,
 } from "@/lib/pricing";
-import { loadPricingConfig } from "@/lib/pricingServer";
+import { loadPricingAndAddons } from "@/lib/pricingServer";
 import type { BookingRecord, BookingRequest } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -32,7 +34,7 @@ export async function POST(req: NextRequest) {
     return bad("Invalid JSON body");
   }
 
-  const cfg = await loadPricingConfig();
+  const { cfg, addons: availableAddons } = await loadPricingAndAddons();
 
   // --- validate ---
   const postcode = normalisePostcode(String(body.postcode ?? ""));
@@ -51,6 +53,17 @@ export async function POST(req: NextRequest) {
   const hours = clampHours(Number(body.hours) || cfg.minHours, cfg);
   const customerProvidesProducts = Boolean(body.customerProvidesProducts);
 
+  const frequency = (
+    ["one_off", "weekly", "fortnightly", "four_weekly"].includes(String(body.frequency))
+      ? String(body.frequency)
+      : "one_off"
+  ) as Frequency;
+
+  // Add-ons: only keys that exist in the DB count, priced from the DB — never the client.
+  const requestedKeys = Array.isArray(body.addons) ? body.addons.map(String) : [];
+  const addons = availableAddons.filter((a) => requestedKeys.includes(a.key));
+  const addonsTotal = addons.reduce((s, a) => s + a.price, 0);
+
   const name = String(body.name ?? "").trim();
   const email = String(body.email ?? "").trim();
   const phone = String(body.phone ?? "").trim();
@@ -64,13 +77,16 @@ export async function POST(req: NextRequest) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(preferredDate)) return bad("Please pick a preferred date");
 
   // Never trust the client's price — recompute server-side from live config.
-  const quotedPrice = quotePrice(hours, customerProvidesProducts, cfg);
+  const quotedPrice = quotePrice(hours, customerProvidesProducts, cfg, frequency, addonsTotal);
 
   const record: BookingRecord = {
     postcode,
     rooms,
     hours,
     customerProvidesProducts,
+    addons,
+    addonsTotal,
+    frequency,
     name,
     email,
     phone,
@@ -120,6 +136,9 @@ async function storeBooking(
         living_rooms: record.rooms.livingRooms,
         hours: record.hours,
         customer_provides_products: record.customerProvidesProducts,
+        addons: record.addons,
+        addons_total: record.addonsTotal,
+        frequency: record.frequency,
         customer_name: record.name,
         customer_email: record.email,
         customer_phone: record.phone,
@@ -175,7 +194,11 @@ async function sendAlertEmail(record: BookingRecord) {
         `Rooms:   ${r.bedrooms} bed / ${r.bathrooms} bath / ${r.diningRooms} dining / ${r.livingRooms} living`,
         `Hours:   ${record.hours}`,
         `Products: ${record.customerProvidesProducts ? "customer provides" : "we bring ours"}`,
-        `Quoted:  £${record.quotedPrice}`,
+        `Frequency: ${FREQUENCY_LABEL[record.frequency]}`,
+        record.addons.length
+          ? `Extras:  ${record.addons.map((a) => `${a.label} (£${a.price})`).join(", ")}`
+          : ``,
+        `Quoted:  £${record.quotedPrice}${record.frequency !== "one_off" ? " per clean" : ""}`,
         record.notes ? `Notes:   ${record.notes}` : ``,
         ``,
         `Confirm by phone, then mark it confirmed in the admin.`,

@@ -3,6 +3,8 @@
 
 export type BookingStatus = "requested" | "confirmed" | "completed" | "paid" | "cancelled";
 
+export type Frequency = "one_off" | "weekly" | "fortnightly" | "four_weekly";
+
 export type BookingRow = {
   id: string;
   reference: string;
@@ -18,10 +20,26 @@ export type BookingRow = {
   living_rooms: number;
   hours: number;
   customer_provides_products: boolean;
+  addons: { key: string; label: string; price: number }[];
+  addons_total: number;
+  frequency: Frequency;
+  series_id: string | null;
+  recurring_active: boolean;
+  cleaner_id: string | null;
   quoted_price: number;
   preferred_date: string;
   notes: string | null;
   status: BookingStatus;
+  created_at: string;
+};
+
+export type CleanerRow = {
+  id: string;
+  name: string;
+  phone: string;
+  email: string | null;
+  token: string;
+  active: boolean;
   created_at: string;
 };
 
@@ -90,6 +108,82 @@ export async function updatePricingRow(key: string, value: number): Promise<void
     method: "PATCH",
     body: JSON.stringify({ value, updated_at: new Date().toISOString() }),
   });
+}
+
+/** Insert a booking directly (recurring spawn / manual admin booking). */
+export async function insertBooking(
+  fields: Partial<BookingRow> & {
+    reference: string;
+    customer_name: string;
+    customer_email: string;
+    customer_phone: string;
+    address_line: string;
+    postcode: string;
+    hours: number;
+    quoted_price: number;
+    preferred_date: string;
+    status: BookingStatus;
+  }
+): Promise<BookingRow | null> {
+  const rows = await rest<BookingRow[]>("bookings", {
+    method: "POST",
+    body: JSON.stringify(fields),
+  });
+  return rows?.[0] ?? null;
+}
+
+export async function updateBooking(
+  id: string,
+  fields: Partial<
+    Pick<
+      BookingRow,
+      | "preferred_date"
+      | "hours"
+      | "quoted_price"
+      | "notes"
+      | "status"
+      | "cleaner_id"
+      | "frequency"
+      | "recurring_active"
+    >
+  >
+): Promise<BookingRow | null> {
+  const rows = await rest<BookingRow[]>(`bookings?id=eq.${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: JSON.stringify(fields),
+  });
+  return rows?.[0] ?? null;
+}
+
+/* ---------- cleaners ---------- */
+
+export async function listCleaners(): Promise<CleanerRow[]> {
+  return rest<CleanerRow[]>("cleaners?select=*&order=created_at.asc");
+}
+
+export async function createCleaner(name: string, phone: string, email: string | null): Promise<void> {
+  await rest("cleaners", { method: "POST", body: JSON.stringify({ name, phone, email }) });
+}
+
+export async function setCleanerActive(id: string, active: boolean): Promise<void> {
+  await rest(`cleaners?id=eq.${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: JSON.stringify({ active }),
+  });
+}
+
+export async function getCleanerByToken(token: string): Promise<CleanerRow | null> {
+  if (!/^[0-9a-f-]{36}$/i.test(token)) return null;
+  const rows = await rest<CleanerRow[]>(
+    `cleaners?token=eq.${encodeURIComponent(token)}&active=eq.true&select=*&limit=1`
+  );
+  return rows[0] ?? null;
+}
+
+export async function listBookingsForCleaner(cleanerId: string): Promise<BookingRow[]> {
+  return rest<BookingRow[]>(
+    `bookings?cleaner_id=eq.${encodeURIComponent(cleanerId)}&status=in.(confirmed,completed)&select=*&order=preferred_date.asc`
+  );
 }
 
 export async function getServiceAreaPrefixes(): Promise<string[]> {

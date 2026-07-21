@@ -23,7 +23,31 @@ export const pricingConfig = {
    * Empty = accept any valid UK postcode (until SAAFI supply their service area).
    */
   serviceAreaPrefixes: [] as string[],
+  /** % off the clean (not add-ons) for recurring frequencies — PLACEHOLDER */
+  discounts: {
+    one_off: 0,
+    weekly: 10,
+    fortnightly: 5,
+    four_weekly: 2.5,
+  },
 };
+
+export type Frequency = "one_off" | "weekly" | "fortnightly" | "four_weekly";
+
+export const FREQUENCY_LABEL: Record<Frequency, string> = {
+  one_off: "One-off",
+  weekly: "Weekly",
+  fortnightly: "Every 2 weeks",
+  four_weekly: "Every 4 weeks",
+};
+
+export const FREQUENCY_DAYS: Record<Exclude<Frequency, "one_off">, number> = {
+  weekly: 7,
+  fortnightly: 14,
+  four_weekly: 28,
+};
+
+export type Addon = { key: string; label: string; price: number };
 
 export type PricingConfig = typeof pricingConfig;
 
@@ -54,10 +78,16 @@ export function clampHours(hours: number, cfg: PricingConfig = pricingConfig): n
 export function quotePrice(
   hours: number,
   customerProvidesProducts: boolean,
-  cfg: PricingConfig = pricingConfig
+  cfg: PricingConfig = pricingConfig,
+  frequency: Frequency = "one_off",
+  addonsTotal = 0
 ): number {
   const h = clampHours(hours, cfg);
-  return h * cfg.hourlyRate + (customerProvidesProducts ? 0 : cfg.productSurcharge);
+  const base = h * cfg.hourlyRate + (customerProvidesProducts ? 0 : cfg.productSurcharge);
+  const pct = cfg.discounts[frequency] ?? 0;
+  // discount applies to the clean itself, not the add-ons
+  const discounted = base * (1 - pct / 100);
+  return Math.round((discounted + addonsTotal) * 100) / 100;
 }
 
 export function formatGBP(amount: number): string {

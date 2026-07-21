@@ -13,6 +13,9 @@ const FIELDS: { key: string; label: string; hint?: string; step?: string }[] = [
   { key: "hours_per_living_room", label: "Hours per living room", step: "0.25" },
   { key: "min_hours", label: "Minimum hours", step: "0.5" },
   { key: "max_hours", label: "Maximum hours", step: "0.5" },
+  { key: "discount_weekly_pct", label: "Weekly discount (%)", step: "0.5" },
+  { key: "discount_fortnightly_pct", label: "Fortnightly discount (%)", step: "0.5" },
+  { key: "discount_four_weekly_pct", label: "4-weekly discount (%)", step: "0.5" },
 ];
 
 export default async function PricingPage() {

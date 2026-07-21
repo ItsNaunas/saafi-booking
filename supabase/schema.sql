@@ -76,3 +76,69 @@ create policy "public can request bookings"
 
 create index if not exists bookings_status_idx on bookings (status);
 create index if not exists bookings_preferred_date_idx on bookings (preferred_date);
+
+-- ===== Tier A (2026-07-21): frequency/recurring, add-ons, cleaners =====
+
+alter table bookings add column if not exists frequency text not null default 'one_off'
+  check (frequency in ('one_off','weekly','fortnightly','four_weekly'));
+alter table bookings add column if not exists series_id uuid;
+alter table bookings add column if not exists recurring_active boolean not null default true;
+alter table bookings add column if not exists addons jsonb not null default '[]'::jsonb;
+alter table bookings add column if not exists addons_total numeric(8,2) not null default 0;
+alter table bookings add column if not exists cleaner_id uuid;
+
+create table if not exists cleaners (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  phone text not null,
+  email text unique,
+  token uuid not null default gen_random_uuid(), -- magic-link auth for /c/<token>
+  active boolean not null default true,
+  created_at timestamptz not null default now()
+);
+alter table cleaners enable row level security;
+
+create table if not exists addons (
+  key text primary key,
+  label text not null,
+  price numeric(8,2) not null,
+  active boolean not null default true,
+  sort int not null default 100
+);
+alter table addons enable row level security;
+
+insert into addons (key,label,price,sort) values
+  ('oven','Oven deep clean',25,10),
+  ('fridge','Inside the fridge',15,20),
+  ('windows','Inside windows',20,30),
+  ('ironing','Ironing (up to 1h)',15,40),
+  ('cupboards','Inside kitchen cupboards',15,50)
+on conflict (key) do nothing;
+
+insert into pricing_config (key,value) values
+  ('discount_weekly_pct',10),
+  ('discount_fortnightly_pct',5),
+  ('discount_four_weekly_pct',2.5)
+on conflict (key) do nothing;
+
+-- Customer auto-create trigger (applied 2026-07-21)
+-- security definer so it bypasses RLS from the anon insert path
+create or replace function public.handle_booking_customer()
+returns trigger language plpgsql security definer set search_path = public as $fn$
+declare cid uuid;
+begin
+  insert into customers (name, email, phone, address_line, postcode)
+  values (new.customer_name, new.customer_email, new.customer_phone, new.address_line, new.postcode)
+  on conflict (email) do update set
+    name = excluded.name, phone = excluded.phone,
+    address_line = excluded.address_line, postcode = excluded.postcode
+  returning id into cid;
+  new.customer_id := cid;
+  return new;
+end $fn$;
+drop trigger if exists booking_customer_trigger on bookings;
+create trigger booking_customer_trigger before insert on bookings
+for each row execute function public.handle_booking_customer();
+
+create index if not exists bookings_series_idx on bookings (series_id);
+create index if not exists bookings_cleaner_idx on bookings (cleaner_id);

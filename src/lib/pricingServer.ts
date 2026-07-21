@@ -2,10 +2,10 @@
 // merged over the static defaults, cached for 60s. Falls back to the static
 // config whenever the DB is unreachable — the quote flow must never go down.
 
-import { pricingConfig, type PricingConfig } from "./pricing";
+import { pricingConfig, type PricingConfig, type Addon } from "./pricing";
 
 const TTL_MS = 60_000;
-let cached: { cfg: PricingConfig; at: number } | null = null;
+let cached: { cfg: PricingConfig; addons: Addon[]; at: number } | null = null;
 
 const KEY_MAP: Record<string, (cfg: PricingConfig, v: number) => void> = {
   hourly_rate: (c, v) => (c.hourlyRate = v),
@@ -17,22 +17,39 @@ const KEY_MAP: Record<string, (cfg: PricingConfig, v: number) => void> = {
   hours_per_living_room: (c, v) => (c.hoursPerRoom.livingRoom = v),
   min_hours: (c, v) => (c.minHours = v),
   max_hours: (c, v) => (c.maxHours = v),
+  discount_weekly_pct: (c, v) => (c.discounts.weekly = v),
+  discount_fortnightly_pct: (c, v) => (c.discounts.fortnightly = v),
+  discount_four_weekly_pct: (c, v) => (c.discounts.four_weekly = v),
 };
 
 export async function loadPricingConfig(): Promise<PricingConfig> {
-  if (cached && Date.now() - cached.at < TTL_MS) return cached.cfg;
+  return (await loadPricingAndAddons()).cfg;
+}
+
+/** Active add-ons, DB-priced. Empty when the DB is unreachable. */
+export async function loadAddons(): Promise<Addon[]> {
+  return (await loadPricingAndAddons()).addons;
+}
+
+export async function loadPricingAndAddons(): Promise<{ cfg: PricingConfig; addons: Addon[] }> {
+  if (cached && Date.now() - cached.at < TTL_MS) return cached;
 
   const url = process.env.SUPABASE_URL;
   const key = process.env.SUPABASE_SECRET_KEY;
   // deep-clone the defaults so DB values never mutate the module constant
   const cfg: PricingConfig = structuredClone(pricingConfig);
+  let addons: Addon[] = [];
 
   if (url && key) {
     try {
       const headers = { apikey: key, Authorization: `Bearer ${key}` };
-      const [pricingRes, areasRes] = await Promise.all([
+      const [pricingRes, areasRes, addonsRes] = await Promise.all([
         fetch(`${url}/rest/v1/pricing_config?select=key,value`, { headers, cache: "no-store" }),
         fetch(`${url}/rest/v1/service_areas?select=prefix`, { headers, cache: "no-store" }),
+        fetch(`${url}/rest/v1/addons?select=key,label,price&active=eq.true&order=sort.asc`, {
+          headers,
+          cache: "no-store",
+        }),
       ]);
       if (pricingRes.ok) {
         const rows = (await pricingRes.json()) as { key: string; value: string | number }[];
@@ -42,12 +59,20 @@ export async function loadPricingConfig(): Promise<PricingConfig> {
         const rows = (await areasRes.json()) as { prefix: string }[];
         cfg.serviceAreaPrefixes = rows.map((r) => r.prefix);
       }
-      cached = { cfg, at: Date.now() };
+      if (addonsRes.ok) {
+        const rows = (await addonsRes.json()) as { key: string; label: string; price: string | number }[];
+        addons = rows.map((r) => ({ key: r.key, label: r.label, price: Number(r.price) }));
+      }
+      // Only cache fully-successful loads — a transient failure must not stick for 60s.
+      if (pricingRes.ok && areasRes.ok && addonsRes.ok) {
+        cached = { cfg, addons, at: Date.now() };
+      }
+      return { cfg, addons };
     } catch (e) {
       console.error("[pricing] DB load failed, using defaults:", e);
     }
   }
-  return cfg;
+  return { cfg, addons };
 }
 
 /** Bust the 60s cache after the admin edits pricing. */
