@@ -117,7 +117,8 @@ async function storeBooking(
   const reference = `SAAFI-${Date.now().toString(36).toUpperCase()}`;
 
   if (url && key) {
-    const res = await fetch(`${url}/rest/v1/bookings`, {
+    try {
+      const res = await fetch(`${url}/rest/v1/bookings`, {
       method: "POST",
       headers: {
         apikey: key,
@@ -148,24 +149,30 @@ async function storeBooking(
         quoted_price: record.quotedPrice,
         status: "requested",
       }),
-    });
-    if (!res.ok) {
+      });
+      if (res.ok) return { ok: true, reference };
       console.error("[bookings] supabase insert failed:", res.status, await res.text());
-      return { ok: false, reference };
+    } catch (e) {
+      // Network down / DNS dead — fall through to the local file so the booking isn't lost.
+      console.error("[bookings] supabase unreachable, using local fallback:", e);
     }
-    return { ok: true, reference };
   }
 
-  // Dev fallback: append to .data/bookings.local.jsonl so nothing is lost pre-Supabase.
-  const dir = path.join(process.cwd(), ".data");
-  await mkdir(dir, { recursive: true });
-  await appendFile(
-    path.join(dir, "bookings.local.jsonl"),
-    JSON.stringify({ reference, ...record }) + "\n",
-    "utf8"
-  );
-  console.log(`[bookings] stored locally (Supabase not configured): ${reference}`);
-  return { ok: true, reference };
+  // Fallback: append to .data/bookings.local.jsonl (Supabase unset OR unreachable).
+  try {
+    const dir = path.join(process.cwd(), ".data");
+    await mkdir(dir, { recursive: true });
+    await appendFile(
+      path.join(dir, "bookings.local.jsonl"),
+      JSON.stringify({ reference, ...record }) + "\n",
+      "utf8"
+    );
+    console.log(`[bookings] stored locally: ${reference}`);
+    return { ok: true, reference };
+  } catch (e) {
+    console.error("[bookings] local fallback also failed:", e);
+    return { ok: false, reference };
+  }
 }
 
 /** Instant alert to the business — Resend when configured, no-op otherwise. */
