@@ -1,8 +1,12 @@
 # PROGRESS — SAAFI Booking CRM
 
-*Updated: 2026-07-19*
+*Updated: 2026-07-21*
 
-**State:** Phase 1 built and verified locally. Next.js 16 + Tailwind 4 (Turbopack). Landing page + full BookingKoala-style quote wizard (postcode → rooms → hours → products → details → quote) + `POST /api/bookings` with server-side validation and price recompute. Pricing engine is config-driven with PLACEHOLDER rates (£18/h, £6 product surcharge) in `src/lib/pricing.ts` until SAAFI's real table lands. 11/11 pricing unit checks pass (`npx tsx scripts/pricing-check.ts`); prod build clean; API exercised end-to-end (valid booking + rejection paths).
+**State: Phases 1 + 2 LIVE at https://saafi-booking.vercel.app.**
+
+**Phase 1** (2026-07-19): landing + BookingKoala-style quote wizard (postcode → rooms → hours → products → details → quote) + `POST /api/bookings` (server-side validation + price recompute). 11/11 pricing unit checks (`npx tsx scripts/pricing-check.ts`).
+
+**Phase 2** (2026-07-21): full admin CRM at `/admin` — password login (signed-cookie HMAC session, middleware-guarded), bookings pipeline (requested → confirmed → completed → paid, cancel/re-open), calendar agenda view, customers auto-created via DB trigger on booking insert, pricing + service-area editor. **Pricing is now DB-driven** (pricing_config, 60s cache) — admin edits go live on the quote form without deploys; static config is only the fallback. Confirmation email to customer on confirm (dormant until Resend key). Admin password: `ADMIN_PASSWORD` in `.env.local` / Vercel env. Prod smoke-tested: gate redirects, all four admin pages 200 with valid session, booking → trigger → customer verified then cleaned.
 
 **Storage: LIVE (2026-07-19).** Supabase project `SAAFI` (`mnrdupxnyahyfgancran`, **London eu-west-2**) in SAAFI's own account (naufalnassor123@gmail.com's org). Schema + insert-only RLS applied; end-to-end verified: test booking inserted via the app, confirmed in the table, then deleted. Security verified: publishable key can't read bookings and can't insert non-`requested` rows (401). App uses the publishable key (`.env.local`); service keys stay in the Supabase dashboard until Phase 2 needs them. The old auto-created Sydney project (`jfhymeokkkmyriszdezq`) is unused — delete it in their dashboard. Local JSONL fallback still exists for dev without env.
 
