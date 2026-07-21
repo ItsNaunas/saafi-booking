@@ -7,9 +7,9 @@ import {
   normalisePostcode,
   quotePrice,
   clampHours,
-  pricingConfig,
   type RoomCounts,
 } from "@/lib/pricing";
+import { loadPricingConfig } from "@/lib/pricingServer";
 import type { BookingRecord, BookingRequest } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -32,10 +32,12 @@ export async function POST(req: NextRequest) {
     return bad("Invalid JSON body");
   }
 
+  const cfg = await loadPricingConfig();
+
   // --- validate ---
   const postcode = normalisePostcode(String(body.postcode ?? ""));
   if (!looksLikeUkPostcode(postcode)) return bad("Please enter a valid UK postcode");
-  if (!inServiceArea(postcode)) return bad("Sorry, we don't cover that postcode yet");
+  if (!inServiceArea(postcode, cfg)) return bad("Sorry, we don't cover that postcode yet");
 
   const roomsIn = (body.rooms ?? {}) as Partial<RoomCounts>;
   const bedrooms = int(roomsIn.bedrooms);
@@ -46,7 +48,7 @@ export async function POST(req: NextRequest) {
     return bad("Room counts must be whole numbers");
   const rooms: RoomCounts = { bedrooms, bathrooms, diningRooms, livingRooms };
 
-  const hours = clampHours(Number(body.hours) || pricingConfig.minHours);
+  const hours = clampHours(Number(body.hours) || cfg.minHours, cfg);
   const customerProvidesProducts = Boolean(body.customerProvidesProducts);
 
   const name = String(body.name ?? "").trim();
@@ -61,8 +63,8 @@ export async function POST(req: NextRequest) {
   if (phone.replace(/\D/g, "").length < 10) return bad("Please enter a valid phone number");
   if (!/^\d{4}-\d{2}-\d{2}$/.test(preferredDate)) return bad("Please pick a preferred date");
 
-  // Never trust the client's price — recompute server-side.
-  const quotedPrice = quotePrice(hours, customerProvidesProducts);
+  // Never trust the client's price — recompute server-side from live config.
+  const quotedPrice = quotePrice(hours, customerProvidesProducts, cfg);
 
   const record: BookingRecord = {
     postcode,

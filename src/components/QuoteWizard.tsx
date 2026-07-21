@@ -11,6 +11,7 @@ import {
   inServiceArea,
   clampHours,
   type RoomCounts,
+  type PricingConfig,
 } from "@/lib/pricing";
 
 const STEPS = ["Postcode", "Rooms", "Hours", "Products", "Details", "Quote"] as const;
@@ -23,7 +24,7 @@ const ROOM_TABS: { key: RoomKey; label: string }[] = [
   { key: "livingRooms", label: "Living rooms" },
 ];
 
-export default function QuoteWizard() {
+export default function QuoteWizard({ cfg = pricingConfig }: { cfg?: PricingConfig }) {
   const [step, setStep] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -47,11 +48,11 @@ export default function QuoteWizard() {
   const [notes, setNotes] = useState("");
   const [reference, setReference] = useState<string | null>(null);
 
-  const recommended = useMemo(() => recommendedHours(rooms), [rooms]);
+  const recommended = useMemo(() => recommendedHours(rooms, cfg), [rooms, cfg]);
   const chosenHours = hours ?? recommended;
   const price = useMemo(
-    () => quotePrice(chosenHours, customerProvidesProducts),
-    [chosenHours, customerProvidesProducts]
+    () => quotePrice(chosenHours, customerProvidesProducts, cfg),
+    [chosenHours, customerProvidesProducts, cfg]
   );
 
   function next() {
@@ -69,7 +70,7 @@ export default function QuoteWizard() {
       setError("That doesn't look like a UK postcode — try e.g. IG1 1AA");
       return;
     }
-    if (!inServiceArea(norm)) {
+    if (!inServiceArea(norm, cfg)) {
       setError("Sorry — we don't cover that area yet. Call us to check!");
       return;
     }
@@ -218,12 +219,12 @@ export default function QuoteWizard() {
         {step === 2 && (
           <StepShell
             title="How long should we stay?"
-            subtitle={`Based on your rooms we recommend ${recommended} hours (minimum ${pricingConfig.minHours}, maximum ${pricingConfig.maxHours}).`}
+            subtitle={`Based on your rooms we recommend ${recommended} hours (minimum ${cfg.minHours}, maximum ${cfg.maxHours}).`}
           >
             <div className="flex items-center justify-center gap-6 py-2">
               <RoundBtn
-                onClick={() => setHours(clampHours(chosenHours - 0.5))}
-                disabled={chosenHours <= pricingConfig.minHours}
+                onClick={() => setHours(clampHours(chosenHours - 0.5, cfg))}
+                disabled={chosenHours <= cfg.minHours}
               >
                 −
               </RoundBtn>
@@ -234,8 +235,8 @@ export default function QuoteWizard() {
                 )}
               </div>
               <RoundBtn
-                onClick={() => setHours(clampHours(chosenHours + 0.5))}
-                disabled={chosenHours >= pricingConfig.maxHours}
+                onClick={() => setHours(clampHours(chosenHours + 0.5, cfg))}
+                disabled={chosenHours >= cfg.maxHours}
               >
                 +
               </RoundBtn>
@@ -256,7 +257,7 @@ export default function QuoteWizard() {
               <ChoiceCard
                 active={!customerProvidesProducts}
                 title="Bring your products"
-                subtitle={`We come fully stocked (+${formatGBP(pricingConfig.productSurcharge)})`}
+                subtitle={`We come fully stocked (+${formatGBP(cfg.productSurcharge)})`}
                 onClick={() => setCustomerProvidesProducts(false)}
               />
             </div>
@@ -304,9 +305,9 @@ export default function QuoteWizard() {
               <div className="text-sm font-medium text-emerald-800">Estimated price</div>
               <div className="text-4xl font-bold text-emerald-700">{formatGBP(price)}</div>
               <div className="mt-1 text-xs text-emerald-800/70">
-                {chosenHours}h × {formatGBP(pricingConfig.hourlyRate)}/h
+                {chosenHours}h × {formatGBP(cfg.hourlyRate)}/h
                 {!customerProvidesProducts &&
-                  ` + ${formatGBP(pricingConfig.productSurcharge)} products`}
+                  ` + ${formatGBP(cfg.productSurcharge)} products`}
               </div>
             </div>
             <dl className="mt-4 space-y-2 text-sm">

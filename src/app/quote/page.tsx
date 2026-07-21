@@ -1,13 +1,17 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import QuoteWizard from "@/components/QuoteWizard";
+import { loadPricingConfig } from "@/lib/pricingServer";
 
 export const metadata: Metadata = {
   title: "Get a free quote — SAAFI Cleaning Service",
   description: "Instant quote for your home clean. Pick your rooms, get a price, book in minutes.",
 };
 
-export default function QuotePage() {
+export const dynamic = "force-dynamic";
+
+export default async function QuotePage() {
+  const cfg = await loadPricingConfig();
   return (
     <main className="min-h-screen bg-slate-50 px-4 py-10">
       <div className="mx-auto mb-8 max-w-lg text-center">
@@ -16,7 +20,7 @@ export default function QuotePage() {
         </Link>
         <h1 className="mt-2 text-3xl font-bold text-slate-900">Get your free quote</h1>
       </div>
-      <QuoteWizard />
+      <QuoteWizard cfg={cfg} />
     </main>
   );
 }

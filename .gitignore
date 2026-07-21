@@ -40,3 +40,9 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 .data/
+
+.vercel
+.env*
+.dbpass.tmp
+.adminpass.tmp
+*.tmp
