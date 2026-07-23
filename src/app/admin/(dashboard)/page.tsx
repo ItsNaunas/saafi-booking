@@ -102,40 +102,67 @@ export default async function PipelinePage({
 function BookingCard({ b, cleaners }: { b: BookingRow; cleaners: CleanerRow[] }) {
   const next = NEXT_ACTION[b.status];
   const isRecurring = b.frequency !== "one_off";
+  const needsCleaner = !b.cleaner_id && (b.status === "requested" || b.status === "confirmed");
+  const cleaner = b.cleaner_id ? cleaners.find((c) => c.id === b.cleaner_id) : null;
   return (
-    <article className="rounded-lg border border-slate-200 bg-white p-3 text-sm shadow-sm">
-      <div className="flex items-baseline justify-between gap-2">
-        <Link href={`/admin/booking/${b.id}`} className="font-semibold text-slate-900 hover:text-emerald-700 hover:underline">
-          {b.customer_name}
-        </Link>
-        <span className="font-semibold text-emerald-700">{formatGBP(Number(b.quoted_price))}</span>
-      </div>
-      <div className="mt-1 text-slate-500">
-        {b.preferred_date} · {b.hours}h · {b.postcode}
-      </div>
-      <div className="mt-1 flex flex-wrap gap-1">
-        {isRecurring && (
-          <span
-            className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
-              b.recurring_active ? "bg-emerald-100 text-emerald-800" : "bg-slate-100 text-slate-500 line-through"
-            }`}
+    <details className="group rounded-lg border border-slate-200 bg-white text-sm shadow-sm open:ring-1 open:ring-emerald-200">
+      {/* collapsed row: everything you triage at a glance */}
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-2 rounded-lg p-3 hover:bg-slate-50">
+        <div className="min-w-0">
+          <div className="flex items-center gap-1.5">
+            <span className="truncate font-semibold text-slate-900">{b.customer_name}</span>
+            {needsCleaner && (
+              <span className="text-amber-500" title="No cleaner assigned">
+                ●
+              </span>
+            )}
+          </div>
+          <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs text-slate-500">
+            <span>
+              {b.preferred_date} · {b.hours}h · {b.postcode}
+            </span>
+            {isRecurring && (
+              <span
+                className={`rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${
+                  b.recurring_active
+                    ? "bg-emerald-100 text-emerald-800"
+                    : "bg-slate-100 text-slate-500 line-through"
+                }`}
+              >
+                {FREQUENCY_LABEL[b.frequency]}
+              </span>
+            )}
+            {(b.addons?.length ?? 0) > 0 && (
+              <span className="rounded-full bg-violet-100 px-1.5 py-0.5 text-[10px] font-semibold text-violet-800">
+                +{b.addons.length}
+              </span>
+            )}
+          </div>
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          <span className="font-semibold text-emerald-700">{formatGBP(Number(b.quoted_price))}</span>
+          <svg
+            className="h-4 w-4 text-slate-300 transition-transform group-open:rotate-180"
+            viewBox="0 0 20 20"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
           >
-            {FREQUENCY_LABEL[b.frequency]}
-          </span>
-        )}
-        {(b.addons?.length ?? 0) > 0 && (
-          <span className="rounded-full bg-violet-100 px-2 py-0.5 text-xs font-semibold text-violet-800">
-            +{b.addons.length} extra{b.addons.length > 1 ? "s" : ""}
-          </span>
-        )}
-      </div>
-      <div className="mt-1 text-xs text-slate-400">
-        {b.reference} ·{" "}
-        <a href={`tel:${b.customer_phone}`} className="text-emerald-700 hover:underline">
-          {b.customer_phone}
-        </a>
-      </div>
-      {b.notes && <p className="mt-1 rounded bg-slate-50 px-2 py-1 text-xs text-slate-500">{b.notes}</p>}
+            <path d="M6 8l4 4 4-4" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </div>
+      </summary>
+
+      {/* expanded body: details + actions */}
+      <div className="border-t border-slate-100 p-3 pt-2">
+        <div className="text-xs text-slate-400">
+          {b.reference} ·{" "}
+          <a href={`tel:${b.customer_phone}`} className="text-emerald-700 hover:underline">
+            {b.customer_phone}
+          </a>
+          {cleaner && <span className="text-slate-500"> · {cleaner.name}</span>}
+        </div>
+        {b.notes && <p className="mt-1 rounded bg-slate-50 px-2 py-1 text-xs text-slate-500">{b.notes}</p>}
 
       {cleaners.length > 0 && b.status !== "cancelled" && b.status !== "paid" && (
         <form action={assignCleaner} className="mt-2 flex items-center gap-1">
@@ -197,7 +224,14 @@ function BookingCard({ b, cleaners }: { b: BookingRow; cleaners: CleanerRow[] })
             </button>
           </form>
         )}
+        <Link
+          href={`/admin/booking/${b.id}`}
+          className="ml-auto self-center text-xs font-medium text-emerald-700 hover:underline"
+        >
+          View full booking →
+        </Link>
       </div>
-    </article>
+      </div>
+    </details>
   );
 }
