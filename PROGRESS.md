@@ -6,7 +6,7 @@
 
 **2026-07-29 — client spec doc landed** ("Cleaning Quote Tool Spec.docx", the full doc owed since 07-12). Reconciled the build against it:
 - **Real rates LIVE**: £25/h one-off; all recurring 10% off = £22.50/h (doc prices weekly/fortnightly at £22.50; four-weekly assumed same — *confirm with SAAFI*). Updated in live `pricing_config` + static fallback. Placeholder-rates era over.
-- **Extras now add time as well as price** (doc §9): `addons.hours` column + wizard shows "+£25 · +1h", duration on quote summary, and the booked `hours` stores clean + extras time so admin/calendar/cleaner pages see the real job length. An extra's price stays flat (covers its own labour — not charged again hourly). ⚠️ **Migration pending**: run `supabase/2026-07-29-addon-hours.sql` in the SAAFI Supabase SQL editor (PostgREST can't DDL; code is resilient until then — extras just add 0h).
+- **Extras now add time as well as price** (doc §9): `addons.hours` column + wizard shows "+£25 · +1h", duration on quote summary, and the booked `hours` stores clean + extras time so admin/calendar/cleaner pages see the real job length. An extra's price stays flat (covers its own labour — not charged again hourly). Migration `supabase/2026-07-29-addon-hours.sql` applied 2026-07-29; live quote form verified serving extras with hours.
 - **Admin extras editor**: `/admin/pricing` now edits each extra's name/price/time/active.
 - **Doc vs build gaps still open** (need SAAFI answers): Deep Clean service type (£300 flat vs hourly — doc itself flags this unconfirmed), minimum contract length for recurring, product surcharge (£6 still placeholder), whether four-weekly stays.
 - 17/17 pricing checks pass.
@@ -22,8 +22,7 @@
 **Deploy: LIVE (2026-07-19).** Vercel project `saafi-booking` (itsnaunas-projects, Hobby), production at **https://saafi-booking.vercel.app**. Env (`SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`) set on Production. Prod smoke test passed: booking submitted on the live site landed in the London Supabase (then deleted).
 
 **Next steps:**
-1. **Run `supabase/2026-07-29-addon-hours.sql`** in the SAAFI Supabase SQL editor (adds `addons.hours` + placeholder times).
-2. Ask SAAFI (spec-doc open items): Deep Clean pricing (£300 flat vs hourly?) → then build it as a service type; minimum contract for recurring; product surcharge amount; keep four-weekly?
+1. Ask SAAFI (spec-doc open items): Deep Clean pricing (£300 flat vs hourly?) → then build it as a service type; minimum contract for recurring; product surcharge amount; keep four-weekly?
 3. Revoke the temporary Supabase PAT (supabase.com/dashboard/account/tokens in SAAFI's account) — build used it, no longer needed. For future hands-off DB work: invite the main Naunas Supabase account into SAAFI's org as Developer.
 4. Point `saaficleaningservice.com` (or a subdomain, e.g. `book.`) at the Vercel project — Vercel dashboard → saafi-booking → Domains.
 5. Set service-area prefixes once SAAFI confirm coverage postcodes (self-serve in `/admin/pricing`).
