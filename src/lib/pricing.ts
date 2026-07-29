@@ -1,11 +1,11 @@
 // Pricing engine — config-driven so rates change without deploys.
-// PLACEHOLDER VALUES until the real pricing/hours table lands (Phase 0 blocker).
+// Rates from the client spec doc (2026-07-29): £25/h one-off, £22.50/h recurring.
 // Mirrors the `pricing_config` table; DB values override these once Supabase is wired.
 
 export const pricingConfig = {
   currency: "GBP",
-  /** £ per hour — PLACEHOLDER until SAAFI confirm their rate */
-  hourlyRate: 18,
+  /** £ per hour (spec doc 2026-07-29) */
+  hourlyRate: 25,
   /** flat £ surcharge when SAAFI bring the products — PLACEHOLDER */
   productSurcharge: 6,
   /** kitchen + lounge + common areas (hallways, landings) — always included */
@@ -23,12 +23,16 @@ export const pricingConfig = {
    * Empty = accept any valid UK postcode (until SAAFI supply their service area).
    */
   serviceAreaPrefixes: [] as string[],
-  /** % off the clean (not add-ons) for recurring frequencies — PLACEHOLDER */
+  /**
+   * % off the clean (not add-ons) for recurring frequencies.
+   * Spec doc prices all recurring at £22.50/h = 10% off £25. Four-weekly isn't
+   * in the doc — assumed the same rate, pending SAAFI confirmation.
+   */
   discounts: {
     one_off: 0,
     weekly: 10,
-    fortnightly: 5,
-    four_weekly: 2.5,
+    fortnightly: 10,
+    four_weekly: 10,
   },
 };
 
@@ -47,7 +51,16 @@ export const FREQUENCY_DAYS: Record<Exclude<Frequency, "one_off">, number> = {
   four_weekly: 28,
 };
 
-export type Addon = { key: string; label: string; price: number };
+/**
+ * An extra's `price` is flat and covers its own labour (never charged at the
+ * hourly rate); `hours` extends the job's duration for scheduling.
+ */
+export type Addon = { key: string; label: string; price: number; hours: number };
+
+/** Total time the selected extras add to the job. */
+export function addonsHours(addons: Addon[]): number {
+  return Math.round(addons.reduce((s, a) => s + a.hours, 0) * 4) / 4;
+}
 
 export type PricingConfig = typeof pricingConfig;
 

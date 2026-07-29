@@ -16,8 +16,11 @@ export type BookingRequest = {
 };
 
 export type BookingRecord = Omit<BookingRequest, "addons"> & {
+  // `hours` here is the core clean only; extras time is tracked separately and
+  // folded into the stored booking duration (hours + addonsHours) at insert.
   addons: Addon[]; // resolved with labels + prices at booking time
   addonsTotal: number;
+  addonsHours: number;
   quotedPrice: number;
   status: "requested";
   createdAt: string;

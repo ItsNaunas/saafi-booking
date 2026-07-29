@@ -45,8 +45,8 @@ create table if not exists pricing_config (
 );
 
 insert into pricing_config (key, value) values
-  ('hourly_rate', 18),          -- PLACEHOLDER until SAAFI confirm
-  ('product_surcharge', 6),     -- PLACEHOLDER
+  ('hourly_rate', 25),          -- spec doc 2026-07-29
+  ('product_surcharge', 6),     -- PLACEHOLDER (surcharge-or-free still unconfirmed)
   ('base_hours', 1.5),
   ('hours_per_bedroom', 0.5),
   ('hours_per_bathroom', 0.75),
@@ -115,10 +115,12 @@ insert into addons (key,label,price,sort) values
   ('cupboards','Inside kitchen cupboards',15,50)
 on conflict (key) do nothing;
 
+-- Spec doc 2026-07-29: all recurring at £22.50/h = 10% off £25.
+-- Four-weekly isn't in the doc — assumed the same, pending confirmation.
 insert into pricing_config (key,value) values
   ('discount_weekly_pct',10),
-  ('discount_fortnightly_pct',5),
-  ('discount_four_weekly_pct',2.5)
+  ('discount_fortnightly_pct',10),
+  ('discount_four_weekly_pct',10)
 on conflict (key) do nothing;
 
 -- Customer auto-create trigger (applied 2026-07-21)
@@ -142,3 +144,16 @@ for each row execute function public.handle_booking_customer();
 
 create index if not exists bookings_series_idx on bookings (series_id);
 create index if not exists bookings_cleaner_idx on bookings (cleaner_id);
+
+-- ===== 2026-07-29: extras add time as well as price (client spec doc §9) =====
+-- An extra's price is flat and covers its own labour; its hours extend the
+-- booked visit length (bookings.hours stores clean + extras time).
+
+alter table addons add column if not exists hours numeric(4,2) not null default 0;
+
+-- PLACEHOLDER times until SAAFI fill in real figures (editable in /admin/pricing)
+update addons set hours = 1.0  where key = 'oven'      and hours = 0;
+update addons set hours = 0.5  where key = 'fridge'    and hours = 0;
+update addons set hours = 0.5  where key = 'windows'   and hours = 0;
+update addons set hours = 1.0  where key = 'ironing'   and hours = 0;
+update addons set hours = 0.5  where key = 'cupboards' and hours = 0;

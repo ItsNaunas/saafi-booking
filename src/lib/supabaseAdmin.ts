@@ -186,6 +186,35 @@ export async function listBookingsForCleaner(cleanerId: string): Promise<Booking
   );
 }
 
+/* ---------- add-ons (extras) ---------- */
+
+export type AddonRow = {
+  key: string;
+  label: string;
+  price: number;
+  hours: number;
+  active: boolean;
+  sort: number;
+};
+
+/** All add-ons including inactive ones — for the admin editor. */
+export async function listAllAddons(): Promise<AddonRow[]> {
+  const rows = await rest<(Omit<AddonRow, "hours"> & { hours?: number | null })[]>(
+    "addons?select=*&order=sort.asc"
+  );
+  return rows.map((r) => ({ ...r, price: Number(r.price), hours: Number(r.hours ?? 0) }));
+}
+
+export async function updateAddon(
+  key: string,
+  fields: Partial<Pick<AddonRow, "label" | "price" | "hours" | "active">>
+): Promise<void> {
+  await rest(`addons?key=eq.${encodeURIComponent(key)}`, {
+    method: "PATCH",
+    body: JSON.stringify(fields),
+  });
+}
+
 export async function getServiceAreaPrefixes(): Promise<string[]> {
   const rows = await rest<{ prefix: string }[]>("service_areas?select=prefix&order=prefix.asc");
   return rows.map((r) => r.prefix);

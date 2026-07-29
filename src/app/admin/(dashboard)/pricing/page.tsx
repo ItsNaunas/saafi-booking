@@ -1,5 +1,5 @@
-import { getPricingRows, getServiceAreaPrefixes } from "@/lib/supabaseAdmin";
-import { savePricing, addServiceArea, removeServiceArea } from "@/app/admin/actions";
+import { getPricingRows, getServiceAreaPrefixes, listAllAddons } from "@/lib/supabaseAdmin";
+import { savePricing, saveAddon, addServiceArea, removeServiceArea } from "@/app/admin/actions";
 
 export const dynamic = "force-dynamic";
 
@@ -19,7 +19,11 @@ const FIELDS: { key: string; label: string; hint?: string; step?: string }[] = [
 ];
 
 export default async function PricingPage() {
-  const [rows, prefixes] = await Promise.all([getPricingRows(), getServiceAreaPrefixes()]);
+  const [rows, prefixes, addons] = await Promise.all([
+    getPricingRows(),
+    getServiceAreaPrefixes(),
+    listAllAddons(),
+  ]);
   const values = Object.fromEntries(rows.map((r) => [r.key, r.value]));
 
   return (
@@ -86,6 +90,62 @@ export default async function PricingPage() {
               Add area
             </button>
           </form>
+        </div>
+
+        <h2 className="mt-8 mb-1 text-2xl font-bold text-slate-900">Extras</h2>
+        <p className="mb-4 text-sm text-slate-500">
+          Price is what the extra costs the customer; time is added to the visit length
+          (it&apos;s not charged again at the hourly rate).
+        </p>
+        <div className="grid gap-3">
+          {addons.map((a) => (
+            <form
+              key={a.key}
+              action={saveAddon}
+              className="rounded-xl bg-white p-4 shadow-sm ring-1 ring-slate-200"
+            >
+              <input type="hidden" name="key" value={a.key} />
+              <div className="grid gap-3 sm:grid-cols-[1fr_6rem_6rem_auto_auto] sm:items-end">
+                <label className="block">
+                  <span className="mb-1 block text-xs font-medium text-slate-500">Name</span>
+                  <input
+                    name="label"
+                    defaultValue={a.label}
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200"
+                  />
+                </label>
+                <label className="block">
+                  <span className="mb-1 block text-xs font-medium text-slate-500">Price (£)</span>
+                  <input
+                    type="number"
+                    name="price"
+                    step="0.5"
+                    min="0"
+                    defaultValue={a.price}
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200"
+                  />
+                </label>
+                <label className="block">
+                  <span className="mb-1 block text-xs font-medium text-slate-500">Time (h)</span>
+                  <input
+                    type="number"
+                    name="hours"
+                    step="0.25"
+                    min="0"
+                    defaultValue={a.hours}
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200"
+                  />
+                </label>
+                <label className="flex items-center gap-2 pb-2 text-sm text-slate-700">
+                  <input type="checkbox" name="active" defaultChecked={a.active} />
+                  Active
+                </label>
+                <button className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700">
+                  Save
+                </button>
+              </div>
+            </form>
+          ))}
         </div>
       </section>
     </div>

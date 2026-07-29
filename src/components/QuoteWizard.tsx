@@ -10,6 +10,7 @@ import {
   looksLikeUkPostcode,
   inServiceArea,
   clampHours,
+  addonsHours,
   FREQUENCY_LABEL,
   type RoomCounts,
   type PricingConfig,
@@ -61,10 +62,14 @@ export default function QuoteWizard({
 
   const recommended = useMemo(() => recommendedHours(rooms, cfg), [rooms, cfg]);
   const chosenHours = hours ?? recommended;
-  const addonsTotal = useMemo(
-    () => addons.filter((a) => selectedAddons.includes(a.key)).reduce((s, a) => s + a.price, 0),
+  const chosenAddons = useMemo(
+    () => addons.filter((a) => selectedAddons.includes(a.key)),
     [addons, selectedAddons]
   );
+  const addonsTotal = useMemo(() => chosenAddons.reduce((s, a) => s + a.price, 0), [chosenAddons]);
+  // extras add time to the visit (their price already covers that labour)
+  const extrasHours = useMemo(() => addonsHours(chosenAddons), [chosenAddons]);
+  const totalHours = chosenHours + extrasHours;
   const price = useMemo(
     () => quotePrice(chosenHours, customerProvidesProducts, cfg, frequency, addonsTotal),
     [chosenHours, customerProvidesProducts, cfg, frequency, addonsTotal]
@@ -153,7 +158,7 @@ export default function QuoteWizard({
         <p className="mt-2 text-slate-600">
           Your reference is <span className="font-semibold text-slate-900">{reference}</span>.
           We&apos;ll call you shortly to confirm your{" "}
-          <span className="font-semibold">{chosenHours}-hour clean</span> on{" "}
+          <span className="font-semibold">{totalHours}-hour clean</span> on{" "}
           <span className="font-semibold">{preferredDate}</span>.
         </p>
         <p className="mt-4 text-lg font-semibold text-emerald-700">
@@ -301,6 +306,11 @@ export default function QuoteWizard({
                         <span className="font-medium text-slate-800">{a.label}</span>
                         <span className={on ? "font-semibold text-emerald-700" : "text-slate-500"}>
                           +{formatGBP(a.price)}
+                          {a.hours > 0 && (
+                            <span className="ml-1 text-xs font-normal text-slate-400">
+                              · +{formatDuration(a.hours)}
+                            </span>
+                          )}
                         </span>
                       </button>
                     );
@@ -394,12 +404,17 @@ export default function QuoteWizard({
               />
               <Row k="Always included" v="Kitchen, lounge & common areas" />
               <Row k="Products" v={customerProvidesProducts ? "Customer provides" : "We bring ours"} />
-              {selectedAddons.length > 0 && (
-                <Row
-                  k="Extras"
-                  v={addons.filter((a) => selectedAddons.includes(a.key)).map((a) => a.label).join(", ")}
-                />
+              {chosenAddons.length > 0 && (
+                <Row k="Extras" v={chosenAddons.map((a) => a.label).join(", ")} />
               )}
+              <Row
+                k="Duration"
+                v={
+                  extrasHours > 0
+                    ? `${totalHours}h (${chosenHours}h clean + ${formatDuration(extrasHours)} extras)`
+                    : `${chosenHours}h`
+                }
+              />
               <Row k="Frequency" v={FREQUENCY_LABEL[frequency]} />
               <Row k={frequency === "one_off" ? "Preferred date" : "First clean"} v={preferredDate} />
               <Row k="Contact" v={`${name} · ${phone}`} />
@@ -416,6 +431,14 @@ export default function QuoteWizard({
       </div>
     </div>
   );
+}
+
+/** 0.5 -> "30 min", 1 -> "1h", 1.5 -> "1h 30m" */
+function formatDuration(hours: number): string {
+  const h = Math.floor(hours);
+  const m = Math.round((hours - h) * 60);
+  if (h === 0) return `${m} min`;
+  return m > 0 ? `${h}h ${m}m` : `${h}h`;
 }
 
 /* ---------- small building blocks ---------- */

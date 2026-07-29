@@ -9,6 +9,7 @@ import {
   updateBooking,
   insertBooking,
   updatePricingRow,
+  updateAddon,
   addServiceAreaPrefix,
   removeServiceAreaPrefix,
   createCleaner,
@@ -198,6 +199,31 @@ export async function savePricing(formData: FormData) {
     const value = Number(raw);
     if (!Number.isFinite(value) || value < 0) continue;
     await updatePricingRow(key, value);
+  }
+  invalidatePricingCache();
+  revalidatePath("/admin/pricing");
+  revalidatePath("/quote");
+}
+
+export async function saveAddon(formData: FormData) {
+  const key = String(formData.get("key") ?? "");
+  if (!key) return;
+  const label = String(formData.get("label") ?? "").trim();
+  const price = Number(formData.get("price"));
+  const hours = Number(formData.get("hours"));
+  const fields = {
+    ...(label.length >= 2 ? { label } : {}),
+    ...(Number.isFinite(price) && price >= 0 ? { price } : {}),
+    active: formData.get("active") === "on",
+  };
+  try {
+    await updateAddon(key, {
+      ...fields,
+      ...(Number.isFinite(hours) && hours >= 0 ? { hours } : {}),
+    });
+  } catch {
+    // `hours` column not migrated yet — save the rest rather than erroring
+    await updateAddon(key, fields);
   }
   invalidatePricingCache();
   revalidatePath("/admin/pricing");

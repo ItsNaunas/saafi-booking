@@ -7,6 +7,7 @@ import {
   normalisePostcode,
   quotePrice,
   clampHours,
+  addonsHours,
   FREQUENCY_LABEL,
   type RoomCounts,
   type Frequency,
@@ -60,9 +61,11 @@ export async function POST(req: NextRequest) {
   ) as Frequency;
 
   // Add-ons: only keys that exist in the DB count, priced from the DB — never the client.
+  // Their price is flat (covers their own labour); their hours extend the job duration.
   const requestedKeys = Array.isArray(body.addons) ? body.addons.map(String) : [];
   const addons = availableAddons.filter((a) => requestedKeys.includes(a.key));
   const addonsTotal = addons.reduce((s, a) => s + a.price, 0);
+  const extrasHours = addonsHours(addons);
 
   const name = String(body.name ?? "").trim();
   const email = String(body.email ?? "").trim();
@@ -86,6 +89,7 @@ export async function POST(req: NextRequest) {
     customerProvidesProducts,
     addons,
     addonsTotal,
+    addonsHours: extrasHours,
     frequency,
     name,
     email,
@@ -135,7 +139,9 @@ async function storeBooking(
         bathrooms: record.rooms.bathrooms,
         dining_rooms: record.rooms.diningRooms,
         living_rooms: record.rooms.livingRooms,
-        hours: record.hours,
+        // stored duration = core clean + extras time, so admin/calendar/cleaners
+        // see the real job length; price was computed from core hours only.
+        hours: record.hours + record.addonsHours,
         customer_provides_products: record.customerProvidesProducts,
         addons: record.addons,
         addons_total: record.addonsTotal,
@@ -199,7 +205,9 @@ async function sendAlertEmail(record: BookingRecord) {
         `Address: ${record.addressLine}, ${record.postcode}`,
         `Date:    ${record.preferredDate}`,
         `Rooms:   ${r.bedrooms} bed / ${r.bathrooms} bath / ${r.diningRooms} dining / ${r.livingRooms} living`,
-        `Hours:   ${record.hours}`,
+        `Hours:   ${record.hours + record.addonsHours}${
+          record.addonsHours > 0 ? ` (${record.hours}h clean + ${record.addonsHours}h extras)` : ""
+        }`,
         `Products: ${record.customerProvidesProducts ? "customer provides" : "we bring ours"}`,
         `Frequency: ${FREQUENCY_LABEL[record.frequency]}`,
         record.addons.length

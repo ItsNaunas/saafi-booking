@@ -46,7 +46,8 @@ export async function loadPricingAndAddons(): Promise<{ cfg: PricingConfig; addo
       const [pricingRes, areasRes, addonsRes] = await Promise.all([
         fetch(`${url}/rest/v1/pricing_config?select=key,value`, { headers, cache: "no-store" }),
         fetch(`${url}/rest/v1/service_areas?select=prefix`, { headers, cache: "no-store" }),
-        fetch(`${url}/rest/v1/addons?select=key,label,price&active=eq.true&order=sort.asc`, {
+        // select=* so the fetch keeps working before/after the `hours` column migration
+        fetch(`${url}/rest/v1/addons?select=*&active=eq.true&order=sort.asc`, {
           headers,
           cache: "no-store",
         }),
@@ -60,8 +61,18 @@ export async function loadPricingAndAddons(): Promise<{ cfg: PricingConfig; addo
         cfg.serviceAreaPrefixes = rows.map((r) => r.prefix);
       }
       if (addonsRes.ok) {
-        const rows = (await addonsRes.json()) as { key: string; label: string; price: string | number }[];
-        addons = rows.map((r) => ({ key: r.key, label: r.label, price: Number(r.price) }));
+        const rows = (await addonsRes.json()) as {
+          key: string;
+          label: string;
+          price: string | number;
+          hours?: string | number | null;
+        }[];
+        addons = rows.map((r) => ({
+          key: r.key,
+          label: r.label,
+          price: Number(r.price),
+          hours: Number(r.hours ?? 0),
+        }));
       }
       // Only cache fully-successful loads — a transient failure must not stick for 60s.
       if (pricingRes.ok && areasRes.ok && addonsRes.ok) {
