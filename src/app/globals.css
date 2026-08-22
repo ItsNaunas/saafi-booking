@@ -8,18 +8,118 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --font-sans: var(--font-sans);
+  --font-display: var(--font-display);
+
+  /* Brand turquoise, sampled from the hero photograph (#53d3cd = brand-400). */
+  --color-brand-50: #effdfb;
+  --color-brand-100: #c9f8f3;
+  --color-brand-200: #9befe8;
+  --color-brand-300: #6fe2da;
+  --color-brand-400: #53d3cd;
+  --color-brand-500: #2bb3ae;
+  --color-brand-600: #14807b;
+  --color-brand-700: #106b67;
+  --color-brand-800: #0e5652;
+  --color-brand-900: #0d4744;
+  --color-brand-950: #052e2c;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+/* Cabinet Grotesk carries the display voice; General Sans carries everything
+   that has to be read rather than seen. Card and control headings (h3+) stay
+   on General Sans — Cabinet is too assertive at those sizes. */
+h1,
+h2,
+.font-display {
+  font-family: var(--font-display), var(--font-sans), ui-sans-serif, sans-serif;
+  letter-spacing: -0.02em;
 }
+
+/* No dark-mode block on purpose: the public site and the admin CRM are both
+   light-only designs that paint their own backgrounds. Inheriting a dark body
+   ground only ever produced near-invisible text on white cards. */
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
-    "Helvetica Neue", Arial, sans-serif;
+  font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+}
+
+/* ---------------------------------------------------------------------------
+   Browser surfaces. The parts we don't draw still carry the design: selection,
+   caret, focus ring, scrollbar and underline offset all ship with defaults that
+   belong to no design system. Themed from the brand palette.
+   ------------------------------------------------------------------------ */
+
+::selection {
+  background: #9befe8; /* brand-200 */
+  color: #0d4744;      /* brand-900 */
+}
+
+:root {
+  caret-color: #14807b; /* brand-600 */
+  accent-color: #14807b;
+  scrollbar-color: #cbd5e1 transparent; /* slate-300 on the page ground */
+}
+
+/* Keyboard focus only — pointer users never see it, keyboard users always do. */
+:focus-visible {
+  outline: 2px solid #14807b;
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+:focus:not(:focus-visible) {
+  outline: none;
+}
+
+a {
+  text-underline-offset: 0.18em;
+  text-decoration-thickness: from-font;
+}
+
+/* Prices and durations sit in columns — keep the digits from dancing. */
+.tnum {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   One authored moment: the four pricing steps assemble in sequence the first
+   time they scroll into view. `backwards` fill means the offset state exists
+   only while the animation runs — with no JS the diagram is simply already
+   there, and the reduced-motion block above collapses it to nothing.
+   ------------------------------------------------------------------------ */
+
+@keyframes step-rise {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+[data-reveal="in"] .step-rise {
+  animation: step-rise 700ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
+}
+[data-reveal="in"] .step-rise:nth-child(2) {
+  animation-delay: 90ms;
+}
+[data-reveal="in"] .step-rise:nth-child(3) {
+  animation-delay: 180ms;
+}
+[data-reveal="in"] .step-rise:nth-child(4) {
+  animation-delay: 270ms;
 }

@@ -10,13 +10,13 @@ const STATUS_DOT: Record<string, string> = {
   requested: "bg-amber-400",
   confirmed: "bg-sky-400",
   completed: "bg-violet-400",
-  paid: "bg-emerald-500",
+  paid: "bg-brand-500",
 };
 const STATUS_CHIP: Record<string, string> = {
   requested: "bg-amber-50 text-amber-800 ring-amber-200",
   confirmed: "bg-sky-50 text-sky-800 ring-sky-200",
   completed: "bg-violet-50 text-violet-800 ring-violet-200",
-  paid: "bg-emerald-50 text-emerald-800 ring-emerald-200",
+  paid: "bg-brand-50 text-brand-800 ring-brand-200",
 };
 const STATUS_ORDER = ["requested", "confirmed", "completed", "paid"] as const;
 
@@ -139,7 +139,7 @@ export default async function CalendarPage({
           {month !== todayStr.slice(0, 7) && (
             <Link
               href={href({ m: todayStr.slice(0, 7) })}
-              className="ml-1 rounded-lg px-2.5 py-1.5 text-sm font-medium text-emerald-700 hover:bg-emerald-50"
+              className="ml-1 rounded-lg px-2.5 py-1.5 text-sm font-medium text-brand-700 hover:bg-brand-50"
             >
               Today
             </Link>
@@ -165,7 +165,7 @@ export default async function CalendarPage({
           <span className="text-slate-500">clean{monthRows.length === 1 ? "" : "s"}</span>
         </span>
         <span className="rounded-lg bg-white px-3 py-1.5 shadow-sm ring-1 ring-slate-200">
-          <span className="font-semibold text-emerald-700">{formatGBP(monthValue)}</span>{" "}
+          <span className="font-semibold text-brand-700">{formatGBP(monthValue)}</span>{" "}
           <span className="text-slate-500">booked value</span>
         </span>
         {unassigned > 0 && (
@@ -187,7 +187,7 @@ export default async function CalendarPage({
                 {feedUrl}
               </code>
               <div className="mt-2 flex gap-3">
-                <a href={feedUrl} className="font-medium text-emerald-700 hover:underline">
+                <a href={feedUrl} className="font-medium text-brand-700 hover:underline">
                   Download .ics
                 </a>
               </div>
@@ -269,7 +269,7 @@ function FilterChip({
   const cls = active
     ? amber
       ? "bg-amber-500 text-white ring-amber-500"
-      : "bg-emerald-600 text-white ring-emerald-600"
+      : "bg-brand-600 text-white ring-brand-600"
     : "bg-white text-slate-600 ring-slate-200 hover:bg-slate-50";
   return (
     <Link href={href} className={`${base} ${cls}`}>
@@ -311,7 +311,7 @@ function DayCell({
           className={[
             "inline-flex h-6 w-6 items-center justify-center rounded-full text-xs",
             isToday
-              ? "bg-emerald-600 font-bold text-white"
+              ? "bg-brand-600 font-bold text-white"
               : inMonth
                 ? "text-slate-600"
                 : "text-slate-300",
@@ -372,7 +372,7 @@ function AgendaRow({
         <div className="text-[10px] font-medium uppercase text-slate-400">
           {d.toLocaleDateString("en-GB", { weekday: "short" })}
         </div>
-        <div className={`text-lg font-bold leading-none ${isToday ? "text-emerald-600" : "text-slate-800"}`}>
+        <div className={`text-lg font-bold leading-none ${isToday ? "text-brand-600" : "text-slate-800"}`}>
           {d.getDate()}
         </div>
       </div>
@@ -384,7 +384,7 @@ function AgendaRow({
         </div>
       </div>
       <div className="shrink-0 text-right">
-        <div className="font-semibold text-emerald-700">{formatGBP(Number(b.quoted_price))}</div>
+        <div className="font-semibold text-brand-700">{formatGBP(Number(b.quoted_price))}</div>
         <div className={`text-xs ${cn ? "text-slate-500" : "text-amber-600"}`}>{cn ?? "unassigned"}</div>
       </div>
     </Link>

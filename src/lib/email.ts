@@ -34,3 +34,58 @@ export async function sendConfirmationEmail(booking: BookingRow): Promise<void> 
     }),
   });
 }
+
+/**
+ * Tell the customer their price changed, and why. Sent only after the owner has
+ * approved the adjustment — nothing reaches a customer automatically.
+ */
+export async function sendAdjustmentEmail(
+  booking: BookingRow,
+  adj: { from_hours: number; to_hours: number; from_price: number; to_price: number; reason_code: string; note: string | null }
+): Promise<void> {
+  const key = process.env.RESEND_API_KEY;
+  if (!key) return;
+  const from = process.env.ALERT_EMAIL_FROM ?? "bookings@saaficleaningservice.com";
+  const replyTo = process.env.ALERT_EMAIL_TO ?? "info@saaficleaningservice.com";
+
+  const { reasonLabel } = await import("./adjustments");
+  const extra = Math.round((Number(adj.to_hours) - Number(adj.from_hours)) * 100) / 100;
+  const diff = Math.round((Number(adj.to_price) - Number(adj.from_price)) * 100) / 100;
+  const longer = extra > 0;
+
+  await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      from: `SAAFI Cleaning Service <${from}>`,
+      reply_to: replyTo,
+      to: [booking.customer_email],
+      subject: `Your clean on ${booking.preferred_date} — updated total £${adj.to_price}`,
+      text: [
+        `Hi ${booking.customer_name.split(" ")[0]},`,
+        ``,
+        longer
+          ? `Your clean took a bit longer than booked, so your total has changed.`
+          : `Your clean finished sooner than booked, so we've reduced your total.`,
+        ``,
+        `Booked:  ${adj.from_hours} hours — £${adj.from_price}`,
+        `Actual:  ${adj.to_hours} hours — £${adj.to_price}`,
+        `Reason:  ${reasonLabel(adj.reason_code as never)}`,
+        adj.note ? `Note:    ${adj.note}` : ``,
+        ``,
+        longer
+          ? `That's ${extra} extra hour${extra === 1 ? "" : "s"}, so £${Math.abs(diff)} more than quoted.`
+          : `That's £${Math.abs(diff)} less than quoted.`,
+        ``,
+        `Reference: ${booking.reference}`,
+        ``,
+        `Any questions, just reply to this email or give us a call.`,
+        ``,
+        `SAAFI Cleaning Service`,
+        `saaficleaningservice.com`,
+      ]
+        .filter(Boolean)
+        .join("\n"),
+    }),
+  });
+}

@@ -14,49 +14,18 @@ import {
   removeServiceAreaPrefix,
   createCleaner,
   setCleanerActive,
-  type BookingRow,
+  getBooking,
+  getAdjustment,
+  setAdjustmentStatus,
+  amountDueFor,
+  saveBookingPaymentLink,
   type BookingStatus,
 } from "@/lib/supabaseAdmin";
-import { sendConfirmationEmail } from "@/lib/email";
+import { getStripe, toPence, siteUrl } from "@/lib/stripe";
+import { sendConfirmationEmail, sendAdjustmentEmail } from "@/lib/email";
 import { invalidatePricingCache } from "@/lib/pricingServer";
-import { FREQUENCY_DAYS, type Frequency } from "@/lib/pricing";
-
-function newReference() {
-  return `SAAFI-${Date.now().toString(36).toUpperCase()}`;
-}
-
-/** Recurring engine: a completed recurring clean books the next occurrence. */
-async function spawnNextOccurrence(b: BookingRow) {
-  if (b.frequency === "one_off" || !b.recurring_active) return;
-  const days = FREQUENCY_DAYS[b.frequency as Exclude<Frequency, "one_off">];
-  const next = new Date(b.preferred_date + "T00:00:00Z");
-  next.setUTCDate(next.getUTCDate() + days);
-  await insertBooking({
-    reference: newReference(),
-    customer_id: b.customer_id,
-    customer_name: b.customer_name,
-    customer_email: b.customer_email,
-    customer_phone: b.customer_phone,
-    address_line: b.address_line,
-    postcode: b.postcode,
-    bedrooms: b.bedrooms,
-    bathrooms: b.bathrooms,
-    dining_rooms: b.dining_rooms,
-    living_rooms: b.living_rooms,
-    hours: b.hours,
-    customer_provides_products: b.customer_provides_products,
-    addons: b.addons,
-    addons_total: b.addons_total,
-    frequency: b.frequency,
-    series_id: b.series_id ?? b.id,
-    recurring_active: true,
-    cleaner_id: b.cleaner_id,
-    quoted_price: b.quoted_price,
-    preferred_date: next.toISOString().slice(0, 10),
-    notes: b.notes,
-    status: "confirmed",
-  });
-}
+import { type Frequency } from "@/lib/pricing";
+import { newReference, spawnNextOccurrence } from "@/lib/recurring";
 
 const ALLOWED: Record<BookingStatus, BookingStatus[]> = {
   requested: ["confirmed", "cancelled"],
@@ -250,4 +219,102 @@ export async function logout() {
   const jar = await cookies();
   jar.delete(SESSION_COOKIE);
   redirect("/admin/login");
+}
+
+/* ---------- price adjustments ---------- */
+
+/**
+ * Owner approves a cleaner's proposed price change.
+ * This is the only path that can raise what a customer pays, and it is the only
+ * path that emails them about it.
+ */
+export async function approveAdjustment(formData: FormData) {
+  const id = String(formData.get("adjustment_id") ?? "");
+  if (!id) return;
+
+  const adj = await getAdjustment(id);
+  if (!adj || adj.status !== "pending") return;
+  const booking = await getBooking(adj.booking_id);
+  if (!booking) return;
+
+  await setAdjustmentStatus(id, "approved");
+  await updateBooking(adj.booking_id, {
+    final_price: Number(adj.to_price),
+    price_status: "agreed",
+  });
+
+  await sendAdjustmentEmail(booking, adj).catch((e) =>
+    console.error("[admin] adjustment email failed:", e)
+  );
+
+  revalidatePath("/admin");
+  revalidatePath(`/admin/booking/${adj.booking_id}`);
+}
+
+/** Owner says no — the original quote stands and the customer hears nothing. */
+export async function rejectAdjustment(formData: FormData) {
+  const id = String(formData.get("adjustment_id") ?? "");
+  if (!id) return;
+
+  const adj = await getAdjustment(id);
+  if (!adj || adj.status !== "pending") return;
+  const booking = await getBooking(adj.booking_id);
+  if (!booking) return;
+
+  await setAdjustmentStatus(id, "rejected");
+  await updateBooking(adj.booking_id, {
+    final_price: Number(booking.quoted_price),
+    price_status: "agreed",
+  });
+
+  revalidatePath("/admin");
+  revalidatePath(`/admin/booking/${adj.booking_id}`);
+}
+
+
+/**
+ * Raises a Stripe Payment Link for a booking so the admin can send it to the
+ * customer. Reuses an existing link rather than creating a second one for the
+ * same job — two live links for one clean is how you get paid twice.
+ */
+export async function createPaymentLink(formData: FormData) {
+  const id = String(formData.get("id") ?? "");
+  if (!id) return;
+
+  const booking = await getBooking(id);
+  if (!booking) return;
+
+  // Already has one, or already settled — nothing to do.
+  if (booking.stripe_payment_link_url || booking.status === "paid") return;
+
+  const stripe = getStripe();
+  if (!stripe) {
+    console.error("[stripe] createPaymentLink called but STRIPE_SECRET_KEY is missing");
+    return;
+  }
+
+  const amount = amountDueFor(booking);
+  if (!(amount > 0)) {
+    console.error(`[stripe] refusing to raise a link for ${booking.reference}: amount is ${amount}`);
+    return;
+  }
+
+  const price = await stripe.prices.create({
+    currency: "gbp",
+    unit_amount: toPence(amount),
+    product_data: { name: `Clean on ${booking.preferred_date} — ${booking.reference}` },
+  });
+
+  const link = await stripe.paymentLinks.create({
+    line_items: [{ price: price.id, quantity: 1 }],
+    metadata: { booking_id: booking.id, reference: booking.reference },
+    after_completion: {
+      type: "redirect",
+      redirect: { url: `${siteUrl()}/paid?ref=${encodeURIComponent(booking.reference)}` },
+    },
+  });
+
+  await saveBookingPaymentLink(booking.id, link.id, link.url);
+  revalidatePath(`/admin/booking/${booking.id}`);
+  revalidatePath("/admin");
 }

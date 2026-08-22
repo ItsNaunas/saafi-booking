@@ -1,9 +1,14 @@
 // Server-only Supabase data layer for the admin CRM (secret key, full access).
 // Plain PostgREST fetches — no client SDK needed. Never import from client components.
 
+import type { ReasonCode } from "./adjustments";
+
 export type BookingStatus = "requested" | "confirmed" | "completed" | "paid" | "cancelled";
 
 export type Frequency = "one_off" | "weekly" | "fortnightly" | "four_weekly";
+
+/** Where the money stands: the quote, a proposal awaiting the owner, or settled. */
+export type PriceStatus = "quoted" | "pending" | "agreed";
 
 export type BookingRow = {
   id: string;
@@ -31,6 +36,19 @@ export type BookingRow = {
   notes: string | null;
   status: BookingStatus;
   created_at: string;
+  // Actuals — null until the cleaner finishes the job (2026-08-20 migration).
+  quoted_hours: number | null;
+  actual_hours: number | null;
+  final_price: number | null;
+  price_status: PriceStatus;
+  started_at: string | null;
+  finished_at: string | null;
+  // Stripe (2026-08-21 migration). Null until a payment link is raised.
+  stripe_payment_link_id: string | null;
+  stripe_payment_link_url: string | null;
+  stripe_payment_intent: string | null;
+  amount_paid: number | null;
+  paid_at: string | null;
 };
 
 export type CleanerRow = {
@@ -145,6 +163,12 @@ export async function updateBooking(
       | "cleaner_id"
       | "frequency"
       | "recurring_active"
+      | "quoted_hours"
+      | "actual_hours"
+      | "final_price"
+      | "price_status"
+      | "started_at"
+      | "finished_at"
     >
   >
 ): Promise<BookingRow | null> {
@@ -226,4 +250,109 @@ export async function addServiceAreaPrefix(prefix: string): Promise<void> {
 
 export async function removeServiceAreaPrefix(prefix: string): Promise<void> {
   await rest(`service_areas?prefix=eq.${encodeURIComponent(prefix)}`, { method: "DELETE" });
+}
+
+/* ---------- price adjustments (2026-08-20) ---------- */
+
+
+export type AdjustmentStatus = "pending" | "approved" | "rejected" | "auto";
+
+export type AdjustmentRow = {
+  id: string;
+  booking_id: string;
+  from_hours: number;
+  to_hours: number;
+  from_price: number;
+  to_price: number;
+  reason_code: ReasonCode;
+  note: string | null;
+  chargeable: boolean;
+  cleaner_id: string | null;
+  status: AdjustmentStatus;
+  created_at: string;
+  decided_at: string | null;
+};
+
+export async function insertAdjustment(
+  fields: Omit<AdjustmentRow, "id" | "created_at" | "decided_at">
+): Promise<AdjustmentRow | null> {
+  const rows = await rest<AdjustmentRow[]>("booking_adjustments", {
+    method: "POST",
+    body: JSON.stringify(fields),
+  });
+  return rows?.[0] ?? null;
+}
+
+export async function listAdjustmentsForBooking(bookingId: string): Promise<AdjustmentRow[]> {
+  return rest<AdjustmentRow[]>(
+    `booking_adjustments?booking_id=eq.${encodeURIComponent(bookingId)}&select=*&order=created_at.desc`
+  );
+}
+
+export async function getAdjustment(id: string): Promise<AdjustmentRow | null> {
+  const rows = await rest<AdjustmentRow[]>(
+    `booking_adjustments?id=eq.${encodeURIComponent(id)}&select=*&limit=1`
+  );
+  return rows[0] ?? null;
+}
+
+/** Everything waiting on the owner's yes/no, newest first. Drives the admin banner. */
+export async function listPendingAdjustments(): Promise<(AdjustmentRow & { bookings: BookingRow | null })[]> {
+  return rest("booking_adjustments?status=eq.pending&select=*,bookings(*)&order=created_at.desc");
+}
+
+export async function setAdjustmentStatus(
+  id: string,
+  status: AdjustmentStatus
+): Promise<AdjustmentRow | null> {
+  const rows = await rest<AdjustmentRow[]>(`booking_adjustments?id=eq.${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: JSON.stringify({ status, decided_at: new Date().toISOString() }),
+  });
+  return rows?.[0] ?? null;
+}
+
+/* ---------- Stripe ---------- */
+
+/** What we should actually charge: the agreed final price if there is one, else the quote. */
+export function amountDueFor(b: BookingRow): number {
+  return b.price_status === "agreed" && b.final_price != null ? b.final_price : b.quoted_price;
+}
+
+export async function saveBookingPaymentLink(
+  id: string,
+  linkId: string,
+  url: string
+): Promise<void> {
+  await rest(`bookings?id=eq.${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: JSON.stringify({ stripe_payment_link_id: linkId, stripe_payment_link_url: url }),
+  });
+}
+
+export async function getBookingByPaymentLink(linkId: string): Promise<BookingRow | null> {
+  const rows = await rest<BookingRow[]>(
+    `bookings?stripe_payment_link_id=eq.${encodeURIComponent(linkId)}&select=*`
+  );
+  return rows?.[0] ?? null;
+}
+
+/**
+ * Records a settled payment. Only moves the booking to `paid` — never backwards —
+ * and is safe to run twice, because Stripe retries webhooks.
+ */
+export async function markBookingPaid(
+  id: string,
+  paymentIntent: string,
+  amountPaid: number
+): Promise<void> {
+  await rest(`bookings?id=eq.${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: JSON.stringify({
+      status: "paid",
+      stripe_payment_intent: paymentIntent,
+      amount_paid: amountPaid,
+      paid_at: new Date().toISOString(),
+    }),
+  });
 }

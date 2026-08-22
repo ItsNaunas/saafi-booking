@@ -1,15 +1,22 @@
 import Link from "next/link";
-import { listBookings, listCleaners, type BookingRow, type BookingStatus, type CleanerRow } from "@/lib/supabaseAdmin";
+import {
+  listBookings,
+  listCleaners,
+  listPendingAdjustments,
+  type BookingRow,
+  type BookingStatus,
+  type CleanerRow,
+} from "@/lib/supabaseAdmin";
 import { setBookingStatus, stopRecurring, assignCleaner } from "@/app/admin/actions";
 import { formatGBP, FREQUENCY_LABEL } from "@/lib/pricing";
 
 export const dynamic = "force-dynamic";
 
 const COLUMNS: { status: BookingStatus; title: string; accent: string }[] = [
-  { status: "requested", title: "Requested", accent: "border-amber-400" },
-  { status: "confirmed", title: "Confirmed", accent: "border-sky-400" },
-  { status: "completed", title: "Completed", accent: "border-violet-400" },
-  { status: "paid", title: "Paid", accent: "border-emerald-500" },
+  { status: "requested", title: "Requested", accent: "bg-amber-400" },
+  { status: "confirmed", title: "Confirmed", accent: "bg-blue-500" },
+  { status: "completed", title: "Completed", accent: "bg-violet-400" },
+  { status: "paid", title: "Paid", accent: "bg-brand-500" },
 ];
 
 const NEXT_ACTION: Partial<Record<BookingStatus, { to: BookingStatus; label: string }>> = {
@@ -24,7 +31,12 @@ export default async function PipelinePage({
   searchParams: Promise<{ q?: string }>;
 }) {
   const { q } = await searchParams;
-  const [allBookings, cleaners] = await Promise.all([listBookings(), listCleaners()]);
+  const [allBookings, cleaners, pendingAdjustments] = await Promise.all([
+    listBookings(),
+    listCleaners(),
+    // Tolerate the table not existing yet (pre-migration).
+    listPendingAdjustments().catch(() => []),
+  ]);
   const activeCleaners = cleaners.filter((c) => c.active);
 
   const needle = (q ?? "").trim().toLowerCase();
@@ -48,17 +60,40 @@ export default async function PipelinePage({
               name="q"
               defaultValue={q ?? ""}
               placeholder="Search name, phone, postcode…"
-              className="w-56 rounded-lg border border-slate-300 px-3 py-1.5 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200"
+              className="w-56 rounded-lg border border-slate-300 px-3 py-1.5 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-200"
             />
           </form>
           <Link
             href="/admin/new"
-            className="rounded-lg bg-emerald-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-emerald-700"
+            className="rounded-lg bg-brand-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-brand-700"
           >
             + New booking
           </Link>
         </div>
       </div>
+
+      {pendingAdjustments.length > 0 && (
+        <div className="mb-4 rounded-xl bg-amber-50 p-4 ring-1 ring-amber-300">
+          <h2 className="font-semibold text-amber-900">
+            {pendingAdjustments.length} price change
+            {pendingAdjustments.length === 1 ? "" : "s"} waiting for you
+          </h2>
+          <ul className="mt-2 space-y-1 text-sm">
+            {pendingAdjustments.map((a) => (
+              <li key={a.id}>
+                <Link
+                  href={`/admin/booking/${a.booking_id}`}
+                  className="font-medium text-amber-900 underline hover:no-underline"
+                >
+                  {a.bookings?.customer_name ?? "Booking"}
+                </Link>{" "}
+                — {a.from_hours}h booked, {a.to_hours}h worked ·{" "}
+                {formatGBP(Number(a.from_price))} → {formatGBP(Number(a.to_price))}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         {COLUMNS.map((col) => {
@@ -66,10 +101,13 @@ export default async function PipelinePage({
           return (
             <section
               key={col.status}
-              className={`rounded-xl border-t-4 ${col.accent} bg-white p-3 shadow-sm ring-1 ring-slate-200`}
+              className="rounded-xl bg-white p-3 shadow-sm ring-1 ring-slate-200"
             >
-              <h2 className="mb-3 flex items-baseline justify-between px-1 font-semibold text-slate-800">
-                {col.title}
+              <h2 className="mb-3 flex items-center justify-between px-1 font-semibold text-slate-800">
+                <span className="flex items-center gap-2">
+                  <span className={`h-2 w-2 shrink-0 rounded-full ${col.accent}`} aria-hidden="true" />
+                  {col.title}
+                </span>
                 <span className="text-sm font-normal text-slate-400">{rows.length}</span>
               </h2>
               <div className="space-y-3">
@@ -105,7 +143,7 @@ function BookingCard({ b, cleaners }: { b: BookingRow; cleaners: CleanerRow[] })
   const needsCleaner = !b.cleaner_id && (b.status === "requested" || b.status === "confirmed");
   const cleaner = b.cleaner_id ? cleaners.find((c) => c.id === b.cleaner_id) : null;
   return (
-    <details className="group rounded-lg border border-slate-200 bg-white text-sm shadow-sm open:ring-1 open:ring-emerald-200">
+    <details className="group rounded-lg border border-slate-200 bg-white text-sm shadow-sm open:ring-1 open:ring-brand-200">
       {/* collapsed row: everything you triage at a glance */}
       <summary className="flex cursor-pointer list-none items-center justify-between gap-2 rounded-lg p-3 hover:bg-slate-50">
         <div className="min-w-0">
@@ -125,7 +163,7 @@ function BookingCard({ b, cleaners }: { b: BookingRow; cleaners: CleanerRow[] })
               <span
                 className={`rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${
                   b.recurring_active
-                    ? "bg-emerald-100 text-emerald-800"
+                    ? "bg-brand-100 text-brand-800"
                     : "bg-slate-100 text-slate-500 line-through"
                 }`}
               >
@@ -140,7 +178,7 @@ function BookingCard({ b, cleaners }: { b: BookingRow; cleaners: CleanerRow[] })
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-2">
-          <span className="font-semibold text-emerald-700">{formatGBP(Number(b.quoted_price))}</span>
+          <span className="font-semibold text-brand-700">{formatGBP(Number(b.quoted_price))}</span>
           <svg
             className="h-4 w-4 text-slate-300 transition-transform group-open:rotate-180"
             viewBox="0 0 20 20"
@@ -157,7 +195,7 @@ function BookingCard({ b, cleaners }: { b: BookingRow; cleaners: CleanerRow[] })
       <div className="border-t border-slate-100 p-3 pt-2">
         <div className="text-xs text-slate-400">
           {b.reference} ·{" "}
-          <a href={`tel:${b.customer_phone}`} className="text-emerald-700 hover:underline">
+          <a href={`tel:${b.customer_phone}`} className="text-brand-700 hover:underline">
             {b.customer_phone}
           </a>
           {cleaner && <span className="text-slate-500"> · {cleaner.name}</span>}
@@ -191,7 +229,7 @@ function BookingCard({ b, cleaners }: { b: BookingRow; cleaners: CleanerRow[] })
             <input type="hidden" name="id" value={b.id} />
             <input type="hidden" name="from" value={b.status} />
             <input type="hidden" name="to" value={next.to} />
-            <button className="rounded-lg bg-emerald-600 px-3 py-1 text-xs font-semibold text-white hover:bg-emerald-700">
+            <button className="rounded-lg bg-brand-600 px-3 py-1 text-xs font-semibold text-white hover:bg-brand-700">
               {next.label}
             </button>
           </form>
@@ -209,6 +247,7 @@ function BookingCard({ b, cleaners }: { b: BookingRow; cleaners: CleanerRow[] })
             <input type="hidden" name="id" value={b.id} />
             <input type="hidden" name="from" value={b.status} />
             <input type="hidden" name="to" value="cancelled" />
+            {/* impeccable-disable-next-line gray-on-color -- text turns red-600 on the same hover */}
             <button className="rounded-lg px-3 py-1 text-xs font-medium text-slate-400 hover:bg-red-50 hover:text-red-600">
               Cancel
             </button>
@@ -226,7 +265,7 @@ function BookingCard({ b, cleaners }: { b: BookingRow; cleaners: CleanerRow[] })
         )}
         <Link
           href={`/admin/booking/${b.id}`}
-          className="ml-auto self-center text-xs font-medium text-emerald-700 hover:underline"
+          className="ml-auto self-center text-xs font-medium text-brand-700 hover:underline"
         >
           View full booking →
         </Link>

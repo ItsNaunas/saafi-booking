@@ -80,7 +80,14 @@ export async function POST(req: NextRequest) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(preferredDate)) return bad("Please pick a preferred date");
 
   // Never trust the client's price — recompute server-side from live config.
-  const quotedPrice = quotePrice(hours, customerProvidesProducts, cfg, frequency, addonsTotal);
+  // Extras are billed as time, so the quote runs on clean + extras hours.
+  const quotedPrice = quotePrice(
+    hours + extrasHours,
+    customerProvidesProducts,
+    cfg,
+    frequency,
+    addonsTotal
+  );
 
   const record: BookingRecord = {
     postcode,

@@ -27,7 +27,7 @@ export default async function CustomersPage() {
               <tr key={c.id} className="border-b border-slate-100 last:border-0 hover:bg-slate-50">
                 <td className="px-4 py-3 font-medium text-slate-900">{c.name}</td>
                 <td className="px-4 py-3 text-slate-600">
-                  <a href={`tel:${c.phone}`} className="text-emerald-700 hover:underline">{c.phone}</a>
+                  <a href={`tel:${c.phone}`} className="text-brand-700 hover:underline">{c.phone}</a>
                   <span className="mx-1 text-slate-300">·</span>
                   <a href={`mailto:${c.email}`} className="hover:underline">{c.email}</a>
                 </td>

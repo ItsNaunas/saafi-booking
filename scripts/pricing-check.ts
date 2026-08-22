@@ -6,7 +6,14 @@ import {
   addonsHours,
   inServiceArea,
   looksLikeUkPostcode,
+  pricingConfig,
 } from "../src/lib/pricing";
+import {
+  adjustedPrice,
+  resolveAdjustment,
+  isChargeable,
+  elapsedHours,
+} from "../src/lib/adjustments";
 
 let failed = 0;
 function check(label: string, actual: unknown, expected: unknown) {
@@ -15,11 +22,29 @@ function check(label: string, actual: unknown, expected: unknown) {
   console.log(`${ok ? "PASS" : "FAIL"}  ${label}: got ${actual}, expected ${expected}`);
 }
 
-check("rec 3bed/2bath/1din/1liv", recommendedHours({ bedrooms: 3, bathrooms: 2, diningRooms: 1, livingRooms: 1 }), 5.5);
+check("rec 3bed/2bath/1din/1liv", recommendedHours({ bedrooms: 3, bathrooms: 2, diningRooms: 1, livingRooms: 1 }), 4.5);
 check("rec studio clamps up", recommendedHours({ bedrooms: 0, bathrooms: 0, diningRooms: 0, livingRooms: 0 }), 2);
 check("rec mansion clamps down", recommendedHours({ bedrooms: 10, bathrooms: 5, diningRooms: 2, livingRooms: 3 }), 8);
-check("price 2h own products", quotePrice(2, true), 50);
-check("price 8h our products", quotePrice(8, false), 206);
+check("price 2h own products", quotePrice(2, true), 48);
+check("price 8h our products (no surcharge)", quotePrice(8, false), 192);
+check("long jobs bill their real time, no 8h cap", quotePrice(10, true), 240);
+
+// === SAAFI costing sheet 2026-08-18: the two worked examples are the ground truth ===
+// 1 bed 1 bath = 120 mins (kitchen 30 + corridor 30 + bedroom 30 + bathroom 30)
+const oneBedHours = recommendedHours({ bedrooms: 1, bathrooms: 1, diningRooms: 0, livingRooms: 0 });
+check("sheet: 1 bed 1 bath = 2h", oneBedHours, 2);
+check("sheet: 1 bed 1 bath one-off = £48", quotePrice(oneBedHours, true, undefined, "one_off", 0), 48);
+check("sheet: 1 bed 1 bath recurring = £43.50", quotePrice(oneBedHours, true, undefined, "weekly", 0), 43.5);
+
+// 3 bed 1 bath + windows (30m) + laundry (30m) = 240 mins, recurring £87
+const threeBedHours = recommendedHours({ bedrooms: 3, bathrooms: 1, diningRooms: 0, livingRooms: 0 });
+check("sheet: 3 bed 1 bath = 3h before extras", threeBedHours, 3);
+check(
+  "sheet: 3 bed 1 bath + windows + laundry recurring = £87",
+  quotePrice(threeBedHours + 0.5 + 0.5, true, undefined, "weekly", 0),
+  87
+);
+check("sheet: same job one-off = £96", quotePrice(threeBedHours + 1, true, undefined, "one_off", 0), 96);
 check("clamp low", clampHours(1), 2);
 check("clamp high", clampHours(9), 8);
 check("postcode IG1 1AA", looksLikeUkPostcode("IG1 1AA"), true);
@@ -28,11 +53,11 @@ check("postcode BANANA", looksLikeUkPostcode("BANANA"), false);
 check("service area (empty cfg)", inServiceArea("IG1 1AA"), true);
 
 // Tier A: frequency discounts + add-ons
-check("weekly 10% = £22.50/h: 3h own products", quotePrice(3, true, undefined, "weekly", 0), 67.5);
-check("weekly + addons (discount skips addons)", quotePrice(3, true, undefined, "weekly", 40), 107.5);
-check("fortnightly 10% = £22.50/h: 2h", quotePrice(2, true, undefined, "fortnightly", 0), 45);
-check("one_off £25/h", quotePrice(2, true, undefined, "one_off", 0), 50);
-check("addons flat on one_off", quotePrice(2, true, undefined, "one_off", 25), 75);
+check("weekly 9.375% = £21.75/h: 3h own products", quotePrice(3, true, undefined, "weekly", 0), 65.25);
+check("flat addon skips the discount", quotePrice(3, true, undefined, "weekly", 40), 105.25);
+check("fortnightly £21.75/h: 2h", quotePrice(2, true, undefined, "fortnightly", 0), 43.5);
+check("one_off £24/h", quotePrice(2, true, undefined, "one_off", 0), 48);
+check("flat addon added on top", quotePrice(2, true, undefined, "one_off", 25), 73);
 
 // 2026-07-29: extras add time (price stays flat)
 check(
@@ -43,6 +68,66 @@ check(
   ]),
   1.5
 );
+
+// 2026-08-20: price adjustments (job ran longer or shorter than quoted)
+// Quote baseline: 3h one-off, own products = £75.
+const q3 = quotePrice(3, true, undefined, "one_off", 0);
+check("baseline 3h one-off", q3, 72);
+
+const base = {
+  quotedHours: 3,
+  quotedPrice: q3,
+  frequency: "one_off" as const,
+  customerProvidesProducts: true,
+  addonsTotal: 0,
+  cfg: pricingConfig,
+};
+
+check("ran to time -> no change", adjustedPrice({ ...base, actualHours: 3 }), 72);
+check("+1h at £24 -> £96", adjustedPrice({ ...base, actualHours: 4 }), 96);
+check("+30m at £24 -> £84", adjustedPrice({ ...base, actualHours: 3.5 }), 84);
+check("ran 1h short -> £48", adjustedPrice({ ...base, actualHours: 2 }), 48);
+check(
+  "never below the 2h minimum charge",
+  adjustedPrice({ ...base, actualHours: 0.5 }),
+  quotePrice(2, true, undefined, "one_off", 0)
+);
+
+// Recurring bills the extra time at the discounted rate, not the headline rate.
+const qw3 = quotePrice(3, true, undefined, "weekly", 0);
+check("weekly +1h at £21.75 -> £87", adjustedPrice({
+  ...base, quotedPrice: qw3, frequency: "weekly", actualHours: 4,
+}), 87);
+
+// Extras are flat-priced, so an overrun must not re-charge them hourly.
+const qAddon = quotePrice(3, true, undefined, "one_off", 25);
+check("baseline 3h + £25 flat extra", qAddon, 97);
+check("+1h with a flat extra -> £121 (extra not re-charged)", adjustedPrice({
+  ...base, quotedPrice: qAddon, addonsTotal: 25, actualHours: 4,
+}), 121);
+
+// The rule that matters: who pays for the overrun depends on WHY.
+check("slow cleaner is not billable", isChargeable("cleaner_pace"), false);
+check("extra rooms are billable", isChargeable("extra_rooms"), true);
+check("waiting for access is not billable", isChargeable("access_delay"), false);
+
+check(
+  "overrun for a billable reason needs approval",
+  resolveAdjustment({ ...base, actualHours: 4 }, "extra_rooms").resolution,
+  "pending"
+);
+check(
+  "overrun on cleaner pace leaves the price alone",
+  resolveAdjustment({ ...base, actualHours: 4 }, "cleaner_pace").newPrice,
+  72
+);
+check(
+  "finishing early applies with no approval",
+  resolveAdjustment({ ...base, actualHours: 2 }, null).resolution,
+  "auto"
+);
+check("elapsed rounds to the nearest 15m", elapsedHours("2026-08-20T09:00:00Z", "2026-08-20T12:10:00Z"), 3.25);
+
 
 if (failed) {
   console.error(`\n${failed} check(s) FAILED`);

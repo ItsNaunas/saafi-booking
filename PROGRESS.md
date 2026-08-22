@@ -1,8 +1,28 @@
 # PROGRESS — SAAFI Booking CRM
 
-*Updated: 2026-07-29 (spec doc landed — real rates live)*
+*Updated: 2026-08-21 (repriced to the costing sheet; price adjustments built)*
 
 **State: Phases 1 + 2 + Tier A LIVE at https://saafi-booking.vercel.app.**
+
+**2026-08-21 — repriced to SAAFI's costing sheet.**
+- Sheet (2026-08-18, `Saafi` > Pricing tab) supersedes the 2026-07-29 spec doc. Cleaner pay £15/h; **customer pays £24/h one-off, £21.75/h recurring** (9.375% off, was £25/£22.50).
+- **Room times:** base is kitchen 30 + corridor/landing/stairs 30 = 1h (was 1.5h); bedroom 30; **bathroom 30 (was 45)**. Dining/living aren't itemised for standard in the sheet, only deep at 60 — every other room is exactly half its deep time, so standard stays 30.
+- **Product surcharge dropped to £0** — both sheet prices are quoted "+ included necessities".
+- **Extras are now billed as time, not a flat fee.** The sheet's 3-bed example folds windows and laundry into the 240-minute total with no separate charge. All add-on prices set to 0; `quotePrice` now takes billable hours (clean + extras). The flat-price path stays in the engine for any future fixed-fee extra.
+- `quotePrice` no longer caps at `max_hours`. That cap limits what the wizard *recommends*; a genuinely long job has to bill its real time (and the adjustment engine depends on that).
+- Extras list matched to the sheet: ironing renamed Laundry, dusting added, cupboards deactivated (kept, not deleted, so old bookings still read back).
+- **Impact:** the live site was quoting well over the family's own model — a 1 bed 1 bath one-off was £75 against their £48. Both of the sheet's worked examples are now asserted in `scripts/pricing-check.ts` and reproduce exactly.
+- 40/40 checks pass; build clean. **Needs `supabase/2026-08-21-costing-sheet-rates.sql` run before deploy.**
+- Still open: **deep clean** as a second service type (£58/room +£5 per extra room of the same type; 2 cleaners at £21/h, 3rd past 9h). Its 1-bed baseline doesn't tie out in the sheet (300 mins vs 180 vs £235), and the additional-bedroom rule adds 75 mins of work for £5, which loses money. Needs SAAFI before building.
+
+**2026-08-20 — domain live + price adjustments built.**
+- **https://saaficleaningservice.com is LIVE** (www too). GoDaddy A records point at Vercel; MX/M365 untouched. Also fixed a pre-existing SPF record that was failing auth on `info@` mail (was GoDaddy's `secureserver.net` default, now `spf.protection.outlook.com`).
+- **Booking emails switched on.** Resend domain verified (eu-west-1), `RESEND_API_KEY` + `ALERT_EMAIL_TO` set on Production, prod redeployed so they take effect. Sends as `bookings@saaficleaningservice.com` regardless of the other domain on the Resend account (the from address is set in code).
+- **Price adjustments (client-requested).** A visit that runs longer or shorter than quoted. Cleaner taps Start/Finish on `/c/<token>`, picks a reason; `lib/adjustments.ts` decides whether money moves. Billable reasons (extra rooms, worse condition, customer added) raise the price *only* after the owner approves in `/admin/booking/<id>`; non-billable ones (cleaner pace, access delay) log the time and leave the quote alone. Running short reprices down automatically. Approval emails the customer the new total and why. Full audit trail in `booking_adjustments`.
+- Priced as a **delta on the quote** (extra hours x the frequency's effective rate), not a re-quote, so flat-priced extras are never charged hourly. Floors at the 2h minimum charge.
+- **Recurring bug fixed en route:** the spawn copied the completed booking's `hours`/`quoted_price` forward, so an adjusted job would have silently repriced every future clean in the series. Engine extracted to `lib/recurring.ts` (one copy, was two) and now always carries the *quoted* figures forward.
+- 33/33 pricing checks pass (`npx tsx scripts/pricing-check.ts`); `npm run build` clean.
+- **NOT YET DEPLOYED** — needs `supabase/2026-08-20-price-adjustments.sql` run in SAAFI's SQL editor first.
 
 **2026-07-29 — client spec doc landed** ("Cleaning Quote Tool Spec.docx", the full doc owed since 07-12). Reconciled the build against it:
 - **Real rates LIVE**: £25/h one-off; all recurring 10% off = £22.50/h (doc prices weekly/fortnightly at £22.50; four-weekly assumed same — *confirm with SAAFI*). Updated in live `pricing_config` + static fallback. Placeholder-rates era over.
@@ -22,8 +42,10 @@
 **Deploy: LIVE (2026-07-19).** Vercel project `saafi-booking` (itsnaunas-projects, Hobby), production at **https://saafi-booking.vercel.app**. Env (`SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`) set on Production. Prod smoke test passed: booking submitted on the live site landed in the London Supabase (then deleted).
 
 **Next steps:**
-1. Ask SAAFI (spec-doc open items): Deep Clean pricing (£300 flat vs hourly?) → then build it as a service type; minimum contract for recurring; product surcharge amount; keep four-weekly?
+1. **Run both migrations** in SAAFI's Supabase SQL editor, then deploy: `2026-08-20-price-adjustments.sql` (adjustment columns) and `2026-08-21-costing-sheet-rates.sql` (the real rates). Until then the live site keeps quoting the old £25/h numbers.
+2. Ask SAAFI (spec-doc open items): Deep Clean pricing (£300 flat vs hourly?) -> then build it as a service type; minimum contract for recurring; product surcharge amount; keep four-weekly?
 3. Revoke the temporary Supabase PAT (supabase.com/dashboard/account/tokens in SAAFI's account) — build used it, no longer needed. For future hands-off DB work: invite the main Naunas Supabase account into SAAFI's org as Developer.
-4. Point `saaficleaningservice.com` (or a subdomain, e.g. `book.`) at the Vercel project — Vercel dashboard → saafi-booking → Domains.
+4. ~~Point `saaficleaningservice.com` at the Vercel project~~ ✅ 2026-08-20 — apex + www live with SSL.
 5. Set service-area prefixes once SAAFI confirm coverage postcodes (self-serve in `/admin/pricing`).
-6. Resend domain verification for `saaficleaningservice.com` → enable booking alert emails (`RESEND_API_KEY`, `ALERT_EMAIL_TO` in Vercel env); Twilio if SMS confirmations wanted (doc §11).
+6. ~~Resend domain verification -> booking alert emails~~ ✅ 2026-08-20. Twilio if SMS confirmations wanted (doc §11) — still open.
+7. Phase 3 payments (Stripe): card saved at booking, charged after the clean at the approved final price. Needs a Stripe account in the business's name. The adjustment engine above is the half that doesn't need Stripe.

@@ -28,7 +28,7 @@ export default async function NewBookingPage({
             <span className="mb-1 block text-sm font-medium text-slate-700">Frequency</span>
             <select
               name="frequency"
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-emerald-500"
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-brand-500"
             >
               <option value="one_off">One-off</option>
               <option value="weekly">Weekly</option>
@@ -41,7 +41,7 @@ export default async function NewBookingPage({
             <textarea
               name="notes"
               rows={2}
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-emerald-500"
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-brand-500"
             />
           </label>
         </div>
@@ -50,7 +50,7 @@ export default async function NewBookingPage({
             Name, phone and date are required.
           </p>
         )}
-        <button className="mt-5 rounded-xl bg-emerald-600 px-5 py-2.5 font-semibold text-white hover:bg-emerald-700">
+        <button className="mt-5 rounded-xl bg-brand-600 px-5 py-2.5 font-semibold text-white hover:bg-brand-700">
           Create booking
         </button>
       </form>
@@ -85,7 +85,7 @@ function Field({
         type={type}
         step={step}
         defaultValue={defaultValue}
-        className="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200"
+        className="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-200"
       />
     </label>
   );

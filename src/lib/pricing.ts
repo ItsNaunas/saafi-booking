@@ -1,18 +1,26 @@
 // Pricing engine — config-driven so rates change without deploys.
-// Rates from the client spec doc (2026-07-29): £25/h one-off, £22.50/h recurring.
-// Mirrors the `pricing_config` table; DB values override these once Supabase is wired.
+//
+// Rates from SAAFI's costing sheet (2026-08-18, supersedes the 2026-07-29 spec doc):
+// cleaner pay £15/h; customer pays £24/h one-off, £21.75/h recurring. Both of the
+// sheet's worked examples reconcile exactly (1 bed 1 bath = £48 / £43.50;
+// 3 bed 1 bath + windows + laundry = £87 recurring) and are asserted in
+// scripts/pricing-check.ts.
+//
+// Mirrors the `pricing_config` table; DB values override these.
 
 export const pricingConfig = {
   currency: "GBP",
-  /** £ per hour (spec doc 2026-07-29) */
-  hourlyRate: 25,
-  /** flat £ surcharge when SAAFI bring the products — PLACEHOLDER */
-  productSurcharge: 6,
-  /** kitchen + lounge + common areas (hallways, landings) — always included */
-  baseHours: 1.5,
+  /** £ per hour, one-off (costing sheet 2026-08-18) */
+  hourlyRate: 24,
+  /** Both sheet prices are quoted "+ included necessities", so products are free. */
+  productSurcharge: 0,
+  /** kitchen (30m) + corridor/landing/stairs (30m) — always included */
+  baseHours: 1,
+  /** Sheet: 30 mins each. Dining/living are only itemised for deep cleans (60m),
+   *  so standard assumes half, matching every other room's deep-to-standard ratio. */
   hoursPerRoom: {
     bedroom: 0.5,
-    bathroom: 0.75,
+    bathroom: 0.5,
     diningRoom: 0.5,
     livingRoom: 0.5,
   },
@@ -24,15 +32,15 @@ export const pricingConfig = {
    */
   serviceAreaPrefixes: [] as string[],
   /**
-   * % off the clean (not add-ons) for recurring frequencies.
-   * Spec doc prices all recurring at £22.50/h = 10% off £25. Four-weekly isn't
-   * in the doc — assumed the same rate, pending SAAFI confirmation.
+   * % off the clean (not flat-priced add-ons) for recurring frequencies.
+   * £21.75 against £24 = 9.375% off. The sheet only prices one recurring
+   * frequency, so all three are assumed equal pending SAAFI confirmation.
    */
   discounts: {
     one_off: 0,
-    weekly: 10,
-    fortnightly: 10,
-    four_weekly: 10,
+    weekly: 9.375,
+    fortnightly: 9.375,
+    four_weekly: 9.375,
   },
 };
 
@@ -52,8 +60,12 @@ export const FREQUENCY_DAYS: Record<Exclude<Frequency, "one_off">, number> = {
 };
 
 /**
- * An extra's `price` is flat and covers its own labour (never charged at the
- * hourly rate); `hours` extends the job's duration for scheduling.
+ * Extras are billed as TIME: `hours` is added to the visit and charged at the
+ * hourly rate (costing sheet 2026-08-18 — its 3-bed example folds windows and
+ * laundry into the 240-minute total with no separate charge).
+ *
+ * `price` is a flat amount on top, kept at 0 for every current extra. It exists
+ * so a future fixed-fee extra still works without reshaping the engine.
  */
 export type Addon = { key: string; label: string; price: number; hours: number };
 
@@ -87,7 +99,14 @@ export function clampHours(hours: number, cfg: PricingConfig = pricingConfig): n
   return Math.min(cfg.maxHours, Math.max(cfg.minHours, hours));
 }
 
-/** Quote in £ for a clean of `hours`, products either the customer's or SAAFI's. */
+/**
+ * Quote in £ for a visit of `hours` — that is BILLABLE hours: the clean itself
+ * plus any time the chosen extras add.
+ *
+ * Floors at the minimum callout charge. Deliberately no upper cap: `maxHours`
+ * limits what the wizard will *recommend*, but a genuinely long job must bill
+ * for the time it actually takes.
+ */
 export function quotePrice(
   hours: number,
   customerProvidesProducts: boolean,
@@ -95,7 +114,7 @@ export function quotePrice(
   frequency: Frequency = "one_off",
   addonsTotal = 0
 ): number {
-  const h = clampHours(hours, cfg);
+  const h = Math.max(cfg.minHours, hours);
   const base = h * cfg.hourlyRate + (customerProvidesProducts ? 0 : cfg.productSurcharge);
   const pct = cfg.discounts[frequency] ?? 0;
   // discount applies to the clean itself, not the add-ons
@@ -126,3 +145,13 @@ export function inServiceArea(postcode: string, cfg: PricingConfig = pricingConf
   const norm = normalisePostcode(postcode);
   return cfg.serviceAreaPrefixes.some((p) => norm.startsWith(p.toUpperCase()));
 }
+
+/** "1 hr 30", "30 min" — how long an extra adds to a visit. */
+export function formatDuration(hours: number): string {
+  const mins = Math.round(hours * 60);
+  if (mins < 60) return `${mins} min`;
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  return m ? `${h} hr ${m}` : `${h} hr`;
+}
+

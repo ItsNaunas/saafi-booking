@@ -46,3 +46,6 @@ next-env.d.ts
 .dbpass.tmp
 .adminpass.tmp
 *.tmp
+
+# Vendored agent tooling — reinstallable, not project source
+.claude/

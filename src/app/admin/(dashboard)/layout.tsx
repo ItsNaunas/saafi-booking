@@ -17,7 +17,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
           <div className="flex items-center gap-6">
             <span className="font-bold text-slate-900">
-              SAAFI <span className="text-emerald-600">Admin</span>
+              SAAFI <span className="text-brand-600">Admin</span>
             </span>
             <nav className="flex gap-1">
               {NAV.map((n) => (

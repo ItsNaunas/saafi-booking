@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   pricingConfig,
   recommendedHours,
@@ -31,27 +31,36 @@ const ROOM_TABS: { key: RoomKey; label: string }[] = [
 export default function QuoteWizard({
   cfg = pricingConfig,
   addons = [],
+  initialPostcode = "",
+  initialRooms,
+  initialFrequency,
 }: {
   cfg?: PricingConfig;
   addons?: Addon[];
+  /** Postcode captured on the landing page — checked on mount, then skips step 1. */
+  initialPostcode?: string;
+  /** Rooms captured by the hero search bar; when present we land on Hours. */
+  initialRooms?: Partial<RoomCounts>;
+  initialFrequency?: Frequency;
 }) {
   const [step, setStep] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   // form state
-  const [postcode, setPostcode] = useState("");
+  const [postcode, setPostcode] = useState(initialPostcode);
   const [rooms, setRooms] = useState<RoomCounts>({
     bedrooms: 2,
     bathrooms: 1,
     diningRooms: 0,
     livingRooms: 1,
+    ...initialRooms,
   });
   const [roomTab, setRoomTab] = useState<RoomKey>("bedrooms");
   const [hours, setHours] = useState<number | null>(null); // null = follow recommendation
   const [customerProvidesProducts, setCustomerProvidesProducts] = useState(true);
   const [selectedAddons, setSelectedAddons] = useState<string[]>([]);
-  const [frequency, setFrequency] = useState<Frequency>("one_off");
+  const [frequency, setFrequency] = useState<Frequency>(initialFrequency ?? "one_off");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
@@ -67,12 +76,12 @@ export default function QuoteWizard({
     [addons, selectedAddons]
   );
   const addonsTotal = useMemo(() => chosenAddons.reduce((s, a) => s + a.price, 0), [chosenAddons]);
-  // extras add time to the visit (their price already covers that labour)
+  // extras add time to the visit, and that time is what gets billed
   const extrasHours = useMemo(() => addonsHours(chosenAddons), [chosenAddons]);
   const totalHours = chosenHours + extrasHours;
   const price = useMemo(
-    () => quotePrice(chosenHours, customerProvidesProducts, cfg, frequency, addonsTotal),
-    [chosenHours, customerProvidesProducts, cfg, frequency, addonsTotal]
+    () => quotePrice(totalHours, customerProvidesProducts, cfg, frequency, addonsTotal),
+    [totalHours, customerProvidesProducts, cfg, frequency, addonsTotal]
   );
 
   function next() {
@@ -84,10 +93,13 @@ export default function QuoteWizard({
     setStep((s) => Math.max(s - 1, 0));
   }
 
-  async function validatePostcode() {
+  /** Where a successful postcode check lands: Hours if the hero already took rooms. */
+  const postcodeTarget = initialRooms ? 2 : 1;
+
+  async function validatePostcode(target?: number) {
     const norm = normalisePostcode(postcode);
     if (!looksLikeUkPostcode(norm)) {
-      setError("That doesn't look like a UK postcode — try e.g. IG1 1AA");
+      setError("That doesn't look like a UK postcode — try e.g. IG1 1BA");
       return;
     }
     if (!inServiceArea(norm, cfg)) {
@@ -105,13 +117,26 @@ export default function QuoteWizard({
           return;
         }
       }
-      next();
+      if (target === undefined) next();
+      else setStep(target);
     } catch {
-      next(); // offline — regex check already passed
+      // offline — regex check already passed
+      if (target === undefined) next();
+      else setStep(target);
     } finally {
       setBusy(false);
     }
   }
+
+  // The landing page already took a postcode — run the real check for them so
+  // they land on the rooms step. A failure leaves them on step 0 with it filled in.
+  const autoChecked = useRef(false);
+  useEffect(() => {
+    if (autoChecked.current || !initialPostcode) return;
+    autoChecked.current = true;
+    void validatePostcode(postcodeTarget);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function submit() {
     setBusy(true);
@@ -150,8 +175,8 @@ export default function QuoteWizard({
 
   if (reference) {
     return (
-      <div className="mx-auto max-w-lg rounded-2xl bg-white p-8 shadow-lg ring-1 ring-slate-200 text-center">
-        <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-emerald-100 text-3xl">
+      <div className="mx-auto max-w-lg bg-white p-8 shadow-lg ring-1 ring-slate-200 text-center">
+        <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-brand-100 text-3xl">
           ✓
         </div>
         <h2 className="text-2xl font-bold text-slate-900">Request received!</h2>
@@ -161,7 +186,7 @@ export default function QuoteWizard({
           <span className="font-semibold">{totalHours}-hour clean</span> on{" "}
           <span className="font-semibold">{preferredDate}</span>.
         </p>
-        <p className="mt-4 text-lg font-semibold text-emerald-700">
+        <p className="mt-4 text-lg font-semibold text-brand-700">
           Estimated price: {formatGBP(price)}
         </p>
       </div>
@@ -175,11 +200,11 @@ export default function QuoteWizard({
         {STEPS.map((label, i) => (
           <li key={label} className="flex-1">
             <div
-              className={`h-1.5 rounded-full ${i <= step ? "bg-emerald-500" : "bg-slate-200"}`}
+              className={`h-1.5 rounded-full ${i <= step ? "bg-brand-500" : "bg-slate-200"}`}
             />
             <span
               className={`mt-1 hidden text-[10px] font-medium sm:block ${
-                i <= step ? "text-emerald-700" : "text-slate-400"
+                i <= step ? "text-brand-700" : "text-slate-400"
               }`}
             >
               {label}
@@ -188,7 +213,7 @@ export default function QuoteWizard({
         ))}
       </ol>
 
-      <div className="rounded-2xl bg-white p-6 shadow-lg ring-1 ring-slate-200 sm:p-8">
+      <div className="bg-white p-6 shadow-lg ring-1 ring-slate-200 sm:p-8">
         {step === 0 && (
           <StepShell title="Where's the clean?" subtitle="We'll check we cover your area.">
             <input
@@ -196,8 +221,8 @@ export default function QuoteWizard({
               value={postcode}
               onChange={(e) => setPostcode(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && validatePostcode()}
-              placeholder="e.g. IG1 1AA"
-              className="w-full rounded-xl border border-slate-300 px-4 py-3 text-lg uppercase tracking-wide outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200"
+              placeholder="e.g. IG1 1BA"
+              className="w-full border border-slate-300 px-4 py-3 text-lg uppercase tracking-wide outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-200"
             />
             <Nav onNext={validatePostcode} nextLabel="Check postcode" busy={busy} />
           </StepShell>
@@ -215,7 +240,7 @@ export default function QuoteWizard({
                   onClick={() => setRoomTab(t.key)}
                   className={`rounded-full px-4 py-1.5 text-sm font-medium transition ${
                     roomTab === t.key
-                      ? "bg-emerald-600 text-white"
+                      ? "bg-brand-600 text-white"
                       : "bg-slate-100 text-slate-600 hover:bg-slate-200"
                   }`}
                 >
@@ -253,7 +278,7 @@ export default function QuoteWizard({
               <div className="text-center">
                 <div className="text-4xl font-bold text-slate-900">{chosenHours}h</div>
                 {chosenHours === recommended && (
-                  <div className="text-xs font-medium text-emerald-600">recommended</div>
+                  <div className="text-xs font-medium text-brand-600">recommended</div>
                 )}
               </div>
               <RoundBtn
@@ -279,7 +304,11 @@ export default function QuoteWizard({
               <ChoiceCard
                 active={!customerProvidesProducts}
                 title="Bring your products"
-                subtitle={`We come fully stocked (+${formatGBP(cfg.productSurcharge)})`}
+                subtitle={
+                  cfg.productSurcharge > 0
+                    ? `We come fully stocked (+${formatGBP(cfg.productSurcharge)})`
+                    : "We come fully stocked, no extra charge"
+                }
                 onClick={() => setCustomerProvidesProducts(false)}
               />
             </div>
@@ -299,14 +328,14 @@ export default function QuoteWizard({
                             on ? selectedAddons.filter((k) => k !== a.key) : [...selectedAddons, a.key]
                           )
                         }
-                        className={`flex items-center justify-between rounded-xl border-2 px-4 py-2.5 text-left text-sm transition ${
-                          on ? "border-emerald-500 bg-emerald-50" : "border-slate-200 hover:border-slate-300"
+                        className={`flex items-center justify-between  border-2 px-4 py-2.5 text-left text-sm transition ${
+                          on ? "border-brand-500 bg-brand-50" : "border-slate-200 hover:border-slate-300"
                         }`}
                       >
                         <span className="font-medium text-slate-800">{a.label}</span>
-                        <span className={on ? "font-semibold text-emerald-700" : "text-slate-500"}>
-                          +{formatGBP(a.price)}
-                          {a.hours > 0 && (
+                        <span className={on ? "font-semibold text-brand-700" : "text-slate-500"}>
+                          {a.price > 0 ? `+${formatGBP(a.price)}` : `+${formatDuration(a.hours)}`}
+                          {a.price > 0 && a.hours > 0 && (
                             <span className="ml-1 text-xs font-normal text-slate-400">
                               · +{formatDuration(a.hours)}
                             </span>
@@ -330,7 +359,7 @@ export default function QuoteWizard({
             <div className="grid gap-3">
               {(Object.keys(FREQUENCY_LABEL) as Frequency[]).map((f) => {
                 const pct = cfg.discounts[f] ?? 0;
-                const perClean = quotePrice(chosenHours, customerProvidesProducts, cfg, f, addonsTotal);
+                const perClean = quotePrice(totalHours, customerProvidesProducts, cfg, f, addonsTotal);
                 return (
                   <ChoiceCard
                     key={f}
@@ -364,7 +393,7 @@ export default function QuoteWizard({
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
                   rows={2}
-                  className="w-full rounded-xl border border-slate-300 px-3 py-2 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200"
+                  className="w-full border border-slate-300 px-3 py-2 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-200"
                 />
               </label>
             </div>
@@ -384,14 +413,15 @@ export default function QuoteWizard({
 
         {step === 6 && (
           <StepShell title="Your quote" subtitle="Request the booking and we'll confirm by phone.">
-            <div className="rounded-xl bg-emerald-50 p-5 text-center ring-1 ring-emerald-100">
-              <div className="text-sm font-medium text-emerald-800">
+            <div className="bg-brand-50 p-5 text-center ring-1 ring-brand-100">
+              <div className="text-sm font-medium text-brand-800">
                 {frequency === "one_off" ? "Estimated price" : "Estimated price per clean"}
               </div>
-              <div className="text-4xl font-bold text-emerald-700">{formatGBP(price)}</div>
-              <div className="mt-1 text-xs text-emerald-800/70">
-                {chosenHours}h × {formatGBP(cfg.hourlyRate)}/h
-                {!customerProvidesProducts && ` + ${formatGBP(cfg.productSurcharge)} products`}
+              <div className="text-4xl font-bold text-brand-700">{formatGBP(price)}</div>
+              <div className="mt-1 text-xs text-brand-800/70">
+                {totalHours}h × {formatGBP(cfg.hourlyRate)}/h
+                {!customerProvidesProducts && cfg.productSurcharge > 0 &&
+                  ` + ${formatGBP(cfg.productSurcharge)} products`}
                 {addonsTotal > 0 && ` + ${formatGBP(addonsTotal)} extras`}
                 {(cfg.discounts[frequency] ?? 0) > 0 && ` − ${cfg.discounts[frequency]}% ${FREQUENCY_LABEL[frequency].toLowerCase()} discount`}
               </div>
@@ -424,7 +454,7 @@ export default function QuoteWizard({
         )}
 
         {error && (
-          <p className="mt-4 rounded-lg bg-red-50 px-3 py-2 text-sm font-medium text-red-700">
+          <p className="mt-4 bg-red-50 px-3 py-2 text-sm font-medium text-red-700">
             {error}
           </p>
         )}
@@ -477,7 +507,7 @@ function Nav({
       {onBack ? (
         <button
           onClick={onBack}
-          className="rounded-xl px-4 py-2.5 text-sm font-medium text-slate-500 hover:bg-slate-100"
+          className="px-4 py-2.5 text-sm font-medium text-slate-500 hover:bg-slate-100"
         >
           ← Back
         </button>
@@ -487,7 +517,7 @@ function Nav({
       <button
         onClick={onNext}
         disabled={busy}
-        className="rounded-xl bg-emerald-600 px-6 py-2.5 font-semibold text-white shadow-sm transition hover:bg-emerald-700 disabled:opacity-50"
+        className="bg-brand-600 px-6 py-2.5 font-semibold text-white shadow-sm transition hover:bg-brand-700 disabled:opacity-50"
       >
         {busy ? "One sec…" : nextLabel}
       </button>
@@ -533,7 +563,8 @@ function RoundBtn({
     <button
       onClick={onClick}
       disabled={disabled}
-      className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-100 text-xl font-semibold text-slate-700 transition hover:bg-emerald-100 hover:text-emerald-700 disabled:opacity-30"
+      /* impeccable-disable-next-line gray-on-color -- text turns brand-700 on the same hover */
+      className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-100 text-xl font-semibold text-slate-700 transition hover:bg-brand-100 hover:text-brand-700 disabled:opacity-30"
     >
       {children}
     </button>
@@ -554,9 +585,9 @@ function ChoiceCard({
   return (
     <button
       onClick={onClick}
-      className={`rounded-xl border-2 p-4 text-left transition ${
+      className={` border-2 p-4 text-left transition ${
         active
-          ? "border-emerald-500 bg-emerald-50"
+          ? "border-brand-500 bg-brand-50"
           : "border-slate-200 hover:border-slate-300"
       }`}
     >
@@ -590,7 +621,7 @@ function Input({
         min={min}
         autoComplete={autoComplete}
         onChange={(e) => onChange(e.target.value)}
-        className="w-full rounded-xl border border-slate-300 px-3 py-2 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200"
+        className="w-full border border-slate-300 px-3 py-2 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-200"
       />
     </label>
   );

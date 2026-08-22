@@ -28,7 +28,7 @@ export default async function CleanersPage() {
           <span className="mb-1 block text-xs font-medium text-slate-500">Email (optional)</span>
           <input name="email" type="email" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
         </label>
-        <button className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700">
+        <button className="rounded-xl bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700">
           Add cleaner
         </button>
       </form>
@@ -61,7 +61,7 @@ export default async function CleanersPage() {
             {c.active && (
               <div className="mt-2 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-500">
                 Job link:{" "}
-                <code className="select-all break-all text-emerald-700">
+                <code className="select-all break-all text-brand-700">
                   {base}/c/{c.token}
                 </code>
               </div>

@@ -56,7 +56,7 @@ export default async function ReportsPage() {
                   <span className="w-16 text-slate-500">{m}</span>
                   <div className="h-4 flex-1 rounded bg-slate-100">
                     <div
-                      className="h-4 rounded bg-emerald-500"
+                      className="h-4 rounded bg-brand-500"
                       style={{ width: `${Math.max(4, (v / max) * 100)}%` }}
                     />
                   </div>

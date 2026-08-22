@@ -44,13 +44,13 @@ export default async function PricingPage() {
                   step={f.step}
                   min="0"
                   defaultValue={values[f.key] ?? ""}
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200"
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-200"
                 />
                 {f.hint && <span className="mt-0.5 block text-xs text-slate-400">{f.hint}</span>}
               </label>
             ))}
           </div>
-          <button className="mt-5 rounded-xl bg-emerald-600 px-5 py-2.5 font-semibold text-white hover:bg-emerald-700">
+          <button className="mt-5 rounded-xl bg-brand-600 px-5 py-2.5 font-semibold text-white hover:bg-brand-700">
             Save pricing
           </button>
         </form>
@@ -71,6 +71,7 @@ export default async function PricingPage() {
               <form key={p} action={removeServiceArea} className="inline">
                 <input type="hidden" name="prefix" value={p} />
                 <button
+                  /* impeccable-disable-next-line gray-on-color -- text turns red-600 on the same hover */
                   className="group rounded-full bg-slate-100 px-3 py-1 text-sm font-medium text-slate-700 hover:bg-red-50 hover:text-red-600"
                   title={`Remove ${p}`}
                 >
@@ -84,7 +85,7 @@ export default async function PricingPage() {
               name="prefix"
               placeholder="e.g. IG"
               maxLength={4}
-              className="w-32 rounded-lg border border-slate-300 px-3 py-2 uppercase outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200"
+              className="w-32 rounded-lg border border-slate-300 px-3 py-2 uppercase outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-200"
             />
             <button className="rounded-xl bg-slate-800 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-900">
               Add area
@@ -111,7 +112,7 @@ export default async function PricingPage() {
                   <input
                     name="label"
                     defaultValue={a.label}
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200"
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-200"
                   />
                 </label>
                 <label className="block">
@@ -122,7 +123,7 @@ export default async function PricingPage() {
                     step="0.5"
                     min="0"
                     defaultValue={a.price}
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200"
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-200"
                   />
                 </label>
                 <label className="block">
@@ -133,14 +134,14 @@ export default async function PricingPage() {
                     step="0.25"
                     min="0"
                     defaultValue={a.hours}
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200"
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-200"
                   />
                 </label>
                 <label className="flex items-center gap-2 pb-2 text-sm text-slate-700">
                   <input type="checkbox" name="active" defaultChecked={a.active} />
                   Active
                 </label>
-                <button className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700">
+                <button className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700">
                   Save
                 </button>
               </div>

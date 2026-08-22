@@ -3,53 +3,118 @@
 // Cleaner actions — authenticated by the cleaner's personal token, NOT the admin session.
 
 import { revalidatePath } from "next/cache";
-import { getCleanerByToken, getBooking, updateBookingStatus } from "@/lib/supabaseAdmin";
+import {
+  getCleanerByToken,
+  getBooking,
+  updateBooking,
+  insertAdjustment,
+} from "@/lib/supabaseAdmin";
+import { loadPricingConfig } from "@/lib/pricingServer";
+import { spawnNextOccurrence } from "@/lib/recurring";
+import {
+  elapsedHours,
+  isReasonCode,
+  resolveAdjustment,
+  roundQuarter,
+  type ReasonCode,
+} from "@/lib/adjustments";
 
-export async function cleanerMarkDone(formData: FormData) {
+/** Booking the cleaner is allowed to touch right now, or null. */
+async function ownConfirmedJob(token: string, bookingId: string) {
+  const cleaner = await getCleanerByToken(token);
+  if (!cleaner || !bookingId) return null;
+  const booking = await getBooking(bookingId);
+  if (!booking || booking.cleaner_id !== cleaner.id || booking.status !== "confirmed") return null;
+  return { cleaner, booking };
+}
+
+/** Tapped on arrival — starts the clock. */
+export async function cleanerStartJob(formData: FormData) {
   const token = String(formData.get("token") ?? "");
   const bookingId = String(formData.get("booking_id") ?? "");
-  const cleaner = await getCleanerByToken(token);
-  if (!cleaner || !bookingId) return;
+  const found = await ownConfirmedJob(token, bookingId);
+  if (!found || found.booking.started_at) return;
 
-  const booking = await getBooking(bookingId);
-  // A cleaner can only complete their own confirmed jobs.
-  if (!booking || booking.cleaner_id !== cleaner.id || booking.status !== "confirmed") return;
+  await updateBooking(bookingId, { started_at: new Date().toISOString() });
+  revalidatePath(`/c/${token}`);
+}
 
-  await updateBookingStatus(bookingId, "completed");
+/**
+ * Tapped when the job is done. Works out the real length, decides whether the
+ * price moves, and completes the booking.
+ *
+ * The cleaner never sets a price. They report time and a reason; the rules in
+ * lib/adjustments decide what that means for the bill.
+ */
+export async function cleanerFinishJob(formData: FormData) {
+  const token = String(formData.get("token") ?? "");
+  const bookingId = String(formData.get("booking_id") ?? "");
+  const found = await ownConfirmedJob(token, bookingId);
+  if (!found) return;
+  const { cleaner, booking } = found;
 
-  // Recurring spawn on cleaner completion too — same engine as the admin path.
-  const { FREQUENCY_DAYS } = await import("@/lib/pricing");
-  const { insertBooking } = await import("@/lib/supabaseAdmin");
-  if (booking.frequency !== "one_off" && booking.recurring_active) {
-    const days = FREQUENCY_DAYS[booking.frequency as keyof typeof FREQUENCY_DAYS];
-    const next = new Date(booking.preferred_date + "T00:00:00Z");
-    next.setUTCDate(next.getUTCDate() + days);
-    await insertBooking({
-      reference: `SAAFI-${Date.now().toString(36).toUpperCase()}`,
-      customer_id: booking.customer_id,
-      customer_name: booking.customer_name,
-      customer_email: booking.customer_email,
-      customer_phone: booking.customer_phone,
-      address_line: booking.address_line,
-      postcode: booking.postcode,
-      bedrooms: booking.bedrooms,
-      bathrooms: booking.bathrooms,
-      dining_rooms: booking.dining_rooms,
-      living_rooms: booking.living_rooms,
-      hours: booking.hours,
-      customer_provides_products: booking.customer_provides_products,
-      addons: booking.addons,
-      addons_total: booking.addons_total,
-      frequency: booking.frequency,
-      series_id: booking.series_id ?? booking.id,
-      recurring_active: true,
-      cleaner_id: booking.cleaner_id,
-      quoted_price: booking.quoted_price,
-      preferred_date: next.toISOString().slice(0, 10),
-      notes: booking.notes,
-      status: "confirmed",
-    }).catch((e) => console.error("[cleaner] recurring spawn failed:", e));
+  const finishedAt = new Date().toISOString();
+  const quotedHours = Number(booking.quoted_hours ?? booking.hours);
+
+  // Prefer what the cleaner confirmed on screen; fall back to the timer.
+  const typed = Number(formData.get("actual_hours"));
+  const timed = booking.started_at ? elapsedHours(booking.started_at, finishedAt) : 0;
+  const actualHours =
+    Number.isFinite(typed) && typed > 0 ? roundQuarter(typed) : timed > 0 ? timed : quotedHours;
+
+  const rawReason = String(formData.get("reason_code") ?? "");
+  // An unreadable reason must never bill the customer, so fall back to the
+  // non-chargeable one rather than guessing.
+  const reason: ReasonCode | null = isReasonCode(rawReason)
+    ? rawReason
+    : actualHours > quotedHours
+      ? "cleaner_pace"
+      : null;
+  const note = String(formData.get("note") ?? "").trim() || null;
+
+  const cfg = await loadPricingConfig();
+  const input = {
+    quotedHours,
+    actualHours,
+    quotedPrice: Number(booking.quoted_price),
+    frequency: booking.frequency,
+    customerProvidesProducts: booking.customer_provides_products,
+    addonsTotal: Number(booking.addons_total ?? 0),
+    cfg,
+  };
+  const outcome = resolveAdjustment(input, reason);
+
+  await updateBooking(bookingId, {
+    status: "completed",
+    actual_hours: actualHours,
+    finished_at: finishedAt,
+    quoted_hours: quotedHours,
+    // A proposal leaves the money unsettled until the owner decides.
+    ...(outcome.resolution === "pending"
+      ? { price_status: "pending" as const }
+      : { price_status: "agreed" as const, final_price: outcome.newPrice }),
+  });
+
+  if (outcome.resolution !== "none" && reason) {
+    await insertAdjustment({
+      booking_id: bookingId,
+      from_hours: quotedHours,
+      to_hours: actualHours,
+      from_price: Number(booking.quoted_price),
+      to_price: outcome.newPrice,
+      reason_code: reason,
+      note,
+      chargeable: outcome.chargeable,
+      cleaner_id: cleaner.id,
+      status: outcome.resolution === "pending" ? "pending" : "auto",
+    }).catch((e) => console.error("[cleaner] adjustment log failed:", e));
   }
 
+  // The series carries on from the original quote, not from today's actuals.
+  await spawnNextOccurrence(booking).catch((e) =>
+    console.error("[cleaner] recurring spawn failed:", e)
+  );
+
   revalidatePath(`/c/${token}`);
+  revalidatePath("/admin");
 }
