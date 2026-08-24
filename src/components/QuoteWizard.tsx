@@ -6,6 +6,7 @@ import {
   recommendedHours,
   quotePrice,
   formatGBP,
+  formatDuration,
   normalisePostcode,
   looksLikeUkPostcode,
   inServiceArea,
@@ -19,16 +20,26 @@ import {
 } from "@/lib/pricing";
 import { formatTime, formatTimeRange, type Slot } from "@/lib/scheduling";
 
-const STEPS = ["Postcode", "Rooms", "Hours", "Extras", "How often", "When", "Details", "Quote"] as const;
-
 type RoomKey = keyof RoomCounts;
 
-const ROOM_TABS: { key: RoomKey; label: string }[] = [
-  { key: "bedrooms", label: "Bedrooms" },
-  { key: "diningRooms", label: "Dining rooms" },
-  { key: "livingRooms", label: "Living rooms" },
+const ROOM_FIELDS: { key: RoomKey; label: string; max: number }[] = [
+  { key: "bedrooms", label: "Bedrooms", max: 10 },
+  { key: "bathrooms", label: "Bathrooms", max: 6 },
+  { key: "livingRooms", label: "Living rooms", max: 4 },
+  { key: "diningRooms", label: "Dining rooms", max: 4 },
 ];
 
+/** Which field a validation message belongs to, so it can be shown in place. */
+type FieldKey = "postcode" | "date" | "time" | "name" | "email" | "phone" | "address";
+
+/**
+ * The whole quote on one page.
+ *
+ * Everything is visible at once and the price alongside updates as it is filled
+ * in. The only thing that appears progressively is the list of start times,
+ * which genuinely cannot be known until there is a date and a duration to look
+ * them up with.
+ */
 export default function QuoteWizard({
   cfg = pricingConfig,
   addons = [],
@@ -39,20 +50,20 @@ export default function QuoteWizard({
 }: {
   cfg?: PricingConfig;
   addons?: Addon[];
-  /** Postcode captured on the landing page — checked on mount, then skips step 1. */
+  /** Postcode captured on the landing page — checked quietly on mount. */
   initialPostcode?: string;
-  /** Rooms captured by the hero search bar; when present we land on Hours. */
+  /** Rooms captured by the hero search bar. */
   initialRooms?: Partial<RoomCounts>;
   initialFrequency?: Frequency;
   /** Add-on keys already chosen on the landing page builder. */
   initialAddons?: string[];
 }) {
-  const [step, setStep] = useState(0);
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [errors, setErrors] = useState<Partial<Record<FieldKey, string>>>({});
 
-  // form state
   const [postcode, setPostcode] = useState(initialPostcode);
+  const [postcodeState, setPostcodeState] = useState<"idle" | "checking" | "ok" | "unknown">("idle");
   const [rooms, setRooms] = useState<RoomCounts>({
     bedrooms: 2,
     bathrooms: 1,
@@ -60,16 +71,18 @@ export default function QuoteWizard({
     livingRooms: 1,
     ...initialRooms,
   });
-  const [roomTab, setRoomTab] = useState<RoomKey>("bedrooms");
-  const [hours, setHours] = useState<number | null>(null); // null = follow recommendation
+  const [hours, setHours] = useState<number | null>(null); // null = follow the recommendation
   const [customerProvidesProducts, setCustomerProvidesProducts] = useState(true);
   const [selectedAddons, setSelectedAddons] = useState<string[]>(initialAddons ?? []);
   const [frequency, setFrequency] = useState<Frequency>(initialFrequency ?? "one_off");
+  const [preferredDate, setPreferredDate] = useState("");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [addressLine, setAddressLine] = useState("");
-  const [preferredDate, setPreferredDate] = useState("");
+  const [notes, setNotes] = useState("");
+  const [reference, setReference] = useState<string | null>(null);
+
   // Availability is keyed by day+length: change either and the old answer — and
   // any time picked from it — stop applying, with nothing to reset by hand.
   const [loadedSlots, setLoadedSlots] = useState<{
@@ -78,8 +91,6 @@ export default function QuoteWizard({
     closed: string | null;
   } | null>(null);
   const [pickedSlot, setPickedSlot] = useState<{ key: string; time: string } | null>(null);
-  const [notes, setNotes] = useState("");
-  const [reference, setReference] = useState<string | null>(null);
 
   const recommended = useMemo(() => recommendedHours(rooms, cfg), [rooms, cfg]);
   const chosenHours = hours ?? recommended;
@@ -88,7 +99,7 @@ export default function QuoteWizard({
     [addons, selectedAddons]
   );
   const addonsTotal = useMemo(() => chosenAddons.reduce((s, a) => s + a.price, 0), [chosenAddons]);
-  // extras add time to the visit, and that time is what gets billed
+  // Extras add time to the visit, and that time is what gets billed.
   const extrasHours = useMemo(() => addonsHours(chosenAddons), [chosenAddons]);
   const totalHours = chosenHours + extrasHours;
   const price = useMemo(
@@ -96,78 +107,42 @@ export default function QuoteWizard({
     [totalHours, customerProvidesProducts, cfg, frequency, addonsTotal]
   );
 
-  function next() {
-    setError(null);
-    setStep((s) => Math.min(s + 1, STEPS.length - 1));
-  }
-  function back() {
-    setError(null);
-    setStep((s) => Math.max(s - 1, 0));
-  }
+  /* ---------- postcode ---------- */
 
-  /** Where a successful postcode check lands: Hours if the hero already took rooms. */
-  const postcodeTarget = initialRooms ? 2 : 1;
-
-  async function validatePostcode(target?: number) {
-    const norm = normalisePostcode(postcode);
-    if (!looksLikeUkPostcode(norm)) {
-      setError("That doesn't look like a UK postcode — try e.g. IG1 1BA");
+  /** Quiet check — never blocks typing, and a dead API is not the customer's problem. */
+  async function checkPostcode(raw: string) {
+    const norm = normalisePostcode(raw);
+    if (!looksLikeUkPostcode(norm) || !inServiceArea(norm, cfg)) {
+      setPostcodeState("idle");
       return;
     }
-    if (!inServiceArea(norm, cfg)) {
-      setError("Sorry — we don't cover that area yet. Call us to check!");
-      return;
-    }
-    setBusy(true);
+    setPostcodeState("checking");
     try {
-      // postcodes.io is free + keyless; fall back to the regex check if it's unreachable
+      // postcodes.io is free + keyless; the regex check already passed either way.
       const res = await fetch(`https://api.postcodes.io/postcodes/${norm}/validate`);
-      if (res.ok) {
-        const data = (await res.json()) as { result: boolean };
-        if (!data.result) {
-          setError("We couldn't find that postcode — double-check it?");
-          return;
-        }
-      }
-      if (target === undefined) next();
-      else setStep(target);
+      const data = res.ok ? ((await res.json()) as { result: boolean }) : { result: true };
+      setPostcodeState(data.result ? "ok" : "unknown");
     } catch {
-      // offline — regex check already passed
-      if (target === undefined) next();
-      else setStep(target);
-    } finally {
-      setBusy(false);
+      setPostcodeState("ok"); // offline: trust the regex rather than nag
     }
   }
 
-  // The landing page already took a postcode — run the real check for them so
-  // they land on the rooms step. A failure leaves them on step 0 with it filled in.
+  // The landing page already took a postcode — check it quietly so the field
+  // shows a tick rather than making them prove it again.
   const autoChecked = useRef(false);
   useEffect(() => {
     if (autoChecked.current || !initialPostcode) return;
     autoChecked.current = true;
-    void validatePostcode(postcodeTarget);
+    void checkPostcode(initialPostcode);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // The furthest ahead the calendar opens, so the date input can't offer a day
-  // the server would only reject afterwards.
-  const today = new Date().toISOString().slice(0, 10);
-  const maxDate = useMemo(() => {
-    const d = new Date();
-    d.setDate(d.getDate() + cfg.scheduling.maxDaysAhead);
-    return d.toISOString().slice(0, 10);
-  }, [cfg.scheduling.maxDaysAhead]);
+  /* ---------- availability ---------- */
 
-  /**
-   * Load the times available for the chosen day. Runs whenever the day or the
-   * job length changes — a longer job genuinely has fewer places it can fit, so
-   * the previously picked time is dropped rather than silently carried forward.
-   */
   const slotKey = `${preferredDate}|${totalHours}`;
   const slotRequest = useRef(0);
   useEffect(() => {
-    if (step !== 5 || !preferredDate) return;
+    if (!preferredDate) return;
     const ticket = ++slotRequest.current;
 
     fetch(`/api/availability?date=${preferredDate}&hours=${totalHours}`)
@@ -186,7 +161,7 @@ export default function QuoteWizard({
         if (ticket !== slotRequest.current) return;
         setLoadedSlots({ key: slotKey, slots: [], closed: null });
       });
-  }, [step, preferredDate, totalHours, slotKey]);
+  }, [preferredDate, totalHours, slotKey]);
 
   // Anything loaded under a different key is stale by definition.
   const fresh = loadedSlots?.key === slotKey ? loadedSlots : null;
@@ -196,9 +171,54 @@ export default function QuoteWizard({
   const startTime = pickedSlot?.key === slotKey ? pickedSlot.time : null;
   const anySlotFree = (slots ?? []).some((s) => s.available);
 
-  async function submit() {
-    setBusy(true);
-    setError(null);
+  const today = new Date().toISOString().slice(0, 10);
+  const maxDate = useMemo(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + cfg.scheduling.maxDaysAhead);
+    return d.toISOString().slice(0, 10);
+  }, [cfg.scheduling.maxDaysAhead]);
+
+  /* ---------- submit ---------- */
+
+  const formRef = useRef<HTMLFormElement>(null);
+
+  /** Every problem at once — a single form should not reveal them one at a time. */
+  function validate(): Partial<Record<FieldKey, string>> {
+    const found: Partial<Record<FieldKey, string>> = {};
+    const norm = normalisePostcode(postcode);
+
+    if (!looksLikeUkPostcode(norm)) found.postcode = "That doesn't look like a UK postcode.";
+    else if (!inServiceArea(norm, cfg))
+      found.postcode = "We don't cover that area yet — give us a call.";
+
+    if (!preferredDate) found.date = "Pick a date.";
+    else if (closedReason) found.time = closedReason;
+    else if (anySlotFree && !startTime) found.time = "Pick a start time.";
+
+    if (name.trim().length < 2) found.name = "Please tell us your name.";
+    if (!/^\S+@\S+\.\S+$/.test(email)) found.email = "Please enter a valid email.";
+    if (phone.replace(/\D/g, "").length < 10) found.phone = "Please enter a valid phone number.";
+    if (addressLine.trim().length < 3) found.address = "Please enter your address.";
+
+    return found;
+  }
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    setFormError(null);
+
+    const found = validate();
+    setErrors(found);
+    if (Object.keys(found).length > 0) {
+      // Take them to the first thing that needs fixing rather than leaving them
+      // to hunt for the red text.
+      const first = formRef.current?.querySelector<HTMLElement>("[data-invalid='true']");
+      first?.scrollIntoView({ behavior: "smooth", block: "center" });
+      first?.focus({ preventScroll: true });
+      return;
+    }
+
+    setSubmitting(true);
     try {
       const res = await fetch("/api/bookings", {
         method: "POST",
@@ -221,20 +241,25 @@ export default function QuoteWizard({
       });
       const data = await res.json();
       if (!res.ok || !data.ok) {
-        setError(data.error ?? "Something went wrong — please try again or call us");
+        setFormError(data.error ?? "Something went wrong — please try again or call us");
+        // A 409 means the slot went while they were filling this in; drop the
+        // cached times so they choose from what is actually free now.
+        if (res.status === 409) setLoadedSlots(null);
         return;
       }
       setReference(data.reference);
     } catch {
-      setError("Network problem — please try again or call us");
+      setFormError("Network problem — please try again or call us");
     } finally {
-      setBusy(false);
+      setSubmitting(false);
     }
   }
 
+  /* ---------- done ---------- */
+
   if (reference) {
     return (
-      <div className="mx-auto max-w-lg bg-white p-8 shadow-lg ring-1 ring-slate-200 text-center">
+      <div className="mx-auto max-w-lg bg-white p-8 text-center shadow-lg ring-1 ring-slate-200">
         <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-brand-100 text-3xl">
           ✓
         </div>
@@ -259,454 +284,506 @@ export default function QuoteWizard({
     );
   }
 
+  /* ---------- form ---------- */
+
   return (
-    <div className="mx-auto max-w-lg">
-      {/* progress */}
-      <ol className="mb-6 flex items-center gap-1">
-        {STEPS.map((label, i) => (
-          <li key={label} className="flex-1">
-            <div
-              className={`h-1.5 rounded-full ${i <= step ? "bg-brand-500" : "bg-slate-200"}`}
-            />
-            <span
-              className={`mt-1 hidden text-[10px] font-medium sm:block ${
-                i <= step ? "text-brand-700" : "text-slate-400"
-              }`}
+    <div className="mx-auto grid max-w-5xl gap-6 lg:grid-cols-[1fr_19rem] lg:items-start lg:gap-8">
+      {/* Price sits above the form on mobile so it is seen before scrolling,
+          and rides alongside it on desktop. */}
+      <aside className="order-first lg:order-last lg:sticky lg:top-6">
+        <PricePanel
+          price={price}
+          frequency={frequency}
+          cfg={cfg}
+          totalHours={totalHours}
+          chosenHours={chosenHours}
+          extrasHours={extrasHours}
+          addonsTotal={addonsTotal}
+          customerProvidesProducts={customerProvidesProducts}
+          preferredDate={preferredDate}
+          startTime={startTime}
+        />
+      </aside>
+
+      <form ref={formRef} onSubmit={submit} noValidate className="space-y-5">
+        {/* ---------- your home ---------- */}
+        <Section title="Your home" sub="Kitchen, hallways and landings are always included.">
+          <Field label="Postcode" error={errors.postcode}>
+            <div className="relative">
+              <input
+                value={postcode}
+                onChange={(e) => setPostcode(e.target.value)}
+                onBlur={(e) => void checkPostcode(e.target.value)}
+                placeholder="e.g. IG1 1BA"
+                autoComplete="postal-code"
+                data-invalid={errors.postcode ? "true" : undefined}
+                className={`w-full border px-3 py-2 pr-24 uppercase tracking-wide outline-none placeholder:normal-case placeholder:tracking-normal focus:ring-2 focus:ring-brand-200 ${
+                  errors.postcode ? "border-red-400" : "border-slate-300 focus:border-brand-500"
+                }`}
+              />
+              <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs font-medium">
+                {postcodeState === "checking" && <span className="text-slate-400">checking&hellip;</span>}
+                {postcodeState === "ok" && <span className="text-brand-600">✓ covered</span>}
+                {postcodeState === "unknown" && <span className="text-amber-600">not found</span>}
+              </span>
+            </div>
+          </Field>
+
+          <div className="mt-4 grid gap-x-6 gap-y-3 sm:grid-cols-2">
+            {ROOM_FIELDS.map((f) => (
+              <Counter
+                key={f.key}
+                label={f.label}
+                value={rooms[f.key]}
+                max={f.max}
+                onChange={(v) => setRooms({ ...rooms, [f.key]: v })}
+              />
+            ))}
+          </div>
+        </Section>
+
+        {/* ---------- the clean ---------- */}
+        <Section
+          title="Your clean"
+          sub={`We suggest ${recommended} hours for a home this size. Move it if you'd rather.`}
+        >
+          <div className="flex items-center justify-center gap-6 py-1">
+            <RoundBtn
+              label="Fewer hours"
+              onClick={() => setHours(clampHours(chosenHours - 0.5, cfg))}
+              disabled={chosenHours <= cfg.minHours}
             >
-              {label}
-            </span>
-          </li>
-        ))}
-      </ol>
-
-      <div className="bg-white p-6 shadow-lg ring-1 ring-slate-200 sm:p-8">
-        {step === 0 && (
-          <StepShell title="Where's the clean?" subtitle="We'll check we cover your area.">
-            <input
-              autoFocus
-              value={postcode}
-              onChange={(e) => setPostcode(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && validatePostcode()}
-              placeholder="e.g. IG1 1BA"
-              className="w-full border border-slate-300 px-4 py-3 text-lg uppercase tracking-wide outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-200"
-            />
-            <Nav onNext={validatePostcode} nextLabel="Check postcode" busy={busy} />
-          </StepShell>
-        )}
-
-        {step === 1 && (
-          <StepShell
-            title="Tell us about your home"
-            subtitle="Kitchen, lounge and common areas (hallways, landings) are always included."
-          >
-            <div className="mb-4 flex gap-2">
-              {ROOM_TABS.map((t) => (
+              −
+            </RoundBtn>
+            <div className="text-center">
+              <div className="tnum text-4xl font-bold text-slate-900">{chosenHours}h</div>
+              {chosenHours === recommended ? (
+                <div className="text-xs font-medium text-brand-600">recommended</div>
+              ) : (
                 <button
-                  key={t.key}
-                  onClick={() => setRoomTab(t.key)}
-                  className={`rounded-full px-4 py-1.5 text-sm font-medium transition ${
-                    roomTab === t.key
-                      ? "bg-brand-600 text-white"
-                      : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                  }`}
+                  type="button"
+                  onClick={() => setHours(null)}
+                  className="text-xs font-medium text-slate-400 underline underline-offset-2 hover:text-brand-600"
                 >
-                  {t.label}
+                  reset to {recommended}h
                 </button>
-              ))}
+              )}
             </div>
-            <Counter
-              label={ROOM_TABS.find((t) => t.key === roomTab)!.label}
-              value={rooms[roomTab]}
-              onChange={(v) => setRooms({ ...rooms, [roomTab]: v })}
-            />
-            <div className="my-4 border-t border-slate-100" />
-            <Counter
-              label="Bathrooms"
-              value={rooms.bathrooms}
-              onChange={(v) => setRooms({ ...rooms, bathrooms: v })}
-            />
-            <Nav onBack={back} onNext={next} />
-          </StepShell>
-        )}
+            <RoundBtn
+              label="More hours"
+              onClick={() => setHours(clampHours(chosenHours + 0.5, cfg))}
+              disabled={chosenHours >= cfg.maxHours}
+            >
+              +
+            </RoundBtn>
+          </div>
 
-        {step === 2 && (
-          <StepShell
-            title="How long should we stay?"
-            subtitle={`Based on your rooms we recommend ${recommended} hours (minimum ${cfg.minHours}, maximum ${cfg.maxHours}).`}
-          >
-            <div className="flex items-center justify-center gap-6 py-2">
-              <RoundBtn
-                onClick={() => setHours(clampHours(chosenHours - 0.5, cfg))}
-                disabled={chosenHours <= cfg.minHours}
-              >
-                −
-              </RoundBtn>
-              <div className="text-center">
-                <div className="text-4xl font-bold text-slate-900">{chosenHours}h</div>
-                {chosenHours === recommended && (
-                  <div className="text-xs font-medium text-brand-600">recommended</div>
-                )}
+          <div className="mt-5 grid gap-3 sm:grid-cols-2">
+            <ChoiceCard
+              active={customerProvidesProducts}
+              title="I'll provide products"
+              subtitle="Use what's already at home"
+              onClick={() => setCustomerProvidesProducts(true)}
+            />
+            <ChoiceCard
+              active={!customerProvidesProducts}
+              title="Bring your products"
+              subtitle={
+                cfg.productSurcharge > 0
+                  ? `Fully stocked (+${formatGBP(cfg.productSurcharge)})`
+                  : "Fully stocked, no extra charge"
+              }
+              onClick={() => setCustomerProvidesProducts(false)}
+            />
+          </div>
+
+          {addons.length > 0 && (
+            <>
+              <p className="mb-2 mt-5 text-sm font-medium text-slate-700">
+                Extras <span className="font-normal text-slate-400">(optional)</span>
+              </p>
+              <div className="grid gap-2 sm:grid-cols-2">
+                {addons.map((a) => {
+                  const on = selectedAddons.includes(a.key);
+                  return (
+                    <button
+                      key={a.key}
+                      type="button"
+                      aria-pressed={on}
+                      onClick={() =>
+                        setSelectedAddons(
+                          on
+                            ? selectedAddons.filter((k) => k !== a.key)
+                            : [...selectedAddons, a.key]
+                        )
+                      }
+                      className={`flex items-center justify-between border-2 px-3 py-2.5 text-left text-sm transition ${
+                        on
+                          ? "border-brand-500 bg-brand-50"
+                          : "border-slate-200 hover:border-slate-300"
+                      }`}
+                    >
+                      <span className="font-medium text-slate-800">{a.label}</span>
+                      <span className={on ? "font-semibold text-brand-700" : "text-slate-500"}>
+                        {a.price > 0 ? `+${formatGBP(a.price)}` : `+${formatDuration(a.hours)}`}
+                        {a.price > 0 && a.hours > 0 && (
+                          <span className="ml-1 text-xs font-normal text-slate-400">
+                            · +{formatDuration(a.hours)}
+                          </span>
+                        )}
+                      </span>
+                    </button>
+                  );
+                })}
               </div>
-              <RoundBtn
-                onClick={() => setHours(clampHours(chosenHours + 0.5, cfg))}
-                disabled={chosenHours >= cfg.maxHours}
-              >
-                +
-              </RoundBtn>
-            </div>
-            <Nav onBack={back} onNext={next} />
-          </StepShell>
-        )}
+            </>
+          )}
+        </Section>
 
-        {step === 3 && (
-          <StepShell title="Products & extras" subtitle="Yours or ours — and any add-ons?">
-            <div className="grid gap-3">
-              <ChoiceCard
-                active={customerProvidesProducts}
-                title="I'll provide products"
-                subtitle="Use what's already at home"
-                onClick={() => setCustomerProvidesProducts(true)}
-              />
-              <ChoiceCard
-                active={!customerProvidesProducts}
-                title="Bring your products"
-                subtitle={
-                  cfg.productSurcharge > 0
-                    ? `We come fully stocked (+${formatGBP(cfg.productSurcharge)})`
-                    : "We come fully stocked, no extra charge"
-                }
-                onClick={() => setCustomerProvidesProducts(false)}
-              />
-            </div>
-            {addons.length > 0 && (
-              <>
-                <p className="mt-5 mb-2 text-sm font-medium text-slate-700">
-                  Popular extras <span className="text-slate-400">(optional)</span>
-                </p>
-                <div className="grid gap-2">
-                  {addons.map((a) => {
-                    const on = selectedAddons.includes(a.key);
-                    return (
-                      <button
-                        key={a.key}
-                        onClick={() =>
-                          setSelectedAddons(
-                            on ? selectedAddons.filter((k) => k !== a.key) : [...selectedAddons, a.key]
-                          )
-                        }
-                        className={`flex items-center justify-between  border-2 px-4 py-2.5 text-left text-sm transition ${
-                          on ? "border-brand-500 bg-brand-50" : "border-slate-200 hover:border-slate-300"
-                        }`}
-                      >
-                        <span className="font-medium text-slate-800">{a.label}</span>
-                        <span className={on ? "font-semibold text-brand-700" : "text-slate-500"}>
-                          {a.price > 0 ? `+${formatGBP(a.price)}` : `+${formatDuration(a.hours)}`}
-                          {a.price > 0 && a.hours > 0 && (
-                            <span className="ml-1 text-xs font-normal text-slate-400">
-                              · +{formatDuration(a.hours)}
-                            </span>
-                          )}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </>
-            )}
-            <Nav onBack={back} onNext={next} />
-          </StepShell>
-        )}
+        {/* ---------- how often ---------- */}
+        <Section title="How often?" sub="Regular cleans get a discount on every visit.">
+          <div className="grid gap-2 sm:grid-cols-2">
+            {(Object.keys(FREQUENCY_LABEL) as Frequency[]).map((f) => {
+              const pct = cfg.discounts[f] ?? 0;
+              const perClean = quotePrice(totalHours, customerProvidesProducts, cfg, f, addonsTotal);
+              return (
+                <ChoiceCard
+                  key={f}
+                  active={frequency === f}
+                  title={pct > 0 ? `${FREQUENCY_LABEL[f]} — save ${pct}%` : FREQUENCY_LABEL[f]}
+                  subtitle={`${formatGBP(perClean)} per clean`}
+                  onClick={() => setFrequency(f)}
+                />
+              );
+            })}
+          </div>
+        </Section>
 
-        {step === 4 && (
-          <StepShell
-            title="How often?"
-            subtitle="Regular cleans get a discount on every visit."
+        {/* ---------- when ---------- */}
+        <Section title="When suits you?" sub="Pick a day, then a start time that's free.">
+          <Field
+            label={frequency === "one_off" ? "Preferred date" : "Date of the first clean"}
+            error={errors.date}
           >
-            <div className="grid gap-3">
-              {(Object.keys(FREQUENCY_LABEL) as Frequency[]).map((f) => {
-                const pct = cfg.discounts[f] ?? 0;
-                const perClean = quotePrice(totalHours, customerProvidesProducts, cfg, f, addonsTotal);
-                return (
-                  <ChoiceCard
-                    key={f}
-                    active={frequency === f}
-                    title={
-                      pct > 0 ? `${FREQUENCY_LABEL[f]} — save ${pct}%` : FREQUENCY_LABEL[f]
-                    }
-                    subtitle={`${formatGBP(perClean)} per clean`}
-                    onClick={() => setFrequency(f)}
-                  />
-                );
-              })}
-            </div>
-            <Nav onBack={back} onNext={next} />
-          </StepShell>
-        )}
-
-        {step === 5 && (
-          <StepShell title="When suits you?" subtitle="Pick a day, then a start time that's free.">
-            <Input
-              label={frequency === "one_off" ? "Preferred date" : "Date of the first clean"}
-              value={preferredDate}
-              onChange={setPreferredDate}
+            <input
               type="date"
+              value={preferredDate}
               min={today}
               max={maxDate}
+              onChange={(e) => setPreferredDate(e.target.value)}
+              data-invalid={errors.date ? "true" : undefined}
+              className={`w-full border px-3 py-2 outline-none focus:ring-2 focus:ring-brand-200 ${
+                errors.date ? "border-red-400" : "border-slate-300 focus:border-brand-500"
+              }`}
             />
+          </Field>
 
-            {preferredDate && (
-              <div className="mt-5">
-                {slotsBusy && (
-                  <p className="text-sm text-slate-500">Checking what&apos;s free&hellip;</p>
-                )}
-
-                {!slotsBusy && closedReason && (
-                  <p className="bg-slate-50 px-3 py-2 text-sm text-slate-600">
-                    {closedReason} Try another day.
-                  </p>
-                )}
-
-                {!slotsBusy && !closedReason && slots?.length === 0 && (
-                  <p className="bg-slate-50 px-3 py-2 text-sm text-slate-600">
-                    We couldn&apos;t load times just now — carry on, and we&apos;ll agree a time
-                    when we call to confirm.
-                  </p>
-                )}
-
-                {!slotsBusy && !closedReason && !!slots?.length && (
-                  <>
-                    <p className="mb-2 text-sm font-medium text-slate-700">
-                      Start time{" "}
-                      <span className="font-normal text-slate-400">
-                        ({totalHours}-hour clean)
-                      </span>
-                    </p>
-                    <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
-                      {slots.map((s) => (
-                        <button
-                          key={s.time}
-                          type="button"
-                          disabled={!s.available}
-                          aria-pressed={startTime === s.time}
-                          onClick={() => setPickedSlot({ key: slotKey, time: s.time })}
-                          className={`px-2 py-2 text-sm font-semibold transition ${
-                            startTime === s.time
-                              ? "bg-brand-600 text-white"
-                              : s.available
-                                ? "bg-slate-50 text-slate-700 ring-1 ring-slate-200 hover:bg-brand-50 hover:text-brand-800"
-                                : "cursor-not-allowed bg-slate-50 text-slate-300 line-through"
-                          }`}
-                        >
-                          {formatTime(s.time)}
-                        </button>
-                      ))}
-                    </div>
-                    {startTime && (
-                      <p className="mt-3 text-sm text-slate-600">
-                        We&apos;d be with you{" "}
-                        <span className="font-semibold text-slate-900">
-                          {formatTimeRange(startTime, totalHours)}
-                        </span>
-                        .
-                      </p>
-                    )}
-                    {!anySlotFree && (
-                      <p className="mt-3 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-                        We&apos;re fully booked that day. Please pick another.
-                      </p>
-                    )}
-                  </>
-                )}
-              </div>
-            )}
-
-            <Nav
-              onBack={back}
-              onNext={() => {
-                if (!preferredDate) return setError("Please pick a date");
-                if (closedReason) return setError("Please pick a day we're open.");
-                // Only insist on a time when we actually managed to offer any.
-                if (anySlotFree && !startTime) return setError("Please pick a start time");
-                next();
-              }}
-            />
-          </StepShell>
-        )}
-
-        {step === 6 && (
-          <StepShell title="Your details" subtitle="So we can confirm your clean by phone.">
-            <div className="grid gap-3">
-              <Input label="Full name" value={name} onChange={setName} autoComplete="name" />
-              <Input label="Email" value={email} onChange={setEmail} type="email" autoComplete="email" />
-              <Input label="Phone" value={phone} onChange={setPhone} type="tel" autoComplete="tel" />
-              <Input label="First line of address" value={addressLine} onChange={setAddressLine} autoComplete="address-line1" />
-              <label className="block">
-                <span className="mb-1 block text-sm font-medium text-slate-700">
-                  Anything we should know? <span className="text-slate-400">(optional)</span>
-                </span>
-                <textarea
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  rows={2}
-                  className="w-full border border-slate-300 px-3 py-2 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-200"
-                />
-              </label>
-            </div>
-            <Nav
-              onBack={back}
-              onNext={() => {
-                if (name.trim().length < 2) return setError("Please tell us your name");
-                if (!/^\S+@\S+\.\S+$/.test(email)) return setError("Please enter a valid email");
-                if (phone.replace(/\D/g, "").length < 10)
-                  return setError("Please enter a valid phone number");
-                next();
-              }}
-            />
-          </StepShell>
-        )}
-
-        {step === 7 && (
-          <StepShell title="Your quote" subtitle="Request the booking and we'll confirm by phone.">
-            <div className="bg-brand-50 p-5 text-center ring-1 ring-brand-100">
-              <div className="text-sm font-medium text-brand-800">
-                {frequency === "one_off" ? "Estimated price" : "Estimated price per clean"}
-              </div>
-              <div className="text-4xl font-bold text-brand-700">{formatGBP(price)}</div>
-              <div className="mt-1 text-xs text-brand-800/70">
-                {totalHours}h × {formatGBP(cfg.hourlyRate)}/h
-                {!customerProvidesProducts && cfg.productSurcharge > 0 &&
-                  ` + ${formatGBP(cfg.productSurcharge)} products`}
-                {addonsTotal > 0 && ` + ${formatGBP(addonsTotal)} extras`}
-                {(cfg.discounts[frequency] ?? 0) > 0 && ` − ${cfg.discounts[frequency]}% ${FREQUENCY_LABEL[frequency].toLowerCase()} discount`}
-              </div>
-            </div>
-            <dl className="mt-4 space-y-2 text-sm">
-              <Row k="Postcode" v={normalisePostcode(postcode)} />
-              <Row
-                k="Rooms"
-                v={`${rooms.bedrooms} bed · ${rooms.bathrooms} bath · ${rooms.diningRooms} dining · ${rooms.livingRooms} living`}
-              />
-              <Row k="Always included" v="Kitchen, lounge & common areas" />
-              <Row k="Products" v={customerProvidesProducts ? "Customer provides" : "We bring ours"} />
-              {chosenAddons.length > 0 && (
-                <Row k="Extras" v={chosenAddons.map((a) => a.label).join(", ")} />
+          {preferredDate && (
+            <div className="mt-4" data-invalid={errors.time ? "true" : undefined} tabIndex={-1}>
+              {slotsBusy && (
+                <p className="text-sm text-slate-500">Checking what&apos;s free&hellip;</p>
               )}
-              <Row
-                k="Duration"
-                v={
-                  extrasHours > 0
-                    ? `${totalHours}h (${chosenHours}h clean + ${formatDuration(extrasHours)} extras)`
-                    : `${chosenHours}h`
-                }
+
+              {!slotsBusy && closedReason && (
+                <p className="bg-slate-50 px-3 py-2 text-sm text-slate-600">
+                  {closedReason} Try another day.
+                </p>
+              )}
+
+              {!slotsBusy && !closedReason && slots?.length === 0 && (
+                <p className="bg-slate-50 px-3 py-2 text-sm text-slate-600">
+                  We couldn&apos;t load times just now — carry on, and we&apos;ll agree a time when
+                  we call to confirm.
+                </p>
+              )}
+
+              {!slotsBusy && !closedReason && !!slots?.length && (
+                <>
+                  <p className="mb-2 text-sm font-medium text-slate-700">
+                    Start time{" "}
+                    <span className="font-normal text-slate-400">({totalHours}-hour clean)</span>
+                  </p>
+                  <div className="grid grid-cols-3 gap-2 sm:grid-cols-5">
+                    {slots.map((s) => (
+                      <button
+                        key={s.time}
+                        type="button"
+                        disabled={!s.available}
+                        aria-pressed={startTime === s.time}
+                        onClick={() => setPickedSlot({ key: slotKey, time: s.time })}
+                        className={`px-2 py-2 text-sm font-semibold transition ${
+                          startTime === s.time
+                            ? "bg-brand-600 text-white"
+                            : s.available
+                              ? "bg-slate-50 text-slate-700 ring-1 ring-slate-200 hover:bg-brand-50 hover:text-brand-800"
+                              : "cursor-not-allowed bg-slate-50 text-slate-300 line-through"
+                        }`}
+                      >
+                        {formatTime(s.time)}
+                      </button>
+                    ))}
+                  </div>
+                  {startTime && (
+                    <p className="mt-3 text-sm text-slate-600">
+                      We&apos;d be with you{" "}
+                      <span className="font-semibold text-slate-900">
+                        {formatTimeRange(startTime, totalHours)}
+                      </span>
+                      .
+                    </p>
+                  )}
+                  {!anySlotFree && (
+                    <p className="mt-3 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                      We&apos;re fully booked that day. Please pick another.
+                    </p>
+                  )}
+                </>
+              )}
+              {errors.time && <p className="mt-2 text-sm text-red-600">{errors.time}</p>}
+            </div>
+          )}
+        </Section>
+
+        {/* ---------- details ---------- */}
+        <Section title="Your details" sub="So we can confirm your clean by phone.">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="Full name" error={errors.name}>
+              <Input value={name} onChange={setName} autoComplete="name" invalid={!!errors.name} />
+            </Field>
+            <Field label="Phone" error={errors.phone}>
+              <Input
+                value={phone}
+                onChange={setPhone}
+                type="tel"
+                autoComplete="tel"
+                invalid={!!errors.phone}
               />
-              <Row k="Frequency" v={FREQUENCY_LABEL[frequency]} />
-              <Row
-                k={frequency === "one_off" ? "Preferred date" : "First clean"}
-                v={
-                  startTime
-                    ? `${preferredDate}, ${formatTimeRange(startTime, totalHours)}`
-                    : `${preferredDate} — time to be agreed`
-                }
+            </Field>
+            <Field label="Email" error={errors.email}>
+              <Input
+                value={email}
+                onChange={setEmail}
+                type="email"
+                autoComplete="email"
+                invalid={!!errors.email}
               />
-              <Row k="Contact" v={`${name} · ${phone}`} />
-            </dl>
-            <Nav onBack={back} onNext={submit} nextLabel="Request booking" busy={busy} />
-          </StepShell>
+            </Field>
+            <Field label="First line of address" error={errors.address}>
+              <Input
+                value={addressLine}
+                onChange={setAddressLine}
+                autoComplete="address-line1"
+                invalid={!!errors.address}
+              />
+            </Field>
+            <Field label="Anything we should know?" hint="optional" className="sm:col-span-2">
+              <textarea
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                rows={2}
+                className="w-full border border-slate-300 px-3 py-2 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-200"
+              />
+            </Field>
+          </div>
+        </Section>
+
+        {formError && (
+          <p className="bg-red-50 px-3 py-2 text-sm font-medium text-red-700">{formError}</p>
         )}
 
-        {error && (
-          <p className="mt-4 bg-red-50 px-3 py-2 text-sm font-medium text-red-700">
-            {error}
-          </p>
-        )}
-      </div>
+        <button
+          type="submit"
+          disabled={submitting}
+          className="w-full bg-brand-600 px-6 py-3.5 text-base font-bold text-white transition hover:bg-brand-700 disabled:opacity-60"
+        >
+          {submitting ? "Sending…" : `Request booking · ${formatGBP(price)}`}
+        </button>
+        <p className="text-center text-xs text-slate-400">
+          No payment now — we&apos;ll call to confirm before anything is charged.
+        </p>
+      </form>
     </div>
   );
 }
 
-/** 0.5 -> "30 min", 1 -> "1h", 1.5 -> "1h 30m" */
-function formatDuration(hours: number): string {
-  const h = Math.floor(hours);
-  const m = Math.round((hours - h) * 60);
-  if (h === 0) return `${m} min`;
-  return m > 0 ? `${h}h ${m}m` : `${h}h`;
+/* ---------- price panel ---------- */
+
+function PricePanel({
+  price,
+  frequency,
+  cfg,
+  totalHours,
+  chosenHours,
+  extrasHours,
+  addonsTotal,
+  customerProvidesProducts,
+  preferredDate,
+  startTime,
+}: {
+  price: number;
+  frequency: Frequency;
+  cfg: PricingConfig;
+  totalHours: number;
+  chosenHours: number;
+  extrasHours: number;
+  addonsTotal: number;
+  customerProvidesProducts: boolean;
+  preferredDate: string;
+  startTime: string | null;
+}) {
+  const discount = cfg.discounts[frequency] ?? 0;
+  return (
+    <div className="bg-brand-50 p-5 ring-1 ring-brand-100">
+      <div className="text-sm font-medium text-brand-800">
+        {frequency === "one_off" ? "Your price" : "Your price per clean"}
+      </div>
+      <div className="tnum text-4xl font-bold text-brand-700">{formatGBP(price)}</div>
+
+      <dl className="mt-4 space-y-1.5 border-t border-brand-100 pt-3 text-sm">
+        <PanelRow k="Rate" v={`${formatGBP(cfg.hourlyRate)}/h`} />
+        <PanelRow
+          k="Duration"
+          v={
+            extrasHours > 0
+              ? `${totalHours}h (${chosenHours}h + ${formatDuration(extrasHours)})`
+              : `${totalHours}h`
+          }
+        />
+        {addonsTotal > 0 && <PanelRow k="Extras" v={`+${formatGBP(addonsTotal)}`} />}
+        {!customerProvidesProducts && cfg.productSurcharge > 0 && (
+          <PanelRow k="Products" v={`+${formatGBP(cfg.productSurcharge)}`} />
+        )}
+        {discount > 0 && <PanelRow k={FREQUENCY_LABEL[frequency]} v={`−${discount}%`} highlight />}
+        <PanelRow
+          k="When"
+          v={
+            preferredDate
+              ? startTime
+                ? `${preferredDate}, ${formatTime(startTime)}`
+                : preferredDate
+              : "not chosen yet"
+          }
+        />
+      </dl>
+    </div>
+  );
 }
 
-/* ---------- small building blocks ---------- */
+function PanelRow({ k, v, highlight }: { k: string; v: string; highlight?: boolean }) {
+  return (
+    <div className="flex justify-between gap-3">
+      <dt className="text-brand-800/60">{k}</dt>
+      <dd className={`text-right font-medium ${highlight ? "text-brand-700" : "text-brand-900"}`}>
+        {v}
+      </dd>
+    </div>
+  );
+}
 
-function StepShell({
+/* ---------- building blocks ---------- */
+
+function Section({
   title,
-  subtitle,
+  sub,
   children,
 }: {
   title: string;
-  subtitle?: string;
+  sub?: string;
   children: React.ReactNode;
 }) {
   return (
-    <div>
-      <h2 className="text-xl font-bold text-slate-900">{title}</h2>
-      {subtitle && <p className="mt-1 mb-4 text-sm text-slate-500">{subtitle}</p>}
+    <section className="bg-white p-5 shadow-sm ring-1 ring-slate-200 sm:p-6">
+      <h2 className="text-lg font-bold text-slate-900">{title}</h2>
+      {sub && <p className="mb-4 mt-0.5 text-sm text-slate-500">{sub}</p>}
       {children}
-    </div>
+    </section>
   );
 }
 
-function Nav({
-  onBack,
-  onNext,
-  nextLabel = "Continue",
-  busy,
+function Field({
+  label,
+  hint,
+  error,
+  className = "",
+  children,
 }: {
-  onBack?: () => void;
-  onNext: () => void;
-  nextLabel?: string;
-  busy?: boolean;
+  label: string;
+  hint?: string;
+  error?: string;
+  className?: string;
+  children: React.ReactNode;
 }) {
   return (
-    <div className="mt-6 flex items-center justify-between gap-3">
-      {onBack ? (
-        <button
-          onClick={onBack}
-          className="px-4 py-2.5 text-sm font-medium text-slate-500 hover:bg-slate-100"
-        >
-          ← Back
-        </button>
-      ) : (
-        <span />
-      )}
-      <button
-        onClick={onNext}
-        disabled={busy}
-        className="bg-brand-600 px-6 py-2.5 font-semibold text-white shadow-sm transition hover:bg-brand-700 disabled:opacity-50"
-      >
-        {busy ? "One sec…" : nextLabel}
-      </button>
-    </div>
+    <label className={`block ${className}`}>
+      <span className="mb-1 block text-sm font-medium text-slate-700">
+        {label} {hint && <span className="font-normal text-slate-400">({hint})</span>}
+      </span>
+      {children}
+      {error && <span className="mt-1 block text-sm text-red-600">{error}</span>}
+    </label>
+  );
+}
+
+function Input({
+  value,
+  onChange,
+  type = "text",
+  autoComplete,
+  invalid,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  type?: string;
+  autoComplete?: string;
+  invalid?: boolean;
+}) {
+  return (
+    <input
+      type={type}
+      value={value}
+      autoComplete={autoComplete}
+      onChange={(e) => onChange(e.target.value)}
+      data-invalid={invalid ? "true" : undefined}
+      className={`w-full border px-3 py-2 outline-none focus:ring-2 focus:ring-brand-200 ${
+        invalid ? "border-red-400" : "border-slate-300 focus:border-brand-500"
+      }`}
+    />
   );
 }
 
 function Counter({
   label,
   value,
+  max,
   onChange,
 }: {
   label: string;
   value: number;
+  max: number;
   onChange: (v: number) => void;
 }) {
   return (
-    <div className="flex items-center justify-between">
-      <span className="font-medium text-slate-800">{label}</span>
-      <div className="flex items-center gap-3">
-        <RoundBtn onClick={() => onChange(Math.max(0, value - 1))} disabled={value <= 0}>
+    <div className="flex items-center justify-between gap-3">
+      <span className="text-sm font-medium text-slate-700">{label}</span>
+      <span className="flex items-center gap-3">
+        <RoundBtn
+          small
+          label={`Fewer ${label.toLowerCase()}`}
+          onClick={() => onChange(Math.max(0, value - 1))}
+          disabled={value <= 0}
+        >
           −
         </RoundBtn>
-        <span className="w-6 text-center text-lg font-semibold text-slate-900">{value}</span>
-        <RoundBtn onClick={() => onChange(Math.min(10, value + 1))} disabled={value >= 10}>
+        <span className="tnum w-5 text-center font-bold text-slate-900">{value}</span>
+        <RoundBtn
+          small
+          label={`More ${label.toLowerCase()}`}
+          onClick={() => onChange(Math.min(max, value + 1))}
+          disabled={value >= max}
+        >
           +
         </RoundBtn>
-      </div>
+      </span>
     </div>
   );
 }
@@ -715,17 +792,24 @@ function RoundBtn({
   children,
   onClick,
   disabled,
+  small,
+  label,
 }: {
   children: React.ReactNode;
   onClick: () => void;
   disabled?: boolean;
+  small?: boolean;
+  label: string;
 }) {
   return (
     <button
+      type="button"
+      aria-label={label}
       onClick={onClick}
       disabled={disabled}
-      /* impeccable-disable-next-line gray-on-color -- text turns brand-700 on the same hover */
-      className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-100 text-xl font-semibold text-slate-700 transition hover:bg-brand-100 hover:text-brand-700 disabled:opacity-30"
+      className={`flex items-center justify-center rounded-full bg-slate-100 font-bold text-slate-600 transition hover:bg-brand-100 hover:text-brand-700 active:scale-90 disabled:opacity-35 disabled:hover:bg-slate-100 disabled:hover:text-slate-600 ${
+        small ? "h-7 w-7 text-sm" : "h-11 w-11 text-xl"
+      }`}
     >
       {children}
     </button>
@@ -745,57 +829,15 @@ function ChoiceCard({
 }) {
   return (
     <button
+      type="button"
+      aria-pressed={active}
       onClick={onClick}
-      className={` border-2 p-4 text-left transition ${
-        active
-          ? "border-brand-500 bg-brand-50"
-          : "border-slate-200 hover:border-slate-300"
+      className={`border-2 px-4 py-3 text-left transition ${
+        active ? "border-brand-500 bg-brand-50" : "border-slate-200 hover:border-slate-300"
       }`}
     >
-      <div className="font-semibold text-slate-900">{title}</div>
+      <div className={`font-semibold ${active ? "text-brand-800" : "text-slate-800"}`}>{title}</div>
       <div className="text-sm text-slate-500">{subtitle}</div>
     </button>
-  );
-}
-
-function Input({
-  label,
-  value,
-  onChange,
-  type = "text",
-  autoComplete,
-  min,
-  max,
-}: {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-  type?: string;
-  autoComplete?: string;
-  min?: string;
-  max?: string;
-}) {
-  return (
-    <label className="block">
-      <span className="mb-1 block text-sm font-medium text-slate-700">{label}</span>
-      <input
-        type={type}
-        value={value}
-        min={min}
-        max={max}
-        autoComplete={autoComplete}
-        onChange={(e) => onChange(e.target.value)}
-        className="w-full border border-slate-300 px-3 py-2 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-200"
-      />
-    </label>
-  );
-}
-
-function Row({ k, v }: { k: string; v: string }) {
-  return (
-    <div className="flex justify-between gap-4">
-      <dt className="text-slate-500">{k}</dt>
-      <dd className="text-right font-medium text-slate-800">{v}</dd>
-    </div>
   );
 }
