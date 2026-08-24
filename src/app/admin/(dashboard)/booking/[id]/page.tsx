@@ -38,7 +38,7 @@ export default async function BookingDetailPage({
       </p>
 
       {/* ---------- payment ---------- */}
-      <div className="mb-4 rounded-xl bg-white p-5 text-sm shadow-sm ring-1 ring-slate-200">
+      <div className="mb-4 bg-white p-5 text-sm shadow-sm ring-1 ring-slate-200">
         <div className="mb-3 flex items-baseline justify-between">
           <h2 className="font-semibold text-slate-900">Payment</h2>
           {stripeIsTestMode() && (
@@ -49,7 +49,7 @@ export default async function BookingDetailPage({
         </div>
 
         {b.status === "paid" ? (
-          <p className="rounded-lg bg-brand-50 px-3 py-2 text-brand-800 ring-1 ring-brand-200">
+          <p className="bg-brand-50 px-3 py-2 text-brand-800 ring-1 ring-brand-200">
             <b>Paid{b.amount_paid != null && ` — ${formatGBP(b.amount_paid)}`}</b>
             {b.paid_at && (
               <span className="text-brand-700">
@@ -71,7 +71,7 @@ export default async function BookingDetailPage({
             <input
               readOnly
               value={b.stripe_payment_link_url}
-              className="w-full rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 font-mono text-xs text-slate-700"
+              className="w-full border border-slate-300 bg-slate-50 px-3 py-2 font-mono text-xs text-slate-700"
             />
             <a
               href={b.stripe_payment_link_url}
@@ -92,14 +92,14 @@ export default async function BookingDetailPage({
                 : " (quoted price)"}
               .
             </p>
-            <button className="rounded-lg bg-brand-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-brand-700">
+            <button className="bg-brand-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-brand-700">
               Create payment link
             </button>
           </form>
         )}
       </div>
 
-      <div className="mb-4 rounded-xl bg-white p-5 text-sm shadow-sm ring-1 ring-slate-200">
+      <div className="mb-4 bg-white p-5 text-sm shadow-sm ring-1 ring-slate-200">
         <Row k="Contact" v={`${b.customer_phone} · ${b.customer_email}`} />
         <Row k="Address" v={`${b.address_line}, ${b.postcode}`} />
         <Row
@@ -122,7 +122,7 @@ export default async function BookingDetailPage({
 
       <Adjustments rows={adjustments} />
 
-      <form action={editBooking} className="rounded-xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
+      <form action={editBooking} className="bg-white p-5 shadow-sm ring-1 ring-slate-200">
         <input type="hidden" name="id" value={b.id} />
         <div className="grid gap-4 sm:grid-cols-3">
           <label className="block">
@@ -131,7 +131,7 @@ export default async function BookingDetailPage({
               type="date"
               name="preferred_date"
               defaultValue={b.preferred_date}
-              className="w-full rounded-lg border border-slate-300 px-3 py-2"
+              className="w-full border border-slate-300 px-3 py-2"
             />
           </label>
           <label className="block">
@@ -141,7 +141,7 @@ export default async function BookingDetailPage({
               step="0.5"
               name="hours"
               defaultValue={String(b.hours)}
-              className="w-full rounded-lg border border-slate-300 px-3 py-2"
+              className="w-full border border-slate-300 px-3 py-2"
             />
           </label>
           <label className="block">
@@ -151,7 +151,7 @@ export default async function BookingDetailPage({
               step="0.5"
               name="quoted_price"
               defaultValue={String(b.quoted_price)}
-              className="w-full rounded-lg border border-slate-300 px-3 py-2"
+              className="w-full border border-slate-300 px-3 py-2"
             />
           </label>
           <label className="block sm:col-span-3">
@@ -160,11 +160,11 @@ export default async function BookingDetailPage({
               name="notes"
               rows={2}
               defaultValue={b.notes ?? ""}
-              className="w-full rounded-lg border border-slate-300 px-3 py-2"
+              className="w-full border border-slate-300 px-3 py-2"
             />
           </label>
         </div>
-        <button className="mt-4 rounded-xl bg-brand-600 px-5 py-2.5 font-semibold text-white hover:bg-brand-700">
+        <button className="mt-4 bg-brand-600 px-5 py-2.5 font-semibold text-white hover:bg-brand-700">
           Save changes
         </button>
       </form>
@@ -192,7 +192,7 @@ function Adjustments({ rows }: { rows: AdjustmentRow[] }) {
         return (
           <div
             key={a.id}
-            className={`rounded-xl p-5 text-sm shadow-sm ring-1 ${
+            className={` p-5 text-sm shadow-sm ring-1 ${
               pending ? "bg-amber-50 ring-amber-300" : "bg-white ring-slate-200"
             }`}
           >
@@ -223,13 +223,13 @@ function Adjustments({ rows }: { rows: AdjustmentRow[] }) {
               <div className="mt-3 flex gap-2">
                 <form action={approveAdjustment}>
                   <input type="hidden" name="adjustment_id" value={a.id} />
-                  <button className="rounded-lg bg-brand-600 px-4 py-2 font-semibold text-white hover:bg-brand-700">
+                  <button className="bg-brand-600 px-4 py-2 font-semibold text-white hover:bg-brand-700">
                     Approve {formatGBP(Number(a.to_price))}
                   </button>
                 </form>
                 <form action={rejectAdjustment}>
                   <input type="hidden" name="adjustment_id" value={a.id} />
-                  <button className="rounded-lg bg-white px-4 py-2 font-semibold text-slate-700 ring-1 ring-slate-300 hover:bg-slate-50">
+                  <button className="bg-white px-4 py-2 font-semibold text-slate-700 ring-1 ring-slate-300 hover:bg-slate-50">
                     Keep {formatGBP(Number(a.from_price))}
                   </button>
                 </form>

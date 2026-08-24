@@ -1,17 +1,13 @@
 import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
-import PriceShowcase from "@/components/PriceShowcase";
+import TrustShowcase, { ShowcaseCta } from "@/components/TrustShowcase";
 import HeroSearchBar from "@/components/HeroSearchBar";
 import PriceSteps from "@/components/PriceSteps";
 import { loadPricingAndAddons } from "@/lib/pricingServer";
 import {
-  recommendedHours,
-  quotePrice,
   formatGBP,
   formatDuration,
-  type RoomCounts,
-  type PricingConfig,
 } from "@/lib/pricing";
 
 export const metadata: Metadata = {
@@ -23,24 +19,6 @@ export const metadata: Metadata = {
 export const dynamic = "force-dynamic";
 
 /** Example homes for the price table — costed from the live config, never hardcoded. */
-const EXAMPLE_HOMES: { label: string; sub: string; rooms: RoomCounts }[] = [
-  {
-    label: "1 bedroom flat",
-    sub: "1 bedroom · 1 bathroom · 1 living room",
-    rooms: { bedrooms: 1, bathrooms: 1, diningRooms: 0, livingRooms: 1 },
-  },
-  {
-    label: "2 bedroom house",
-    sub: "2 bedrooms · 1 bathroom · 1 living room",
-    rooms: { bedrooms: 2, bathrooms: 1, diningRooms: 0, livingRooms: 1 },
-  },
-  {
-    label: "3 bedroom house",
-    sub: "3 bedrooms · 2 bathrooms · 1 living room",
-    rooms: { bedrooms: 3, bathrooms: 2, diningRooms: 0, livingRooms: 1 },
-  },
-];
-
 /**
  * The four things a standard clean covers, as an editorial sequence.
  *
@@ -137,15 +115,6 @@ const FAQS: { q: string; a: string }[] = [
   },
 ];
 
-function priceFor(rooms: RoomCounts, cfg: PricingConfig) {
-  const hours = recommendedHours(rooms, cfg);
-  return {
-    hours,
-    oneOff: quotePrice(hours, true, cfg, "one_off"),
-    recurring: quotePrice(hours, true, cfg, "fortnightly"),
-  };
-}
-
 export default async function Home() {
   const { cfg, addons } = await loadPricingAndAddons();
 
@@ -153,10 +122,6 @@ export default async function Home() {
     Math.round(
       cfg.hourlyRate * (1 - (cfg.discounts.fortnightly ?? 0) / 100) * 100,
     ) / 100;
-  const examples = EXAMPLE_HOMES.map((h) => ({
-    ...h,
-    ...priceFor(h.rooms, cfg),
-  }));
   const areas = cfg.serviceAreaPrefixes;
 
   return (
@@ -185,11 +150,11 @@ export default async function Home() {
               <a className="transition hover:text-white" href="#services">
                 Services
               </a>
-              <a className="transition hover:text-white" href="#pricing">
-                Pricing
-              </a>
               <a className="transition hover:text-white" href="#included">
                 What&apos;s included
+              </a>
+              <a className="transition hover:text-white" href="#pricing">
+                Pricing
               </a>
               <a className="transition hover:text-white" href="#faqs">
                 FAQs
@@ -314,103 +279,6 @@ export default async function Home() {
         </div>
       </section>
 
-      {/* ---------- pricing ---------- */}
-      <section id="pricing" className="scroll-mt-20 bg-slate-50 py-20 sm:py-24">
-        <div className="mx-auto max-w-[1400px]">
-          <div className="mx-auto max-w-6xl px-4">
-            <SectionHead
-              title="How your price is built"
-              sub="No callback, no guesswork. Here's exactly how we get to your number — the same four steps the quote form walks you through."
-            />
-
-            <PriceSteps cfg={cfg} />
-
-            {addons.length > 0 && (
-              <div className="mx-auto mt-12 max-w-3xl">
-                <h3 className="text-lg font-bold text-slate-900">
-                  Optional extras
-                </h3>
-                <p className="mt-1 text-sm text-slate-500">
-                  Add any of these to your clean — the price and the time are
-                  both added, so nothing else gets rushed.
-                </p>
-                <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  {addons.map((a) => (
-                    <div
-                      key={a.key}
-                      className="flex items-center justify-between gap-3 bg-white px-4 py-3 shadow-sm ring-1 ring-slate-200"
-                    >
-                      <span className="font-medium text-slate-700">
-                        {a.label}
-                      </span>
-                      <span className="shrink-0 font-semibold text-slate-900">
-                        {a.price > 0
-                          ? `+${formatGBP(a.price)}`
-                          : a.hours > 0
-                            ? `+${formatDuration(a.hours)}`
-                            : "Ask us"}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      </section>
-
-      {/* ---------- what cleaning costs: an editorial showcase, not a comparison table ----------
-           Stays dark so it still separates the two light sections either side.
-           Every figure below comes from `examples` / `addons` / `cfg` — nothing here
-           is a hard-coded price. */}
-      <section className="bg-slate-900">
-        <div className="mx-auto max-w-[1400px] px-6 py-20 sm:px-10 sm:py-24">
-          <div className="mx-auto max-w-2xl text-center">
-            <h2 className="font-display text-3xl font-bold tracking-tight text-white sm:text-4xl">
-              What cleaning usually costs
-            </h2>
-            <p className="mt-4 text-[15px] leading-relaxed text-white/60">
-              Every home is different, but these examples give you a realistic
-              idea of what to expect before you build your own quote.
-            </p>
-          </div>
-
-          {/* Click to expand: the wide "featured" panel is just the open one. */}
-          <div className="mt-12 lg:mt-14">
-            <PriceShowcase
-              examples={examples}
-              addons={addons.map((a) => ({
-                key: a.key,
-                label: a.label,
-                hours: a.hours,
-              }))}
-              hourlyRate={cfg.hourlyRate}
-              recurringRate={recurringRate}
-            />
-          </div>
-
-          <div className="mt-10 flex flex-col items-center gap-3 text-center">
-            <p className="max-w-xl text-xs leading-relaxed text-white/55">
-              Your exact price depends on your home and the time you choose. The
-              quote builder shows it before you book, at{" "}
-              {formatGBP(cfg.hourlyRate)}/hr one-off or{" "}
-              {formatGBP(recurringRate)}/hr regular, minimum visit{" "}
-              {cfg.minHours} hours
-              {cfg.productSurcharge > 0
-                ? `, products +${formatGBP(cfg.productSurcharge)}`
-                : ", cleaning products included"}
-              .
-            </p>
-            <Link
-              href="/quote"
-              className="text-sm font-semibold text-brand-300 underline-offset-4 transition hover:text-brand-200 hover:underline"
-            >
-              Build my quote &rarr;
-            </Link>
-          </div>
-        </div>
-      </section>
-
       {/* ---------- what's included: an editorial spread, not a feature grid ----------
            Deliberately the one asymmetric section on the page. It follows the dark
            pricing block, so the jump to white and photography is the point. */}
@@ -423,10 +291,7 @@ export default async function Home() {
               share a size or a baseline. */}
           {/* heading — left-aligned on purpose, unlike every other section head */}
           <div className="max-w-2xl">
-            <p className="text-sm font-medium tracking-wide text-brand-600">
-              What&apos;s included
-            </p>
-            <h2 className="mt-2 font-display text-3xl font-bold leading-[1.08] tracking-tight text-slate-900 lg:text-4xl">
+            <h2 className="font-display text-3xl font-bold leading-[1.08] tracking-tight text-slate-900 lg:text-4xl">
               Every room, every visit
             </h2>
             <p className="mt-3 max-w-lg text-[15px] leading-relaxed text-slate-600">
@@ -474,10 +339,80 @@ export default async function Home() {
         </div>
       </section>
 
+      {/* ---------- what you can count on ----------
+           Stays dark so it still separates the two light sections either side.
+           This block used to repeat the pricing above it; it now carries the
+           reasons to book that have nothing to do with the number. */}
+      <section className="bg-slate-900">
+        <div className="mx-auto max-w-[1400px] px-6 py-20 sm:px-10 sm:py-24">
+          <h2 className="mx-auto max-w-3xl text-center font-display text-3xl font-bold tracking-tight text-white sm:text-4xl">
+            What you can count on
+          </h2>
+          <div className="mt-7 flex flex-col items-center gap-6 sm:flex-row sm:justify-center sm:gap-12">
+            <p className="max-w-md text-[15px] leading-relaxed text-white/70 sm:text-left">
+              Getting the price right is the easy part. These are the things
+              that decide whether you keep us.
+            </p>
+            <ShowcaseCta />
+          </div>
+
+          {/* Click to expand: the wide "featured" panel is just the open one. */}
+          <div className="mt-12 lg:mt-14">
+            <TrustShowcase />
+          </div>
+
+        </div>
+      </section>
+
+      {/* ---------- pricing ---------- */}
+      <section id="pricing" className="scroll-mt-20 bg-slate-50 py-20 sm:py-24">
+        <div className="mx-auto max-w-[1400px]">
+          <div className="mx-auto max-w-6xl px-4">
+            <SectionHead
+              title="How your price is built"
+              sub="No callback, no guesswork. Here's exactly how we get to your number — the same four steps the quote form walks you through."
+            />
+
+            <PriceSteps cfg={cfg} />
+
+            {addons.length > 0 && (
+              <div className="mx-auto mt-12 max-w-3xl">
+                <h3 className="text-lg font-bold text-slate-900">
+                  Optional extras
+                </h3>
+                <p className="mt-1 text-sm text-slate-500">
+                  Add any of these to your clean — the price and the time are
+                  both added, so nothing else gets rushed.
+                </p>
+                <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  {addons.map((a) => (
+                    <div
+                      key={a.key}
+                      className="flex items-center justify-between gap-3 bg-white px-4 py-3 shadow-sm ring-1 ring-slate-200"
+                    >
+                      <span className="font-medium text-slate-700">
+                        {a.label}
+                      </span>
+                      <span className="shrink-0 font-semibold text-slate-900">
+                        {a.price > 0
+                          ? `+${formatGBP(a.price)}`
+                          : a.hours > 0
+                            ? `+${formatDuration(a.hours)}`
+                            : "Ask us"}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </section>
+
       {/* ---------- how it works ---------- */}
       <section
         id="how"
-        className="scroll-mt-20 border-y border-slate-100 bg-slate-50 py-14"
+        className="scroll-mt-20 py-16"
       >
         <div className="mx-auto max-w-6xl px-4">
           <SectionHead title="Three steps, no phone tag" />

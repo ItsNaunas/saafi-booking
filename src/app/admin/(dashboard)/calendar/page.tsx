@@ -123,7 +123,7 @@ export default async function CalendarPage({
         <div className="flex items-center gap-1">
           <Link
             href={href({ m: shiftMonth(month, -1) })}
-            className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm text-slate-600 hover:bg-slate-50"
+            className="border border-slate-200 bg-white px-2.5 py-1.5 text-sm text-slate-600 hover:bg-slate-50"
             aria-label="Previous month"
           >
             ←
@@ -131,7 +131,7 @@ export default async function CalendarPage({
           <span className="min-w-40 text-center text-sm font-semibold text-slate-800">{monthLabel}</span>
           <Link
             href={href({ m: shiftMonth(month, 1) })}
-            className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm text-slate-600 hover:bg-slate-50"
+            className="border border-slate-200 bg-white px-2.5 py-1.5 text-sm text-slate-600 hover:bg-slate-50"
             aria-label="Next month"
           >
             →
@@ -139,7 +139,7 @@ export default async function CalendarPage({
           {month !== todayStr.slice(0, 7) && (
             <Link
               href={href({ m: todayStr.slice(0, 7) })}
-              className="ml-1 rounded-lg px-2.5 py-1.5 text-sm font-medium text-brand-700 hover:bg-brand-50"
+              className="ml-1 px-2.5 py-1.5 text-sm font-medium text-brand-700 hover:bg-brand-50"
             >
               Today
             </Link>
@@ -160,30 +160,30 @@ export default async function CalendarPage({
 
       {/* month summary */}
       <div className="mb-4 flex flex-wrap items-center gap-2 text-sm">
-        <span className="rounded-lg bg-white px-3 py-1.5 shadow-sm ring-1 ring-slate-200">
+        <span className="bg-white px-3 py-1.5 shadow-sm ring-1 ring-slate-200">
           <span className="font-semibold text-slate-900">{monthRows.length}</span>{" "}
           <span className="text-slate-500">clean{monthRows.length === 1 ? "" : "s"}</span>
         </span>
-        <span className="rounded-lg bg-white px-3 py-1.5 shadow-sm ring-1 ring-slate-200">
+        <span className="bg-white px-3 py-1.5 shadow-sm ring-1 ring-slate-200">
           <span className="font-semibold text-brand-700">{formatGBP(monthValue)}</span>{" "}
           <span className="text-slate-500">booked value</span>
         </span>
         {unassigned > 0 && (
-          <span className="rounded-lg bg-amber-50 px-3 py-1.5 font-medium text-amber-800 ring-1 ring-amber-200">
+          <span className="bg-amber-50 px-3 py-1.5 font-medium text-amber-800 ring-1 ring-amber-200">
             {unassigned} unassigned
           </span>
         )}
         {feedUrl && (
           <details className="relative ml-auto text-xs">
-            <summary className="cursor-pointer list-none rounded-lg border border-slate-200 bg-white px-3 py-1.5 font-medium text-slate-600 hover:bg-slate-50">
+            <summary className="cursor-pointer list-none border border-slate-200 bg-white px-3 py-1.5 font-medium text-slate-600 hover:bg-slate-50">
               📅 Subscribe / export
             </summary>
-            <div className="absolute right-0 z-10 mt-1 w-80 rounded-xl border border-slate-200 bg-white p-3 text-slate-600 shadow-lg">
+            <div className="absolute right-0 z-10 mt-1 w-80 border border-slate-200 bg-white p-3 text-slate-600 shadow-lg">
               <p className="mb-2">
                 Add live cleans to Google/Apple Calendar — paste this secret URL as a subscribed calendar
                 {cleaner && cleaner !== "none" ? " (this cleaner only)" : ""}:
               </p>
-              <code className="block break-all rounded bg-slate-50 p-2 text-[11px] text-slate-700 ring-1 ring-slate-200">
+              <code className="block break-all bg-slate-50 p-2 text-[11px] text-slate-700 ring-1 ring-slate-200">
                 {feedUrl}
               </code>
               <div className="mt-2 flex gap-3">
@@ -200,7 +200,7 @@ export default async function CalendarPage({
       </div>
 
       {/* calendar grid */}
-      <div className="overflow-hidden rounded-xl bg-white shadow-sm ring-1 ring-slate-200">
+      <div className="overflow-hidden bg-white shadow-sm ring-1 ring-slate-200">
         <div className="grid grid-cols-7 border-b border-slate-200 bg-slate-50 text-center text-xs font-semibold uppercase tracking-wide text-slate-400">
           {WEEKDAYS.map((d) => (
             <div key={d} className="py-2">
@@ -334,7 +334,7 @@ function DayCell({
               key={b.id}
               href={`/admin/booking/${b.id}`}
               title={`${b.customer_name} · ${b.hours}h · ${b.status}${cn ? ` · ${cn}` : " · unassigned"} · ${b.postcode}`}
-              className={`block truncate rounded px-1.5 py-0.5 text-[11px] font-medium ring-1 ring-inset hover:brightness-95 ${STATUS_CHIP[b.status]}`}
+              className={`block truncate  px-1.5 py-0.5 text-[11px] font-medium ring-1 ring-inset hover:brightness-95 ${STATUS_CHIP[b.status]}`}
             >
               {b.customer_name.split(" ")[0]}
               {needsCleaner && <span className="ml-1 text-amber-500">●</span>}
@@ -366,7 +366,7 @@ function AgendaRow({
   return (
     <Link
       href={`/admin/booking/${b.id}`}
-      className="flex items-center gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm hover:bg-slate-50"
+      className="flex items-center gap-3 border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm hover:bg-slate-50"
     >
       <div className="w-14 shrink-0 text-center">
         <div className="text-[10px] font-medium uppercase text-slate-400">

@@ -32,7 +32,7 @@ export default async function LoginPage({
     <main className="flex min-h-screen items-center justify-center bg-slate-50 px-4">
       <form
         action={login}
-        className="w-full max-w-sm rounded-2xl bg-white p-8 shadow-lg ring-1 ring-slate-200"
+        className="w-full max-w-sm bg-white p-8 shadow-lg ring-1 ring-slate-200"
       >
         <h1 className="text-xl font-bold text-slate-900">
           SAAFI <span className="text-brand-600">Admin</span>
@@ -43,16 +43,16 @@ export default async function LoginPage({
           name="password"
           placeholder="Password"
           autoFocus
-          className="w-full rounded-xl border border-slate-300 px-4 py-2.5 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-200"
+          className="w-full border border-slate-300 px-4 py-2.5 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-200"
         />
         {error && (
-          <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm font-medium text-red-700">
+          <p className="mt-3 bg-red-50 px-3 py-2 text-sm font-medium text-red-700">
             Wrong password — try again.
           </p>
         )}
         <button
           type="submit"
-          className="mt-4 w-full rounded-xl bg-brand-600 py-2.5 font-semibold text-white transition hover:bg-brand-700"
+          className="mt-4 w-full bg-brand-600 py-2.5 font-semibold text-white transition hover:bg-brand-700"
         >
           Sign in
         </button>

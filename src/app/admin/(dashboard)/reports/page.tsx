@@ -45,7 +45,7 @@ export default async function ReportsPage() {
       </div>
 
       <div className="mt-6 grid gap-6 lg:grid-cols-2">
-        <section className="rounded-xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
+        <section className="bg-white p-5 shadow-sm ring-1 ring-slate-200">
           <h2 className="mb-3 font-semibold text-slate-800">Revenue by month (paid)</h2>
           {months.length === 0 && <p className="text-sm text-slate-400">No paid bookings yet.</p>}
           <div className="space-y-2">
@@ -54,9 +54,9 @@ export default async function ReportsPage() {
               return (
                 <div key={m} className="flex items-center gap-3 text-sm">
                   <span className="w-16 text-slate-500">{m}</span>
-                  <div className="h-4 flex-1 rounded bg-slate-100">
+                  <div className="h-4 flex-1 bg-slate-100">
                     <div
-                      className="h-4 rounded bg-brand-500"
+                      className="h-4 bg-brand-500"
                       style={{ width: `${Math.max(4, (v / max) * 100)}%` }}
                     />
                   </div>
@@ -67,7 +67,7 @@ export default async function ReportsPage() {
           </div>
         </section>
 
-        <section className="rounded-xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
+        <section className="bg-white p-5 shadow-sm ring-1 ring-slate-200">
           <h2 className="mb-3 font-semibold text-slate-800">Bookings by status</h2>
           <div className="space-y-2 text-sm">
             {statusCounts.map(({ s, n }) => (
@@ -85,7 +85,7 @@ export default async function ReportsPage() {
 
 function Stat({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
-    <div className="rounded-xl bg-white p-4 shadow-sm ring-1 ring-slate-200">
+    <div className="bg-white p-4 shadow-sm ring-1 ring-slate-200">
       <div className="text-xs font-medium uppercase tracking-wide text-slate-400">{label}</div>
       <div className="mt-1 text-2xl font-bold text-slate-900">{value}</div>
       {sub && <div className="text-xs text-slate-500">{sub}</div>}

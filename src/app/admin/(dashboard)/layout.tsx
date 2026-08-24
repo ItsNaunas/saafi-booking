@@ -24,7 +24,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                 <Link
                   key={n.href}
                   href={n.href}
-                  className="rounded-lg px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                  className="px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900"
                 >
                   {n.label}
                 </Link>
@@ -32,7 +32,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             </nav>
           </div>
           <form action={logout}>
-            <button className="rounded-lg px-3 py-1.5 text-sm font-medium text-slate-500 hover:bg-slate-100">
+            <button className="px-3 py-1.5 text-sm font-medium text-slate-500 hover:bg-slate-100">
               Sign out
             </button>
           </form>

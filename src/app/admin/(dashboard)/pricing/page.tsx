@@ -33,7 +33,7 @@ export default async function PricingPage() {
         <p className="mb-4 text-sm text-slate-500">
           Changes go live on the quote form within a minute — no developer needed.
         </p>
-        <form action={savePricing} className="rounded-xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
+        <form action={savePricing} className="bg-white p-5 shadow-sm ring-1 ring-slate-200">
           <div className="grid gap-4 sm:grid-cols-2">
             {FIELDS.map((f) => (
               <label key={f.key} className="block">
@@ -44,13 +44,13 @@ export default async function PricingPage() {
                   step={f.step}
                   min="0"
                   defaultValue={values[f.key] ?? ""}
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-200"
+                  className="w-full border border-slate-300 px-3 py-2 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-200"
                 />
                 {f.hint && <span className="mt-0.5 block text-xs text-slate-400">{f.hint}</span>}
               </label>
             ))}
           </div>
-          <button className="mt-5 rounded-xl bg-brand-600 px-5 py-2.5 font-semibold text-white hover:bg-brand-700">
+          <button className="mt-5 bg-brand-600 px-5 py-2.5 font-semibold text-white hover:bg-brand-700">
             Save pricing
           </button>
         </form>
@@ -62,7 +62,7 @@ export default async function PricingPage() {
           Postcode prefixes you cover (e.g. IG, RM, E1). Leave the list empty to accept
           any UK postcode.
         </p>
-        <div className="rounded-xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
+        <div className="bg-white p-5 shadow-sm ring-1 ring-slate-200">
           <div className="flex flex-wrap gap-2">
             {prefixes.length === 0 && (
               <span className="text-sm text-slate-400">No restrictions — serving everywhere.</span>
@@ -85,9 +85,9 @@ export default async function PricingPage() {
               name="prefix"
               placeholder="e.g. IG"
               maxLength={4}
-              className="w-32 rounded-lg border border-slate-300 px-3 py-2 uppercase outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-200"
+              className="w-32 border border-slate-300 px-3 py-2 uppercase outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-200"
             />
-            <button className="rounded-xl bg-slate-800 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-900">
+            <button className="bg-slate-800 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-900">
               Add area
             </button>
           </form>
@@ -103,7 +103,7 @@ export default async function PricingPage() {
             <form
               key={a.key}
               action={saveAddon}
-              className="rounded-xl bg-white p-4 shadow-sm ring-1 ring-slate-200"
+              className="bg-white p-4 shadow-sm ring-1 ring-slate-200"
             >
               <input type="hidden" name="key" value={a.key} />
               <div className="grid gap-3 sm:grid-cols-[1fr_6rem_6rem_auto_auto] sm:items-end">
@@ -112,7 +112,7 @@ export default async function PricingPage() {
                   <input
                     name="label"
                     defaultValue={a.label}
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-200"
+                    className="w-full border border-slate-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-200"
                   />
                 </label>
                 <label className="block">
@@ -123,7 +123,7 @@ export default async function PricingPage() {
                     step="0.5"
                     min="0"
                     defaultValue={a.price}
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-200"
+                    className="w-full border border-slate-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-200"
                   />
                 </label>
                 <label className="block">
@@ -134,14 +134,14 @@ export default async function PricingPage() {
                     step="0.25"
                     min="0"
                     defaultValue={a.hours}
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-200"
+                    className="w-full border border-slate-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-200"
                   />
                 </label>
                 <label className="flex items-center gap-2 pb-2 text-sm text-slate-700">
                   <input type="checkbox" name="active" defaultChecked={a.active} />
                   Active
                 </label>
-                <button className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700">
+                <button className="bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700">
                   Save
                 </button>
               </div>

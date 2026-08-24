@@ -11,7 +11,7 @@ export default async function CustomersPage() {
       {customers.length === 0 && (
         <p className="text-slate-500">No customers yet — they appear automatically with their first booking.</p>
       )}
-      <div className="overflow-x-auto rounded-xl bg-white shadow-sm ring-1 ring-slate-200">
+      <div className="overflow-x-auto bg-white shadow-sm ring-1 ring-slate-200">
         <table className="w-full text-left text-sm">
           <thead className="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-400">
             <tr>

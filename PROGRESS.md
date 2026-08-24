@@ -1,8 +1,27 @@
 # PROGRESS — SAAFI Booking CRM
 
-*Updated: 2026-08-21 (repriced to the costing sheet; price adjustments built)*
+*Updated: 2026-08-24 (landing page content audit; repriced; price adjustments built)*
 
 **State: Phases 1 + 2 + Tier A LIVE at https://saafi-booking.vercel.app.**
+
+**2026-08-24 — landing page content audit acted on.**
+- The page was selling the *booking*, not the cleaning. Every benefit on it was a transaction benefit (instant price, no callback, no card) and the same claim appeared in up to eight places.
+- **The dark five-panel section keeps its layout and loses its content.** It repeated the pricing section directly above it; it now carries the reasons to book that have nothing to do with the number: products included, the same slot every time, honest hours, you approve any change, family-run not an agency (`src/components/TrustShowcase.tsx`, replaces `PriceShowcase.tsx`).
+- Every claim in it is verifiable from the product itself. **Vetting, insurance and a re-clean guarantee are deliberately absent** until SAAFI confirm what they can commit to — those are the three strongest panels available.
+- **Dropped the three worked price examples.** The live builder defaults to a 3-bed and shows a real figure, so static examples were repetition. `EXAMPLE_HOMES`, `priceFor` and `examples` are gone.
+- **Optional extras is rendered once**, in the pricing section. It was in two places about 200px apart.
+- **Reordered:** hero, plan picker, what's included, what you can count on, pricing, three steps, FAQs, CTA. Was price-price-price-then-what-you-get. Nav order follows. "Three steps" went white so it doesn't merge into the tinted pricing band above it.
+- Repetition after: recurring rate rendered 2x (was 5), saving 1x (was 4), extras 1x (was 2).
+- **Still open:** seven "see your price instantly" style claims across hero, plan picker, pricing subhead, steps, FAQs and the closing CTA. That is a copy pass, not a structural one. Two FAQs ("How do you work out the price?", "How long will you stay?") are now answered visually by the pricing section.
+
+**2026-08-22 — landing page: editorial redesign of two sections.**
+- **"Every room, every visit"** is no longer a checklist. Asymmetric composition of four circular blocks at four sizes on four baselines, heading left-aligned (the one section head that isn't centred), sized to one viewport via `min-h-svh`.
+- **"What a typical home works out at"** is now **"What cleaning usually costs"**: a five-panel expandable showcase (`src/components/PriceShowcase.tsx`, client component). The wide "featured" panel is just the open one — clicking animates `flex-grow`, the title rises, a white detail block reveals, and the open tile lifts slightly out of the row. Snap-scroll carousel below `lg` with the detail always visible, so prices are never behind an interaction.
+- Every figure still comes from `examples` / `addons` / `cfg`. No pricing was hard-coded or invented. `formatDuration` moved to `lib/pricing` so both the server page and the client showcase can use it.
+- **All corners squared** across the public site except pills and circular icons (`rounded-full`), per client direction.
+- Fixed a live text bug from the repricing: the products line rendered "+£0" once the surcharge went to zero.
+- Photography slots are wired but empty — one photo exists in the project (`hero-cleaner.jpg`). Set `image` on an `EXAMPLE_HOMES` or `ROOMS` entry and that panel becomes a photograph with overlay, hover scale and open/closed brightness already handled.
+- Impeccable design detector clean; build, typecheck and lint clean.
 
 **2026-08-21 — repriced to SAAFI's costing sheet.**
 - Sheet (2026-08-18, `Saafi` > Pricing tab) supersedes the 2026-07-29 spec doc. Cleaner pay £15/h; **customer pays £24/h one-off, £21.75/h recurring** (9.375% off, was £25/£22.50).

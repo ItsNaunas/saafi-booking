@@ -129,7 +129,7 @@ export default function PriceSteps({ cfg }: { cfg: PricingConfig }) {
           </p>
           <Link
             href={quoteHref}
-            className="mt-3 inline-block rounded-lg bg-brand-600 px-3.5 py-1.5 text-[11px] font-bold text-white transition hover:bg-brand-700"
+            className="mt-3 inline-block rounded-full bg-brand-600 px-4 py-1.5 text-[11px] font-bold text-white transition hover:bg-brand-700"
           >
             Book this clean
           </Link>
@@ -179,7 +179,7 @@ export default function PriceSteps({ cfg }: { cfg: PricingConfig }) {
         <ol className="relative z-10 grid gap-10 sm:grid-cols-2 lg:grid-cols-4 lg:gap-7">
           {panels.map((p, i) => (
             <li key={p.label} className={`step-rise ${i % 2 === 1 ? "lg:mt-24" : ""}`}>
-              <div className="flex min-h-[132px] items-center rounded-2xl bg-white p-4 shadow-lg shadow-slate-200/60 ring-1 ring-slate-200">
+              <div className="flex min-h-[132px] items-center bg-white p-4 shadow-lg shadow-slate-200/60 ring-1 ring-slate-200">
                 <div className="w-full">{p.body}</div>
               </div>
               <p className="mt-4 text-sm font-bold text-slate-900">
@@ -265,7 +265,7 @@ function MiniOption({
       type="button"
       onClick={onClick}
       aria-pressed={selected}
-      className={`flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-[11px] font-medium transition ${
+      className={`flex w-full items-center justify-between  px-2.5 py-1.5 text-[11px] font-medium transition ${
         selected
           ? "bg-brand-50 font-bold text-brand-800 ring-1 ring-brand-300"
           : "bg-slate-50 text-slate-500 hover:bg-slate-100 hover:text-slate-700"

@@ -64,7 +64,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 }
 
 function Empty({ text }: { text: string }) {
-  return <p className="rounded-xl bg-white p-4 text-sm text-slate-400 ring-1 ring-slate-200">{text}</p>;
+  return <p className="bg-white p-4 text-sm text-slate-400 ring-1 ring-slate-200">{text}</p>;
 }
 
 function JobCard({
@@ -87,7 +87,7 @@ function JobCard({
   const soFar = j.started_at ? elapsedHours(j.started_at, new Date().toISOString()) : 0;
 
   return (
-    <article className={`rounded-xl bg-white p-4 shadow-sm ring-1 ring-slate-200 ${done ? "opacity-60" : ""}`}>
+    <article className={` bg-white p-4 shadow-sm ring-1 ring-slate-200 ${done ? "opacity-60" : ""}`}>
       <div className="flex items-baseline justify-between">
         <span className="font-semibold text-slate-900">{j.customer_name}</span>
         <span className="text-sm text-slate-500">
@@ -106,7 +106,7 @@ function JobCard({
           Extras: {j.addons.map((a) => a.label).join(", ")}
         </div>
       )}
-      {j.notes && <p className="mt-1 rounded bg-amber-50 px-2 py-1 text-sm text-amber-800">{j.notes}</p>}
+      {j.notes && <p className="mt-1 bg-amber-50 px-2 py-1 text-sm text-amber-800">{j.notes}</p>}
 
       <div className="mt-2 flex items-center gap-3">
         <a href={`tel:${j.customer_phone}`} className="text-sm font-medium text-brand-700 hover:underline">
@@ -123,14 +123,14 @@ function JobCard({
         <form action={cleanerStartJob} className="mt-3">
           <input type="hidden" name="token" value={token} />
           <input type="hidden" name="booking_id" value={j.id} />
-          <button className="w-full rounded-lg bg-brand-600 px-4 py-3 text-base font-semibold text-white hover:bg-brand-700">
+          <button className="w-full rounded-full bg-brand-600 px-4 py-3 text-base font-semibold text-white hover:bg-brand-700">
             ▶ Start job
           </button>
         </form>
       )}
 
       {running && (
-        <form action={cleanerFinishJob} className="mt-3 rounded-lg bg-slate-50 p-3 ring-1 ring-slate-200">
+        <form action={cleanerFinishJob} className="mt-3 bg-slate-50 p-3 ring-1 ring-slate-200">
           <input type="hidden" name="token" value={token} />
           <input type="hidden" name="booking_id" value={j.id} />
 
@@ -150,7 +150,7 @@ function JobCard({
               step="0.25"
               min="0.25"
               defaultValue={String(soFar > 0 ? soFar : booked)}
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-base"
+              className="w-full border border-slate-300 px-3 py-2 text-base"
             />
           </label>
 
@@ -161,7 +161,7 @@ function JobCard({
             <select
               name="reason_code"
               defaultValue=""
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-base"
+              className="w-full border border-slate-300 px-3 py-2 text-base"
             >
               <option value="">Ran to time</option>
               {REASONS.map((r) => (
@@ -178,11 +178,11 @@ function JobCard({
               type="text"
               name="note"
               placeholder="e.g. two extra bedrooms"
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-base"
+              className="w-full border border-slate-300 px-3 py-2 text-base"
             />
           </label>
 
-          <button className="mt-3 w-full rounded-lg bg-brand-600 px-4 py-3 text-base font-semibold text-white hover:bg-brand-700">
+          <button className="mt-3 w-full rounded-full bg-brand-600 px-4 py-3 text-base font-semibold text-white hover:bg-brand-700">
             ✓ Finish job
           </button>
           <p className="mt-2 text-xs text-slate-500">

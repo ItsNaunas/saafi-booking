@@ -14,7 +14,7 @@ export default async function NewBookingPage({
       <p className="mb-4 text-sm text-slate-500">
         For phone bookings — goes straight in as <b>confirmed</b>.
       </p>
-      <form action={createManualBooking} className="rounded-xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
+      <form action={createManualBooking} className="bg-white p-5 shadow-sm ring-1 ring-slate-200">
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Customer name *" name="name" />
           <Field label="Phone *" name="phone" type="tel" />
@@ -28,7 +28,7 @@ export default async function NewBookingPage({
             <span className="mb-1 block text-sm font-medium text-slate-700">Frequency</span>
             <select
               name="frequency"
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-brand-500"
+              className="w-full border border-slate-300 px-3 py-2 outline-none focus:border-brand-500"
             >
               <option value="one_off">One-off</option>
               <option value="weekly">Weekly</option>
@@ -41,16 +41,16 @@ export default async function NewBookingPage({
             <textarea
               name="notes"
               rows={2}
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-brand-500"
+              className="w-full border border-slate-300 px-3 py-2 outline-none focus:border-brand-500"
             />
           </label>
         </div>
         {error && (
-          <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm font-medium text-red-700">
+          <p className="mt-3 bg-red-50 px-3 py-2 text-sm font-medium text-red-700">
             Name, phone and date are required.
           </p>
         )}
-        <button className="mt-5 rounded-xl bg-brand-600 px-5 py-2.5 font-semibold text-white hover:bg-brand-700">
+        <button className="mt-5 bg-brand-600 px-5 py-2.5 font-semibold text-white hover:bg-brand-700">
           Create booking
         </button>
       </form>
@@ -85,7 +85,7 @@ function Field({
         type={type}
         step={step}
         defaultValue={defaultValue}
-        className="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-200"
+        className="w-full border border-slate-300 px-3 py-2 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-200"
       />
     </label>
   );

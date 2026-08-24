@@ -60,12 +60,12 @@ export default async function PipelinePage({
               name="q"
               defaultValue={q ?? ""}
               placeholder="Search name, phone, postcode…"
-              className="w-56 rounded-lg border border-slate-300 px-3 py-1.5 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-200"
+              className="w-56 border border-slate-300 px-3 py-1.5 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-200"
             />
           </form>
           <Link
             href="/admin/new"
-            className="rounded-lg bg-brand-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-brand-700"
+            className="bg-brand-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-brand-700"
           >
             + New booking
           </Link>
@@ -73,7 +73,7 @@ export default async function PipelinePage({
       </div>
 
       {pendingAdjustments.length > 0 && (
-        <div className="mb-4 rounded-xl bg-amber-50 p-4 ring-1 ring-amber-300">
+        <div className="mb-4 bg-amber-50 p-4 ring-1 ring-amber-300">
           <h2 className="font-semibold text-amber-900">
             {pendingAdjustments.length} price change
             {pendingAdjustments.length === 1 ? "" : "s"} waiting for you
@@ -101,7 +101,7 @@ export default async function PipelinePage({
           return (
             <section
               key={col.status}
-              className="rounded-xl bg-white p-3 shadow-sm ring-1 ring-slate-200"
+              className="bg-white p-3 shadow-sm ring-1 ring-slate-200"
             >
               <h2 className="mb-3 flex items-center justify-between px-1 font-semibold text-slate-800">
                 <span className="flex items-center gap-2">
@@ -143,9 +143,9 @@ function BookingCard({ b, cleaners }: { b: BookingRow; cleaners: CleanerRow[] })
   const needsCleaner = !b.cleaner_id && (b.status === "requested" || b.status === "confirmed");
   const cleaner = b.cleaner_id ? cleaners.find((c) => c.id === b.cleaner_id) : null;
   return (
-    <details className="group rounded-lg border border-slate-200 bg-white text-sm shadow-sm open:ring-1 open:ring-brand-200">
+    <details className="group border border-slate-200 bg-white text-sm shadow-sm open:ring-1 open:ring-brand-200">
       {/* collapsed row: everything you triage at a glance */}
-      <summary className="flex cursor-pointer list-none items-center justify-between gap-2 rounded-lg p-3 hover:bg-slate-50">
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-2 p-3 hover:bg-slate-50">
         <div className="min-w-0">
           <div className="flex items-center gap-1.5">
             <span className="truncate font-semibold text-slate-900">{b.customer_name}</span>
@@ -200,7 +200,7 @@ function BookingCard({ b, cleaners }: { b: BookingRow; cleaners: CleanerRow[] })
           </a>
           {cleaner && <span className="text-slate-500"> · {cleaner.name}</span>}
         </div>
-        {b.notes && <p className="mt-1 rounded bg-slate-50 px-2 py-1 text-xs text-slate-500">{b.notes}</p>}
+        {b.notes && <p className="mt-1 bg-slate-50 px-2 py-1 text-xs text-slate-500">{b.notes}</p>}
 
       {cleaners.length > 0 && b.status !== "cancelled" && b.status !== "paid" && (
         <form action={assignCleaner} className="mt-2 flex items-center gap-1">
@@ -208,7 +208,7 @@ function BookingCard({ b, cleaners }: { b: BookingRow; cleaners: CleanerRow[] })
           <select
             name="cleaner_id"
             defaultValue={b.cleaner_id ?? ""}
-            className="w-full rounded-lg border border-slate-200 px-2 py-1 text-xs text-slate-600"
+            className="w-full border border-slate-200 px-2 py-1 text-xs text-slate-600"
           >
             <option value="">Unassigned</option>
             {cleaners.map((c) => (
@@ -217,7 +217,7 @@ function BookingCard({ b, cleaners }: { b: BookingRow; cleaners: CleanerRow[] })
               </option>
             ))}
           </select>
-          <button className="rounded-lg bg-slate-100 px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-200">
+          <button className="bg-slate-100 px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-200">
             Set
           </button>
         </form>
@@ -229,7 +229,7 @@ function BookingCard({ b, cleaners }: { b: BookingRow; cleaners: CleanerRow[] })
             <input type="hidden" name="id" value={b.id} />
             <input type="hidden" name="from" value={b.status} />
             <input type="hidden" name="to" value={next.to} />
-            <button className="rounded-lg bg-brand-600 px-3 py-1 text-xs font-semibold text-white hover:bg-brand-700">
+            <button className="bg-brand-600 px-3 py-1 text-xs font-semibold text-white hover:bg-brand-700">
               {next.label}
             </button>
           </form>
@@ -237,7 +237,7 @@ function BookingCard({ b, cleaners }: { b: BookingRow; cleaners: CleanerRow[] })
         {isRecurring && b.recurring_active && b.status !== "cancelled" && (
           <form action={stopRecurring}>
             <input type="hidden" name="id" value={b.id} />
-            <button className="rounded-lg px-3 py-1 text-xs font-medium text-slate-400 hover:bg-slate-100" title="No further cleans will be auto-booked after this one">
+            <button className="px-3 py-1 text-xs font-medium text-slate-400 hover:bg-slate-100" title="No further cleans will be auto-booked after this one">
               Stop recurring
             </button>
           </form>
@@ -248,7 +248,7 @@ function BookingCard({ b, cleaners }: { b: BookingRow; cleaners: CleanerRow[] })
             <input type="hidden" name="from" value={b.status} />
             <input type="hidden" name="to" value="cancelled" />
             {/* impeccable-disable-next-line gray-on-color -- text turns red-600 on the same hover */}
-            <button className="rounded-lg px-3 py-1 text-xs font-medium text-slate-400 hover:bg-red-50 hover:text-red-600">
+            <button className="px-3 py-1 text-xs font-medium text-slate-400 hover:bg-red-50 hover:text-red-600">
               Cancel
             </button>
           </form>
@@ -258,7 +258,7 @@ function BookingCard({ b, cleaners }: { b: BookingRow; cleaners: CleanerRow[] })
             <input type="hidden" name="id" value={b.id} />
             <input type="hidden" name="from" value="cancelled" />
             <input type="hidden" name="to" value="requested" />
-            <button className="rounded-lg px-3 py-1 text-xs font-medium text-slate-500 hover:bg-slate-100">
+            <button className="px-3 py-1 text-xs font-medium text-slate-500 hover:bg-slate-100">
               Re-open
             </button>
           </form>
