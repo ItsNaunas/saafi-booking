@@ -20,25 +20,18 @@ import {
 } from "@/lib/pricing";
 import { formatTime, formatTimeRange, type Slot } from "@/lib/scheduling";
 
-type RoomKey = keyof RoomCounts;
-
-const ROOM_FIELDS: { key: RoomKey; label: string; max: number }[] = [
-  { key: "bedrooms", label: "Bedrooms", max: 10 },
-  { key: "bathrooms", label: "Bathrooms", max: 6 },
-  { key: "livingRooms", label: "Living rooms", max: 4 },
-  { key: "diningRooms", label: "Dining rooms", max: 4 },
-];
-
 /** Which field a validation message belongs to, so it can be shown in place. */
 type FieldKey = "postcode" | "date" | "time" | "name" | "email" | "phone" | "address";
 
 /**
- * The whole quote on one page.
+ * The whole quote on one page, kept as short as it can honestly be.
  *
- * Everything is visible at once and the price alongside updates as it is filled
- * in. The only thing that appears progressively is the list of start times,
- * which genuinely cannot be known until there is a date and a duration to look
- * them up with.
+ * Only what changes the price is asked outright: postcode, bedrooms, bathrooms.
+ * Living and dining rooms, extras and notes are folded away because their
+ * defaults are right for most homes, and the products question only appears
+ * while there is actually a surcharge to choose between. Start times are the one
+ * thing that has to appear late — they cannot be known before there is a date
+ * and a duration to look them up with.
  */
 export default function QuoteWizard({
   cfg = pricingConfig,
@@ -306,7 +299,7 @@ export default function QuoteWizard({
       </aside>
 
       <form ref={formRef} onSubmit={submit} noValidate className="space-y-5">
-        {/* ---------- your home ---------- */}
+        {/* ---------- home + length ---------- */}
         <Section title="Your home" sub="Kitchen, hallways and landings are always included.">
           <Field label="Postcode" error={errors.postcode}>
             <div className="relative">
@@ -322,86 +315,121 @@ export default function QuoteWizard({
                 }`}
               />
               <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs font-medium">
-                {postcodeState === "checking" && <span className="text-slate-400">checking&hellip;</span>}
+                {postcodeState === "checking" && (
+                  <span className="text-slate-400">checking&hellip;</span>
+                )}
                 {postcodeState === "ok" && <span className="text-brand-600">✓ covered</span>}
                 {postcodeState === "unknown" && <span className="text-amber-600">not found</span>}
               </span>
             </div>
           </Field>
 
+          {/* The two rooms that decide most of the price. */}
           <div className="mt-4 grid gap-x-6 gap-y-3 sm:grid-cols-2">
-            {ROOM_FIELDS.map((f) => (
+            <Counter
+              label="Bedrooms"
+              value={rooms.bedrooms}
+              max={10}
+              onChange={(v) => setRooms({ ...rooms, bedrooms: v })}
+            />
+            <Counter
+              label="Bathrooms"
+              value={rooms.bathrooms}
+              max={6}
+              onChange={(v) => setRooms({ ...rooms, bathrooms: v })}
+            />
+          </div>
+
+          {/* Almost every home is 1 living / 0 dining, so these are folded away
+              rather than made compulsory. They still price when opened. */}
+          <Disclosure
+            summary={`Living and dining rooms (${rooms.livingRooms} + ${rooms.diningRooms})`}
+          >
+            <div className="grid gap-x-6 gap-y-3 sm:grid-cols-2">
               <Counter
-                key={f.key}
-                label={f.label}
-                value={rooms[f.key]}
-                max={f.max}
-                onChange={(v) => setRooms({ ...rooms, [f.key]: v })}
+                label="Living rooms"
+                value={rooms.livingRooms}
+                max={4}
+                onChange={(v) => setRooms({ ...rooms, livingRooms: v })}
               />
-            ))}
-          </div>
-        </Section>
-
-        {/* ---------- the clean ---------- */}
-        <Section
-          title="Your clean"
-          sub={`We suggest ${recommended} hours for a home this size. Move it if you'd rather.`}
-        >
-          <div className="flex items-center justify-center gap-6 py-1">
-            <RoundBtn
-              label="Fewer hours"
-              onClick={() => setHours(clampHours(chosenHours - 0.5, cfg))}
-              disabled={chosenHours <= cfg.minHours}
-            >
-              −
-            </RoundBtn>
-            <div className="text-center">
-              <div className="tnum text-4xl font-bold text-slate-900">{chosenHours}h</div>
-              {chosenHours === recommended ? (
-                <div className="text-xs font-medium text-brand-600">recommended</div>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => setHours(null)}
-                  className="text-xs font-medium text-slate-400 underline underline-offset-2 hover:text-brand-600"
-                >
-                  reset to {recommended}h
-                </button>
-              )}
+              <Counter
+                label="Dining rooms"
+                value={rooms.diningRooms}
+                max={4}
+                onChange={(v) => setRooms({ ...rooms, diningRooms: v })}
+              />
             </div>
-            <RoundBtn
-              label="More hours"
-              onClick={() => setHours(clampHours(chosenHours + 0.5, cfg))}
-              disabled={chosenHours >= cfg.maxHours}
-            >
-              +
-            </RoundBtn>
+          </Disclosure>
+
+          {/* Hours follow the rooms — a nudge, not a question. */}
+          <div className="mt-4 flex items-center justify-between gap-4 border-t border-slate-100 pt-4">
+            <div>
+              <p className="text-sm font-medium text-slate-700">How long we&apos;ll stay</p>
+              <p className="text-xs text-slate-500">
+                {chosenHours === recommended ? (
+                  "Recommended for a home this size"
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setHours(null)}
+                    className="underline underline-offset-2 hover:text-brand-600"
+                  >
+                    reset to {recommended}h
+                  </button>
+                )}
+              </p>
+            </div>
+            <span className="flex shrink-0 items-center gap-3">
+              <RoundBtn
+                small
+                label="Fewer hours"
+                onClick={() => setHours(clampHours(chosenHours - 0.5, cfg))}
+                disabled={chosenHours <= cfg.minHours}
+              >
+                −
+              </RoundBtn>
+              <span className="tnum w-12 text-center text-xl font-bold text-slate-900">
+                {chosenHours}h
+              </span>
+              <RoundBtn
+                small
+                label="More hours"
+                onClick={() => setHours(clampHours(chosenHours + 0.5, cfg))}
+                disabled={chosenHours >= cfg.maxHours}
+              >
+                +
+              </RoundBtn>
+            </span>
           </div>
 
-          <div className="mt-5 grid gap-3 sm:grid-cols-2">
-            <ChoiceCard
-              active={customerProvidesProducts}
-              title="I'll provide products"
-              subtitle="Use what's already at home"
-              onClick={() => setCustomerProvidesProducts(true)}
-            />
-            <ChoiceCard
-              active={!customerProvidesProducts}
-              title="Bring your products"
-              subtitle={
-                cfg.productSurcharge > 0
-                  ? `Fully stocked (+${formatGBP(cfg.productSurcharge)})`
-                  : "Fully stocked, no extra charge"
-              }
-              onClick={() => setCustomerProvidesProducts(false)}
-            />
-          </div>
+          {/* Only worth asking while it changes the price. At a £0 surcharge it
+              was a question that did nothing. */}
+          {cfg.productSurcharge > 0 && (
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              <ChoiceCard
+                active={customerProvidesProducts}
+                title="I'll provide products"
+                subtitle="Use what's already at home"
+                onClick={() => setCustomerProvidesProducts(true)}
+              />
+              <ChoiceCard
+                active={!customerProvidesProducts}
+                title="Bring your products"
+                subtitle={`Fully stocked (+${formatGBP(cfg.productSurcharge)})`}
+                onClick={() => setCustomerProvidesProducts(false)}
+              />
+            </div>
+          )}
 
           {addons.length > 0 && (
-            <>
-              <p className="mb-2 mt-5 text-sm font-medium text-slate-700">
-                Extras <span className="font-normal text-slate-400">(optional)</span>
-              </p>
+            <Disclosure
+              summary={
+                chosenAddons.length > 0
+                  ? `Extras — ${chosenAddons.map((a) => a.label).join(", ")}`
+                  : `Add extras (${addons.length} available)`
+              }
+              open={chosenAddons.length > 0}
+            >
               <div className="grid gap-2 sm:grid-cols-2">
                 {addons.map((a) => {
                   const on = selectedAddons.includes(a.key);
@@ -417,7 +445,7 @@ export default function QuoteWizard({
                             : [...selectedAddons, a.key]
                         )
                       }
-                      className={`flex items-center justify-between border-2 px-3 py-2.5 text-left text-sm transition ${
+                      className={`flex items-center justify-between border-2 px-3 py-2 text-left text-sm transition ${
                         on
                           ? "border-brand-500 bg-brand-50"
                           : "border-slate-200 hover:border-slate-300"
@@ -426,57 +454,66 @@ export default function QuoteWizard({
                       <span className="font-medium text-slate-800">{a.label}</span>
                       <span className={on ? "font-semibold text-brand-700" : "text-slate-500"}>
                         {a.price > 0 ? `+${formatGBP(a.price)}` : `+${formatDuration(a.hours)}`}
-                        {a.price > 0 && a.hours > 0 && (
-                          <span className="ml-1 text-xs font-normal text-slate-400">
-                            · +{formatDuration(a.hours)}
-                          </span>
-                        )}
                       </span>
                     </button>
                   );
                 })}
               </div>
-            </>
+            </Disclosure>
           )}
         </Section>
 
-        {/* ---------- how often ---------- */}
-        <Section title="How often?" sub="Regular cleans get a discount on every visit.">
-          <div className="grid gap-2 sm:grid-cols-2">
+        {/* ---------- when ---------- */}
+        <Section title="When?" sub="How often, then the day and time.">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
             {(Object.keys(FREQUENCY_LABEL) as Frequency[]).map((f) => {
               const pct = cfg.discounts[f] ?? 0;
               const perClean = quotePrice(totalHours, customerProvidesProducts, cfg, f, addonsTotal);
+              const on = frequency === f;
               return (
-                <ChoiceCard
+                <button
                   key={f}
-                  active={frequency === f}
-                  title={pct > 0 ? `${FREQUENCY_LABEL[f]} — save ${pct}%` : FREQUENCY_LABEL[f]}
-                  subtitle={`${formatGBP(perClean)} per clean`}
+                  type="button"
+                  aria-pressed={on}
                   onClick={() => setFrequency(f)}
-                />
+                  className={`border-2 px-2 py-2 text-center transition ${
+                    on ? "border-brand-500 bg-brand-50" : "border-slate-200 hover:border-slate-300"
+                  }`}
+                >
+                  <span
+                    className={`block text-sm font-semibold ${
+                      on ? "text-brand-800" : "text-slate-800"
+                    }`}
+                  >
+                    {FREQUENCY_LABEL[f]}
+                  </span>
+                  <span className="tnum block text-xs text-slate-500">
+                    {formatGBP(perClean)}
+                    {pct > 0 && <span className="text-brand-600"> −{pct}%</span>}
+                  </span>
+                </button>
               );
             })}
           </div>
-        </Section>
 
-        {/* ---------- when ---------- */}
-        <Section title="When suits you?" sub="Pick a day, then a start time that's free.">
-          <Field
-            label={frequency === "one_off" ? "Preferred date" : "Date of the first clean"}
-            error={errors.date}
-          >
-            <input
-              type="date"
-              value={preferredDate}
-              min={today}
-              max={maxDate}
-              onChange={(e) => setPreferredDate(e.target.value)}
-              data-invalid={errors.date ? "true" : undefined}
-              className={`w-full border px-3 py-2 outline-none focus:ring-2 focus:ring-brand-200 ${
-                errors.date ? "border-red-400" : "border-slate-300 focus:border-brand-500"
-              }`}
-            />
-          </Field>
+          <div className="mt-4">
+            <Field
+              label={frequency === "one_off" ? "Preferred date" : "Date of the first clean"}
+              error={errors.date}
+            >
+              <input
+                type="date"
+                value={preferredDate}
+                min={today}
+                max={maxDate}
+                onChange={(e) => setPreferredDate(e.target.value)}
+                data-invalid={errors.date ? "true" : undefined}
+                className={`w-full border px-3 py-2 outline-none focus:ring-2 focus:ring-brand-200 ${
+                  errors.date ? "border-red-400" : "border-slate-300 focus:border-brand-500"
+                }`}
+              />
+            </Field>
+          </div>
 
           {preferredDate && (
             <div className="mt-4" data-invalid={errors.time ? "true" : undefined} tabIndex={-1}>
@@ -499,11 +536,7 @@ export default function QuoteWizard({
 
               {!slotsBusy && !closedReason && !!slots?.length && (
                 <>
-                  <p className="mb-2 text-sm font-medium text-slate-700">
-                    Start time{" "}
-                    <span className="font-normal text-slate-400">({totalHours}-hour clean)</span>
-                  </p>
-                  <div className="grid grid-cols-3 gap-2 sm:grid-cols-5">
+                  <div className="grid grid-cols-4 gap-2 sm:grid-cols-6">
                     {slots.map((s) => (
                       <button
                         key={s.time}
@@ -511,7 +544,7 @@ export default function QuoteWizard({
                         disabled={!s.available}
                         aria-pressed={startTime === s.time}
                         onClick={() => setPickedSlot({ key: slotKey, time: s.time })}
-                        className={`px-2 py-2 text-sm font-semibold transition ${
+                        className={`px-1 py-2 text-sm font-semibold transition ${
                           startTime === s.time
                             ? "bg-brand-600 text-white"
                             : s.available
@@ -576,15 +609,16 @@ export default function QuoteWizard({
                 invalid={!!errors.address}
               />
             </Field>
-            <Field label="Anything we should know?" hint="optional" className="sm:col-span-2">
-              <textarea
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                rows={2}
-                className="w-full border border-slate-300 px-3 py-2 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-200"
-              />
-            </Field>
           </div>
+
+          <Disclosure summary="Add a note (parking, pets, access)">
+            <textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              rows={2}
+              className="w-full border border-slate-300 px-3 py-2 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-200"
+            />
+          </Disclosure>
         </Section>
 
         {formError && (
@@ -700,6 +734,30 @@ function Section({
   );
 }
 
+/**
+ * Native <details>, so the folded-away parts of the form cost no JavaScript and
+ * are still reachable by keyboard and by search-in-page.
+ */
+function Disclosure({
+  summary,
+  open,
+  children,
+}: {
+  summary: string;
+  open?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <details open={open} className="group mt-3 border-t border-slate-100 pt-3">
+      <summary className="flex cursor-pointer list-none items-center gap-1.5 text-sm font-medium text-slate-500 transition hover:text-brand-700">
+        <span className="text-xs transition group-open:rotate-90">▶</span>
+        {summary}
+      </summary>
+      <div className="mt-3">{children}</div>
+    </details>
+  );
+}
+
 function Field({
   label,
   hint,
@@ -808,7 +866,7 @@ function RoundBtn({
       onClick={onClick}
       disabled={disabled}
       className={`flex items-center justify-center rounded-full bg-slate-100 font-bold text-slate-600 transition hover:bg-brand-100 hover:text-brand-700 active:scale-90 disabled:opacity-35 disabled:hover:bg-slate-100 disabled:hover:text-slate-600 ${
-        small ? "h-7 w-7 text-sm" : "h-11 w-11 text-xl"
+        small ? "h-8 w-8 text-base" : "h-11 w-11 text-xl"
       }`}
     >
       {children}
