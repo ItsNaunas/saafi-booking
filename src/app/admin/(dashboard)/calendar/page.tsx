@@ -2,6 +2,7 @@ import Link from "next/link";
 import { headers } from "next/headers";
 import { listBookings, listCleaners, type BookingRow } from "@/lib/supabaseAdmin";
 import { formatGBP } from "@/lib/pricing";
+import { formatTimeRange } from "@/lib/scheduling";
 import { calendarFeedToken } from "@/lib/calendarFeed";
 
 export const dynamic = "force-dynamic";
@@ -73,11 +74,19 @@ export default async function CalendarPage({
     else byDate.set(b.preferred_date, [b]);
   }
   for (const list of byDate.values()) {
-    list.sort(
-      (a, z) =>
+    // Time first — a day should read in the order it will be worked. Jobs with no
+    // time yet sink to the bottom, where they are visibly still to be slotted.
+    list.sort((a, z) => {
+      if (a.start_time !== z.start_time) {
+        if (!a.start_time) return 1;
+        if (!z.start_time) return -1;
+        return a.start_time.localeCompare(z.start_time);
+      }
+      return (
         STATUS_ORDER.indexOf(a.status as (typeof STATUS_ORDER)[number]) -
         STATUS_ORDER.indexOf(z.status as (typeof STATUS_ORDER)[number])
-    );
+      );
+    });
   }
 
   // Monday-start grid covering the whole month plus spill days.
@@ -102,7 +111,11 @@ export default async function CalendarPage({
   const monthLabel = first.toLocaleDateString("en-GB", { month: "long", year: "numeric" });
   const agenda = monthRows
     .slice()
-    .sort((a, z) => a.preferred_date.localeCompare(z.preferred_date))
+    .sort(
+      (a, z) =>
+        a.preferred_date.localeCompare(z.preferred_date) ||
+        (a.start_time ?? "99").localeCompare(z.start_time ?? "99")
+    )
     .filter((b) => b.preferred_date >= todayStr);
 
   // Subscribe / export feed URL (secret-token, works outside the admin guard).
@@ -333,7 +346,7 @@ function DayCell({
             <Link
               key={b.id}
               href={`/admin/booking/${b.id}`}
-              title={`${b.customer_name} · ${b.hours}h · ${b.status}${cn ? ` · ${cn}` : " · unassigned"} · ${b.postcode}`}
+              title={`${b.customer_name} · ${b.start_time ? formatTimeRange(b.start_time, Number(b.hours)) : "no time"} · ${b.hours}h · ${b.status}${cn ? ` · ${cn}` : " · unassigned"} · ${b.postcode}`}
               className={`block truncate  px-1.5 py-0.5 text-[11px] font-medium ring-1 ring-inset hover:brightness-95 ${STATUS_CHIP[b.status]}`}
             >
               {b.customer_name.split(" ")[0]}
@@ -380,7 +393,14 @@ function AgendaRow({
       <div className="min-w-0 flex-1">
         <div className="truncate font-semibold text-slate-900">{b.customer_name}</div>
         <div className="truncate text-xs text-slate-500">
-          {b.hours}h · {b.address_line}, {b.postcode}
+          {b.start_time ? (
+            <span className="font-medium text-slate-700">
+              {formatTimeRange(b.start_time, Number(b.hours))}
+            </span>
+          ) : (
+            <span className="font-medium text-amber-600">no time set</span>
+          )}{" "}
+          · {b.hours}h · {b.address_line}, {b.postcode}
         </div>
       </div>
       <div className="shrink-0 text-right">

@@ -3,8 +3,10 @@ import {
   getBooking,
   listAdjustmentsForBooking,
   amountDueFor,
+  busyBlocksForDate,
   type AdjustmentRow,
 } from "@/lib/supabaseAdmin";
+import { assignmentConflict, toMinutes, toHHMM, formatTimeRange } from "@/lib/scheduling";
 import {
   editBooking,
   approveAdjustment,
@@ -28,6 +30,19 @@ export default async function BookingDetailPage({
 
   // Tolerate the table not existing yet (pre-migration) rather than 500ing.
   const adjustments = await listAdjustmentsForBooking(id).catch(() => [] as AdjustmentRow[]);
+
+  // Does this job collide with something else in the same cleaner's day? The
+  // owner is allowed to do that on purpose, so this only ever warns.
+  const startMinutes = b.start_time ? toMinutes(b.start_time) : null;
+  const clash =
+    b.cleaner_id && startMinutes !== null
+      ? assignmentConflict({
+          cleanerId: b.cleaner_id,
+          start: startMinutes,
+          end: startMinutes + Math.round(Number(b.hours) * 60),
+          busy: await busyBlocksForDate(b.preferred_date, b.id).catch(() => []),
+        })
+      : null;
 
   return (
     <div className="mx-auto max-w-xl">
@@ -103,6 +118,14 @@ export default async function BookingDetailPage({
         <Row k="Contact" v={`${b.customer_phone} · ${b.customer_email}`} />
         <Row k="Address" v={`${b.address_line}, ${b.postcode}`} />
         <Row
+          k="When"
+          v={
+            b.start_time
+              ? `${b.preferred_date}, ${formatTimeRange(b.start_time, Number(b.hours))}`
+              : `${b.preferred_date} — no time set`
+          }
+        />
+        <Row
           k="Rooms"
           v={`${b.bedrooms} bed · ${b.bathrooms} bath · ${b.dining_rooms} dining · ${b.living_rooms} living`}
         />
@@ -120,6 +143,13 @@ export default async function BookingDetailPage({
         <Row k="Booked" v={new Date(b.created_at).toLocaleString("en-GB")} />
       </div>
 
+      {clash && (
+        <p className="mb-4 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-900 ring-1 ring-amber-200">
+          Heads up — this cleaner has another job overlapping{" "}
+          {formatTimeRange(toHHMM(clash.start), (clash.end - clash.start) / 60)} on this date.
+        </p>
+      )}
+
       <Adjustments rows={adjustments} />
 
       <form action={editBooking} className="bg-white p-5 shadow-sm ring-1 ring-slate-200">
@@ -131,6 +161,18 @@ export default async function BookingDetailPage({
               type="date"
               name="preferred_date"
               defaultValue={b.preferred_date}
+              className="w-full border border-slate-300 px-3 py-2"
+            />
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-sm font-medium text-slate-700">
+              Start time <span className="font-normal text-slate-400">(blank = unscheduled)</span>
+            </span>
+            <input
+              type="time"
+              name="start_time"
+              step="900"
+              defaultValue={startMinutes === null ? "" : toHHMM(startMinutes)}
               className="w-full border border-slate-300 px-3 py-2"
             />
           </label>

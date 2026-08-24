@@ -13,6 +13,8 @@ import {
   type Frequency,
 } from "@/lib/pricing";
 import { loadPricingAndAddons } from "@/lib/pricingServer";
+import { isSlotBookable, toMinutes, toHHMM, formatTimeRange } from "@/lib/scheduling";
+import { listSchedulableCleaners, busyBlocksForDate } from "@/lib/supabaseAdmin";
 import type { BookingRecord, BookingRequest } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -79,10 +81,49 @@ export async function POST(req: NextRequest) {
   if (phone.replace(/\D/g, "").length < 10) return bad("Please enter a valid phone number");
   if (!/^\d{4}-\d{2}-\d{2}$/.test(preferredDate)) return bad("Please pick a preferred date");
 
+  // The booking's real length: the clean plus whatever the extras add.
+  const jobHours = hours + extrasHours;
+
+  // A time is optional — if the customer never got offered one (no cleaners set
+  // up yet, or the availability call failed) the booking still goes through as
+  // unscheduled and SAAFI slot it by phone, exactly as they did before.
+  const rawTime = String(body.startTime ?? "").trim();
+  let startTime: string | null = null;
+  if (rawTime) {
+    const mins = toMinutes(rawTime);
+    if (mins === null) return bad("That start time doesn't look right");
+    startTime = toHHMM(mins);
+
+    // Never trust the browser's idea of what was free — the slot may have gone
+    // while the customer was filling the form in. Same rule as the price.
+    try {
+      const [cleaners, busy] = await Promise.all([
+        listSchedulableCleaners(),
+        busyBlocksForDate(preferredDate),
+      ]);
+      const bookable = isSlotBookable({
+        date: preferredDate,
+        time: startTime,
+        durationHours: jobHours,
+        cleaners,
+        busy,
+        cfg: cfg.scheduling,
+        now: new Date(),
+      });
+      if (!bookable) {
+        return bad("Sorry — that time has just been taken. Please pick another.", 409);
+      }
+    } catch (e) {
+      // Availability is a nicety; losing the booking is not. Take it unscheduled.
+      console.error("[bookings] slot re-check failed, accepting as unscheduled:", e);
+      startTime = null;
+    }
+  }
+
   // Never trust the client's price — recompute server-side from live config.
   // Extras are billed as time, so the quote runs on clean + extras hours.
   const quotedPrice = quotePrice(
-    hours + extrasHours,
+    jobHours,
     customerProvidesProducts,
     cfg,
     frequency,
@@ -103,6 +144,7 @@ export async function POST(req: NextRequest) {
     phone,
     addressLine,
     preferredDate,
+    startTime,
     notes,
     quotedPrice,
     status: "requested",
@@ -158,6 +200,7 @@ async function storeBooking(
         customer_phone: record.phone,
         address_line: record.addressLine,
         preferred_date: record.preferredDate,
+        start_time: record.startTime,
         notes: record.notes || null,
         quoted_price: record.quotedPrice,
         status: "requested",
@@ -210,7 +253,11 @@ async function sendAlertEmail(record: BookingRecord) {
         `Phone:   ${record.phone}`,
         `Email:   ${record.email}`,
         `Address: ${record.addressLine}, ${record.postcode}`,
-        `Date:    ${record.preferredDate}`,
+        `Date:    ${record.preferredDate}${
+          record.startTime
+            ? ` at ${formatTimeRange(record.startTime, record.hours + record.addonsHours)}`
+            : ` (NO TIME SET — agree one when you call)`
+        }`,
         `Rooms:   ${r.bedrooms} bed / ${r.bathrooms} bath / ${r.diningRooms} dining / ${r.livingRooms} living`,
         `Hours:   ${record.hours + record.addonsHours}${
           record.addonsHours > 0 ? ` (${record.hours}h clean + ${record.addonsHours}h extras)` : ""

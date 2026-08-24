@@ -1,10 +1,12 @@
 // iCalendar (RFC 5545) feed builder for the admin calendar.
-// Bookings are date-only (no time-of-day in the schema), so each clean is an
-// all-day VEVENT. Text is escaped and lines folded per the spec so the feed
-// imports cleanly into Google / Apple / Outlook calendars.
+// A booking with a start time becomes a timed VEVENT; one still waiting to be
+// slotted stays an all-day event, so it shows up without pretending to a time it
+// hasn't got. Text is escaped and lines folded per the spec so the feed imports
+// cleanly into Google / Apple / Outlook calendars.
 
 import type { BookingRow } from "@/lib/supabaseAdmin";
 import { FREQUENCY_LABEL } from "@/lib/pricing";
+import { toMinutes, toHHMM, formatTimeRange, londonWallClock, daysBetween } from "@/lib/scheduling";
 
 /** Escape a text value for TEXT-typed iCal properties. */
 function esc(v: string): string {
@@ -40,6 +42,24 @@ function nextDay(ymd: string): string {
   return dateVal(d.toISOString().slice(0, 10));
 }
 
+/**
+ * A London wall-clock date+time as a UTC iCal stamp.
+ *
+ * Emitting UTC rather than TZID sidesteps having to ship a VTIMEZONE block that
+ * some clients insist on. The offset is derived from the instant itself, so BST
+ * and GMT both come out right.
+ */
+function utcStamp(date: string, minutes: number): string {
+  const naive = Date.parse(`${date}T${toHHMM(minutes)}:00Z`);
+  const london = londonWallClock(new Date(naive));
+  // How far ahead of UTC London was at that instant.
+  const offset = london.minutes - minutes + daysBetween(date, london.date) * 1440;
+  return new Date(naive - offset * 60_000)
+    .toISOString()
+    .replace(/[-:]/g, "")
+    .replace(/\.\d{3}/, "");
+}
+
 function stamp(): string {
   return new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
 }
@@ -67,6 +87,7 @@ export function bookingsToICS(
       `Status: ${b.status}`,
       `Price: £${Number(b.quoted_price).toFixed(2)}`,
       `Hours: ${b.hours}`,
+      b.start_time ? `Time: ${formatTimeRange(b.start_time, Number(b.hours))}` : "Time: not set yet",
       `Cleaner: ${cleaner ?? "unassigned"}`,
       `Frequency: ${FREQUENCY_LABEL[b.frequency]}`,
       `Phone: ${b.customer_phone}`,
@@ -79,12 +100,23 @@ export function bookingsToICS(
 
     const summary = `${b.customer_name} — ${b.hours}h clean${cleaner ? ` (${cleaner})` : ""}`;
 
+    const startMinutes = b.start_time ? toMinutes(b.start_time) : null;
+    const timing =
+      startMinutes === null
+        ? [
+            `DTSTART;VALUE=DATE:${dateVal(b.preferred_date)}`,
+            `DTEND;VALUE=DATE:${nextDay(b.preferred_date)}`,
+          ]
+        : [
+            `DTSTART:${utcStamp(b.preferred_date, startMinutes)}`,
+            `DTEND:${utcStamp(b.preferred_date, startMinutes + Math.round(Number(b.hours) * 60))}`,
+          ];
+
     lines.push(
       "BEGIN:VEVENT",
       `UID:${b.id}@saafi-booking`,
       `DTSTAMP:${now}`,
-      `DTSTART;VALUE=DATE:${dateVal(b.preferred_date)}`,
-      `DTEND;VALUE=DATE:${nextDay(b.preferred_date)}`,
+      ...timing,
       fold(`SUMMARY:${esc(summary)}`),
       fold(`LOCATION:${esc(`${b.address_line}, ${b.postcode}`)}`),
       fold(`DESCRIPTION:${esc(descParts.join("\n"))}`),

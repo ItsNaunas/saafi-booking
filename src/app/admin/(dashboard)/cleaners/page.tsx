@@ -1,5 +1,16 @@
-import { listCleaners } from "@/lib/supabaseAdmin";
-import { addCleaner, toggleCleaner } from "@/app/admin/actions";
+import { listCleaners, type CleanerRow } from "@/lib/supabaseAdmin";
+import { addCleaner, toggleCleaner, updateCleanerSchedule } from "@/app/admin/actions";
+
+/** 0=Sunday..6=Saturday, matching JS getUTCDay() and the works_days column. */
+const DAYS = [
+  { n: 1, label: "Mon" },
+  { n: 2, label: "Tue" },
+  { n: 3, label: "Wed" },
+  { n: 4, label: "Thu" },
+  { n: 5, label: "Fri" },
+  { n: 6, label: "Sat" },
+  { n: 0, label: "Sun" },
+];
 
 export const dynamic = "force-dynamic";
 
@@ -12,7 +23,8 @@ export default async function CleanersPage() {
       <h1 className="mb-1 text-2xl font-bold text-slate-900">Cleaners</h1>
       <p className="mb-4 text-sm text-slate-500">
         Each cleaner gets a personal link — send it to them on WhatsApp; it shows their assigned
-        jobs, no password needed.
+        jobs, no password needed. Their working days and hours decide which slots customers are
+        offered, so keep them right.
       </p>
 
       <form action={addCleaner} className="mb-5 flex flex-wrap items-end gap-2 bg-white p-4 shadow-sm ring-1 ring-slate-200">
@@ -58,6 +70,8 @@ export default async function CleanersPage() {
                 </button>
               </form>
             </div>
+            {c.active && <Schedule c={c} />}
+
             {c.active && (
               <div className="mt-2 bg-slate-50 px-3 py-2 text-xs text-slate-500">
                 Job link:{" "}
@@ -70,5 +84,65 @@ export default async function CleanersPage() {
         ))}
       </div>
     </div>
+  );
+}
+
+/**
+ * Working pattern. This is the only thing that opens slots to customers — a
+ * cleaner with no days ticked simply never gets offered, which is also how you
+ * take someone off the rota without deactivating them.
+ */
+function Schedule({ c }: { c: CleanerRow }) {
+  const days = Array.isArray(c.works_days) ? c.works_days : [];
+  return (
+    <form
+      action={updateCleanerSchedule}
+      className="mt-3 flex flex-wrap items-end gap-x-4 gap-y-3 border-t border-slate-100 pt-3"
+    >
+      <input type="hidden" name="id" value={c.id} />
+      <fieldset>
+        <legend className="mb-1 text-xs font-medium text-slate-500">Working days</legend>
+        <div className="flex flex-wrap gap-1">
+          {DAYS.map((d) => (
+            <label
+              key={d.n}
+              className="cursor-pointer select-none border border-slate-200 px-2 py-1 text-xs font-medium text-slate-600 has-[:checked]:border-brand-500 has-[:checked]:bg-brand-50 has-[:checked]:text-brand-800"
+            >
+              <input
+                type="checkbox"
+                name="works_days"
+                value={d.n}
+                defaultChecked={days.includes(d.n)}
+                className="sr-only"
+              />
+              {d.label}
+            </label>
+          ))}
+        </div>
+      </fieldset>
+      <label className="block">
+        <span className="mb-1 block text-xs font-medium text-slate-500">From</span>
+        <input
+          type="time"
+          name="works_from"
+          step="900"
+          defaultValue={(c.works_from ?? "09:00").slice(0, 5)}
+          className="border border-slate-300 px-2 py-1 text-sm"
+        />
+      </label>
+      <label className="block">
+        <span className="mb-1 block text-xs font-medium text-slate-500">To</span>
+        <input
+          type="time"
+          name="works_to"
+          step="900"
+          defaultValue={(c.works_to ?? "17:00").slice(0, 5)}
+          className="border border-slate-300 px-2 py-1 text-sm"
+        />
+      </label>
+      <button className="border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">
+        Save hours
+      </button>
+    </form>
   );
 }

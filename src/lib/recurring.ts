@@ -48,6 +48,9 @@ export async function spawnNextOccurrence(b: BookingRow): Promise<void> {
     quoted_price: b.quoted_price,
     price_status: "quoted",
     preferred_date: next.toISOString().slice(0, 10),
+    // Same slot each visit is the whole point of a regular clean — carry the time
+    // forward. If the series never had one, the next one doesn't invent one.
+    start_time: b.start_time,
     notes: b.notes,
     status: "confirmed",
   });

@@ -14,6 +14,7 @@ import {
   removeServiceAreaPrefix,
   createCleaner,
   setCleanerActive,
+  updateCleanerHours,
   getBooking,
   getAdjustment,
   setAdjustmentStatus,
@@ -26,6 +27,7 @@ import { sendConfirmationEmail, sendAdjustmentEmail } from "@/lib/email";
 import { invalidatePricingCache } from "@/lib/pricingServer";
 import { type Frequency } from "@/lib/pricing";
 import { newReference, spawnNextOccurrence } from "@/lib/recurring";
+import { toMinutes, toHHMM } from "@/lib/scheduling";
 
 const ALLOWED: Record<BookingStatus, BookingStatus[]> = {
   requested: ["confirmed", "cancelled"],
@@ -102,6 +104,10 @@ export async function createManualBooking(formData: FormData) {
   }
   const hours = Math.max(0.5, Number(get("hours")) || 2);
   const price = Math.max(0, Number(get("price")) || 0);
+  // The owner books over the top of availability on purpose — a phone booking is
+  // already agreed with the customer, so this records the time, it doesn't police it.
+  const startMinutes = toMinutes(get("start_time"));
+  const startTime = startMinutes === null ? null : toHHMM(startMinutes);
   const frequency = (
     ["one_off", "weekly", "fortnightly", "four_weekly"].includes(get("frequency"))
       ? get("frequency")
@@ -124,6 +130,7 @@ export async function createManualBooking(formData: FormData) {
     frequency,
     quoted_price: price,
     preferred_date: preferredDate,
+    start_time: startTime,
     notes: get("notes") || null,
     status: "confirmed", // phone bookings arrive pre-agreed
   });
@@ -137,13 +144,17 @@ export async function editBooking(formData: FormData) {
   const hours = Number(formData.get("hours"));
   const price = Number(formData.get("quoted_price"));
   const notes = String(formData.get("notes") ?? "").trim();
+  // An empty time field is meaningful — it puts the job back to "needs a slot".
+  const startMinutes = toMinutes(String(formData.get("start_time") ?? ""));
   await updateBooking(id, {
     ...(/^\d{4}-\d{2}-\d{2}$/.test(date) ? { preferred_date: date } : {}),
     ...(Number.isFinite(hours) && hours > 0 ? { hours } : {}),
     ...(Number.isFinite(price) && price >= 0 ? { quoted_price: price } : {}),
+    start_time: startMinutes === null ? null : toHHMM(startMinutes),
     notes: notes || null,
   } as Parameters<typeof updateBooking>[1]);
   revalidatePath("/admin");
+  revalidatePath("/admin/calendar");
   redirect("/admin");
 }
 
@@ -317,4 +328,25 @@ export async function createPaymentLink(formData: FormData) {
   await saveBookingPaymentLink(booking.id, link.id, link.url);
   revalidatePath(`/admin/booking/${booking.id}`);
   revalidatePath("/admin");
+}
+
+/* ---------- scheduling ---------- */
+
+/** A cleaner's working pattern — what the availability engine offers customers. */
+export async function updateCleanerSchedule(formData: FormData) {
+  const id = String(formData.get("id") ?? "");
+  if (!id) return;
+
+  const days = formData
+    .getAll("works_days")
+    .map((d) => Number(d))
+    .filter((d) => Number.isInteger(d) && d >= 0 && d <= 6);
+
+  const from = toMinutes(String(formData.get("works_from") ?? ""));
+  const to = toMinutes(String(formData.get("works_to") ?? ""));
+  // A backwards or zero-length day would make every slot vanish with no clue why.
+  if (from === null || to === null || to <= from) return;
+
+  await updateCleanerHours(id, days, toHHMM(from), toHHMM(to));
+  revalidatePath("/admin/cleaners");
 }

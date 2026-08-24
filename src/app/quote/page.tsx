@@ -19,6 +19,7 @@ export default async function QuotePage({
     bedrooms?: string;
     bathrooms?: string;
     frequency?: string;
+    addons?: string;
   }>;
 }) {
   const [{ cfg, addons }, params] = await Promise.all([
@@ -42,6 +43,11 @@ export default async function QuotePage({
   const initialFrequency = (["one_off", "weekly", "fortnightly", "four_weekly"] as const).find(
     (f) => f === params.frequency
   );
+  // Only keys that actually exist survive, so a stale link can't select nothing.
+  const known = new Set(addons.map((a) => a.key));
+  const initialAddons = (params.addons ?? "")
+    .split(",")
+    .filter((k) => known.has(k));
 
   return (
     <main className="min-h-screen bg-slate-50 px-4 py-10">
@@ -57,6 +63,7 @@ export default async function QuotePage({
         initialPostcode={initialPostcode}
         initialRooms={initialRooms}
         initialFrequency={initialFrequency}
+        initialAddons={initialAddons}
       />
     </main>
   );

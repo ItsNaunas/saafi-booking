@@ -12,6 +12,8 @@ export type BookingRequest = {
   phone: string;
   addressLine: string;
   preferredDate: string; // YYYY-MM-DD
+  /** "09:30". Optional — an unscheduled booking is a request SAAFI slots by phone. */
+  startTime?: string | null;
   notes?: string;
 };
 

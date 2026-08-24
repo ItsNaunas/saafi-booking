@@ -42,6 +42,19 @@ export const pricingConfig = {
     fortnightly: 9.375,
     four_weekly: 9.375,
   },
+  /**
+   * Booking-window rules. Not prices, but they live in `pricing_config` and load
+   * through the same 60s cache and static fallback, so they sit here too.
+   * The engine that uses them is lib/scheduling.ts.
+   */
+  scheduling: {
+    /** Granularity of the times offered to a customer, in minutes. */
+    slotMinutes: 30,
+    /** Least notice a customer may give, in hours. */
+    leadTimeHours: 24,
+    /** How far ahead the calendar opens, in days. */
+    maxDaysAhead: 60,
+  },
 };
 
 export type Frequency = "one_off" | "weekly" | "fortnightly" | "four_weekly";

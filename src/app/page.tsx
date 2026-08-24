@@ -7,7 +7,6 @@ import PriceSteps from "@/components/PriceSteps";
 import { loadPricingAndAddons } from "@/lib/pricingServer";
 import {
   formatGBP,
-  formatDuration,
 } from "@/lib/pricing";
 
 export const metadata: Metadata = {
@@ -366,46 +365,14 @@ export default async function Home() {
 
       {/* ---------- pricing ---------- */}
       <section id="pricing" className="scroll-mt-20 bg-slate-50 py-20 sm:py-24">
-        <div className="mx-auto max-w-[1400px]">
-          <div className="mx-auto max-w-6xl px-4">
-            <SectionHead
-              title="How your price is built"
-              sub="No callback, no guesswork. Here's exactly how we get to your number — the same four steps the quote form walks you through."
-            />
-
-            <PriceSteps cfg={cfg} />
-
-            {addons.length > 0 && (
-              <div className="mx-auto mt-12 max-w-3xl">
-                <h3 className="text-lg font-bold text-slate-900">
-                  Optional extras
-                </h3>
-                <p className="mt-1 text-sm text-slate-500">
-                  Add any of these to your clean — the price and the time are
-                  both added, so nothing else gets rushed.
-                </p>
-                <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  {addons.map((a) => (
-                    <div
-                      key={a.key}
-                      className="flex items-center justify-between gap-3 bg-white px-4 py-3 shadow-sm ring-1 ring-slate-200"
-                    >
-                      <span className="font-medium text-slate-700">
-                        {a.label}
-                      </span>
-                      <span className="shrink-0 font-semibold text-slate-900">
-                        {a.price > 0
-                          ? `+${formatGBP(a.price)}`
-                          : a.hours > 0
-                            ? `+${formatDuration(a.hours)}`
-                            : "Ask us"}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
+        <div className="mx-auto max-w-7xl px-4 sm:px-6">
+          <SectionHead
+            title="How your price is built"
+            sub="No callback, no guesswork. Here's exactly how we get to your number, the same steps the quote form walks you through."
+          />
+          {/* Extras now live inside the builder, on the right, so the section
+              reads as one journey: rooms, hours, frequency, quote, extras. */}
+          <PriceSteps cfg={cfg} addons={addons} />
         </div>
       </section>
 

@@ -17,8 +17,9 @@ import {
   type Frequency,
   type Addon,
 } from "@/lib/pricing";
+import { formatTime, formatTimeRange, type Slot } from "@/lib/scheduling";
 
-const STEPS = ["Postcode", "Rooms", "Hours", "Extras", "How often", "Details", "Quote"] as const;
+const STEPS = ["Postcode", "Rooms", "Hours", "Extras", "How often", "When", "Details", "Quote"] as const;
 
 type RoomKey = keyof RoomCounts;
 
@@ -34,6 +35,7 @@ export default function QuoteWizard({
   initialPostcode = "",
   initialRooms,
   initialFrequency,
+  initialAddons,
 }: {
   cfg?: PricingConfig;
   addons?: Addon[];
@@ -42,6 +44,8 @@ export default function QuoteWizard({
   /** Rooms captured by the hero search bar; when present we land on Hours. */
   initialRooms?: Partial<RoomCounts>;
   initialFrequency?: Frequency;
+  /** Add-on keys already chosen on the landing page builder. */
+  initialAddons?: string[];
 }) {
   const [step, setStep] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -59,13 +63,21 @@ export default function QuoteWizard({
   const [roomTab, setRoomTab] = useState<RoomKey>("bedrooms");
   const [hours, setHours] = useState<number | null>(null); // null = follow recommendation
   const [customerProvidesProducts, setCustomerProvidesProducts] = useState(true);
-  const [selectedAddons, setSelectedAddons] = useState<string[]>([]);
+  const [selectedAddons, setSelectedAddons] = useState<string[]>(initialAddons ?? []);
   const [frequency, setFrequency] = useState<Frequency>(initialFrequency ?? "one_off");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [addressLine, setAddressLine] = useState("");
   const [preferredDate, setPreferredDate] = useState("");
+  // Availability is keyed by day+length: change either and the old answer — and
+  // any time picked from it — stop applying, with nothing to reset by hand.
+  const [loadedSlots, setLoadedSlots] = useState<{
+    key: string;
+    slots: Slot[];
+    closed: string | null;
+  } | null>(null);
+  const [pickedSlot, setPickedSlot] = useState<{ key: string; time: string } | null>(null);
   const [notes, setNotes] = useState("");
   const [reference, setReference] = useState<string | null>(null);
 
@@ -138,6 +150,52 @@ export default function QuoteWizard({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // The furthest ahead the calendar opens, so the date input can't offer a day
+  // the server would only reject afterwards.
+  const today = new Date().toISOString().slice(0, 10);
+  const maxDate = useMemo(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + cfg.scheduling.maxDaysAhead);
+    return d.toISOString().slice(0, 10);
+  }, [cfg.scheduling.maxDaysAhead]);
+
+  /**
+   * Load the times available for the chosen day. Runs whenever the day or the
+   * job length changes — a longer job genuinely has fewer places it can fit, so
+   * the previously picked time is dropped rather than silently carried forward.
+   */
+  const slotKey = `${preferredDate}|${totalHours}`;
+  const slotRequest = useRef(0);
+  useEffect(() => {
+    if (step !== 5 || !preferredDate) return;
+    const ticket = ++slotRequest.current;
+
+    fetch(`/api/availability?date=${preferredDate}&hours=${totalHours}`)
+      .then((r) => r.json())
+      .then((data: { ok: boolean; slots?: Slot[]; closed?: string | null }) => {
+        // A slower earlier request must never overwrite a newer answer.
+        if (ticket !== slotRequest.current) return;
+        setLoadedSlots({
+          key: slotKey,
+          slots: data.ok && Array.isArray(data.slots) ? data.slots : [],
+          closed: data.closed ?? null,
+        });
+      })
+      .catch(() => {
+        // Offline or the endpoint fell over: let them book the day anyway.
+        if (ticket !== slotRequest.current) return;
+        setLoadedSlots({ key: slotKey, slots: [], closed: null });
+      });
+  }, [step, preferredDate, totalHours, slotKey]);
+
+  // Anything loaded under a different key is stale by definition.
+  const fresh = loadedSlots?.key === slotKey ? loadedSlots : null;
+  const slots = fresh?.slots ?? null;
+  const closedReason = fresh?.closed ?? null;
+  const slotsBusy = Boolean(preferredDate) && fresh === null;
+  const startTime = pickedSlot?.key === slotKey ? pickedSlot.time : null;
+  const anySlotFree = (slots ?? []).some((s) => s.available);
+
   async function submit() {
     setBusy(true);
     setError(null);
@@ -157,6 +215,7 @@ export default function QuoteWizard({
           phone,
           addressLine,
           preferredDate,
+          startTime,
           notes,
         }),
       });
@@ -184,7 +243,14 @@ export default function QuoteWizard({
           Your reference is <span className="font-semibold text-slate-900">{reference}</span>.
           We&apos;ll call you shortly to confirm your{" "}
           <span className="font-semibold">{totalHours}-hour clean</span> on{" "}
-          <span className="font-semibold">{preferredDate}</span>.
+          <span className="font-semibold">{preferredDate}</span>
+          {startTime ? (
+            <>
+              , <span className="font-semibold">{formatTimeRange(startTime, totalHours)}</span>.
+            </>
+          ) : (
+            <>, and agree a time with you.</>
+          )}
         </p>
         <p className="mt-4 text-lg font-semibold text-brand-700">
           Estimated price: {formatGBP(price)}
@@ -378,13 +444,102 @@ export default function QuoteWizard({
         )}
 
         {step === 5 && (
+          <StepShell title="When suits you?" subtitle="Pick a day, then a start time that's free.">
+            <Input
+              label={frequency === "one_off" ? "Preferred date" : "Date of the first clean"}
+              value={preferredDate}
+              onChange={setPreferredDate}
+              type="date"
+              min={today}
+              max={maxDate}
+            />
+
+            {preferredDate && (
+              <div className="mt-5">
+                {slotsBusy && (
+                  <p className="text-sm text-slate-500">Checking what&apos;s free&hellip;</p>
+                )}
+
+                {!slotsBusy && closedReason && (
+                  <p className="bg-slate-50 px-3 py-2 text-sm text-slate-600">
+                    {closedReason} Try another day.
+                  </p>
+                )}
+
+                {!slotsBusy && !closedReason && slots?.length === 0 && (
+                  <p className="bg-slate-50 px-3 py-2 text-sm text-slate-600">
+                    We couldn&apos;t load times just now — carry on, and we&apos;ll agree a time
+                    when we call to confirm.
+                  </p>
+                )}
+
+                {!slotsBusy && !closedReason && !!slots?.length && (
+                  <>
+                    <p className="mb-2 text-sm font-medium text-slate-700">
+                      Start time{" "}
+                      <span className="font-normal text-slate-400">
+                        ({totalHours}-hour clean)
+                      </span>
+                    </p>
+                    <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+                      {slots.map((s) => (
+                        <button
+                          key={s.time}
+                          type="button"
+                          disabled={!s.available}
+                          aria-pressed={startTime === s.time}
+                          onClick={() => setPickedSlot({ key: slotKey, time: s.time })}
+                          className={`px-2 py-2 text-sm font-semibold transition ${
+                            startTime === s.time
+                              ? "bg-brand-600 text-white"
+                              : s.available
+                                ? "bg-slate-50 text-slate-700 ring-1 ring-slate-200 hover:bg-brand-50 hover:text-brand-800"
+                                : "cursor-not-allowed bg-slate-50 text-slate-300 line-through"
+                          }`}
+                        >
+                          {formatTime(s.time)}
+                        </button>
+                      ))}
+                    </div>
+                    {startTime && (
+                      <p className="mt-3 text-sm text-slate-600">
+                        We&apos;d be with you{" "}
+                        <span className="font-semibold text-slate-900">
+                          {formatTimeRange(startTime, totalHours)}
+                        </span>
+                        .
+                      </p>
+                    )}
+                    {!anySlotFree && (
+                      <p className="mt-3 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                        We&apos;re fully booked that day. Please pick another.
+                      </p>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
+
+            <Nav
+              onBack={back}
+              onNext={() => {
+                if (!preferredDate) return setError("Please pick a date");
+                if (closedReason) return setError("Please pick a day we're open.");
+                // Only insist on a time when we actually managed to offer any.
+                if (anySlotFree && !startTime) return setError("Please pick a start time");
+                next();
+              }}
+            />
+          </StepShell>
+        )}
+
+        {step === 6 && (
           <StepShell title="Your details" subtitle="So we can confirm your clean by phone.">
             <div className="grid gap-3">
               <Input label="Full name" value={name} onChange={setName} autoComplete="name" />
               <Input label="Email" value={email} onChange={setEmail} type="email" autoComplete="email" />
               <Input label="Phone" value={phone} onChange={setPhone} type="tel" autoComplete="tel" />
               <Input label="First line of address" value={addressLine} onChange={setAddressLine} autoComplete="address-line1" />
-              <Input label="Preferred date" value={preferredDate} onChange={setPreferredDate} type="date" min={new Date().toISOString().slice(0, 10)} />
               <label className="block">
                 <span className="mb-1 block text-sm font-medium text-slate-700">
                   Anything we should know? <span className="text-slate-400">(optional)</span>
@@ -404,14 +559,13 @@ export default function QuoteWizard({
                 if (!/^\S+@\S+\.\S+$/.test(email)) return setError("Please enter a valid email");
                 if (phone.replace(/\D/g, "").length < 10)
                   return setError("Please enter a valid phone number");
-                if (!preferredDate) return setError("Please pick a preferred date");
                 next();
               }}
             />
           </StepShell>
         )}
 
-        {step === 6 && (
+        {step === 7 && (
           <StepShell title="Your quote" subtitle="Request the booking and we'll confirm by phone.">
             <div className="bg-brand-50 p-5 text-center ring-1 ring-brand-100">
               <div className="text-sm font-medium text-brand-800">
@@ -446,7 +600,14 @@ export default function QuoteWizard({
                 }
               />
               <Row k="Frequency" v={FREQUENCY_LABEL[frequency]} />
-              <Row k={frequency === "one_off" ? "Preferred date" : "First clean"} v={preferredDate} />
+              <Row
+                k={frequency === "one_off" ? "Preferred date" : "First clean"}
+                v={
+                  startTime
+                    ? `${preferredDate}, ${formatTimeRange(startTime, totalHours)}`
+                    : `${preferredDate} — time to be agreed`
+                }
+              />
               <Row k="Contact" v={`${name} · ${phone}`} />
             </dl>
             <Nav onBack={back} onNext={submit} nextLabel="Request booking" busy={busy} />
@@ -604,6 +765,7 @@ function Input({
   type = "text",
   autoComplete,
   min,
+  max,
 }: {
   label: string;
   value: string;
@@ -611,6 +773,7 @@ function Input({
   type?: string;
   autoComplete?: string;
   min?: string;
+  max?: string;
 }) {
   return (
     <label className="block">
@@ -619,6 +782,7 @@ function Input({
         type={type}
         value={value}
         min={min}
+        max={max}
         autoComplete={autoComplete}
         onChange={(e) => onChange(e.target.value)}
         className="w-full border border-slate-300 px-3 py-2 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-200"

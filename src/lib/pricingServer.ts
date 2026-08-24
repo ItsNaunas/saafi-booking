@@ -20,6 +20,9 @@ const KEY_MAP: Record<string, (cfg: PricingConfig, v: number) => void> = {
   discount_weekly_pct: (c, v) => (c.discounts.weekly = v),
   discount_fortnightly_pct: (c, v) => (c.discounts.fortnightly = v),
   discount_four_weekly_pct: (c, v) => (c.discounts.four_weekly = v),
+  slot_minutes: (c, v) => (c.scheduling.slotMinutes = v),
+  lead_time_hours: (c, v) => (c.scheduling.leadTimeHours = v),
+  max_days_ahead: (c, v) => (c.scheduling.maxDaysAhead = v),
 };
 
 export async function loadPricingConfig(): Promise<PricingConfig> {

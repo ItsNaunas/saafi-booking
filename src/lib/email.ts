@@ -1,6 +1,7 @@
 // Customer-facing emails via Resend. No-ops silently until RESEND_API_KEY is set.
 
 import type { BookingRow } from "./supabaseAdmin";
+import { formatTimeRange } from "@/lib/scheduling";
 
 export async function sendConfirmationEmail(booking: BookingRow): Promise<void> {
   const key = process.env.RESEND_API_KEY;
@@ -20,6 +21,9 @@ export async function sendConfirmationEmail(booking: BookingRow): Promise<void> 
         `Good news — your clean is confirmed!`,
         ``,
         `Date:     ${booking.preferred_date}`,
+        booking.start_time
+          ? `Time:     ${formatTimeRange(booking.start_time, Number(booking.hours))}`
+          : `Time:     we'll agree this with you`,
         `Duration: ${booking.hours} hours`,
         `Address:  ${booking.address_line}, ${booking.postcode}`,
         `Price:    £${booking.quoted_price}`,

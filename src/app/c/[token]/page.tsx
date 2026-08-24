@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { formatTimeRange } from "@/lib/scheduling";
 import { getCleanerByToken, listBookingsForCleaner, type BookingRow } from "@/lib/supabaseAdmin";
 import { cleanerStartJob, cleanerFinishJob } from "./actions";
 import { REASONS, elapsedHours } from "@/lib/adjustments";
@@ -91,7 +92,8 @@ function JobCard({
       <div className="flex items-baseline justify-between">
         <span className="font-semibold text-slate-900">{j.customer_name}</span>
         <span className="text-sm text-slate-500">
-          {j.preferred_date} · {booked}h booked
+          {j.preferred_date}
+          {j.start_time ? ` · ${formatTimeRange(j.start_time, booked)}` : ""} · {booked}h booked
         </span>
       </div>
       <a href={mapsUrl} target="_blank" className="mt-1 block text-sm text-brand-700 hover:underline">

@@ -1,8 +1,25 @@
 # PROGRESS — SAAFI Booking CRM
 
-*Updated: 2026-08-24 (landing page content audit; repriced; price adjustments built)*
+*Updated: 2026-08-24 (scheduling: bookings now have a time; landing page content audit; repriced)*
 
 **State: Phases 1 + 2 + Tier A LIVE at https://saafi-booking.vercel.app.**
+
+**2026-08-24 — scheduling: a booking is now a time, not just a date.** (branch `feat/scheduling`)
+- `bookings.preferred_date` was a bare date, so nothing knew *when* a clean started. No arrival time for the customer, no order to a cleaner's day, and nothing stopping two jobs landing on one person at the same hour. The quote form was a request form wearing a booking system's clothes.
+- **`bookings.start_time`** (nullable — pre-migration rows are "unscheduled", never guessed) and **`cleaners.works_days/works_from/works_to`**, plus `slot_minutes` / `lead_time_hours` / `max_days_ahead` in `pricing_config` so the booking window is editable without a deploy. Migration `supabase/2026-08-24-scheduling.sql`, **not yet applied**.
+- **`src/lib/scheduling.ts`** — pure engine, no DB and no clock of its own (`now` is passed in), so all of it is assertable. 59 checks in `scripts/scheduling-check.ts`.
+- **Capacity is real.** A slot needs one cleaner free for the whole job; jobs are never split. **Unassigned bookings still consume capacity** — a `requested` job nobody is on yet is work the business has taken, and ignoring that is how a Saturday gets double-sold.
+- **`GET /api/availability`** returns only "that time works" or not — never how many cleaners are free, which is the business's information, not the customer's.
+- **The wizard gained a "When" step** between How often and Details; the date moved out of Details. Slot state is *derived* from a `day|length` key rather than reset in an effect, so changing either invalidates the previous answer and any time picked from it, with nothing to reset by hand (and no React 19 `set-state-in-effect` violation).
+- **The slot is re-checked server-side** at `POST /api/bookings`, exactly like the price — the browser's idea of what was free is never trusted, and a slot taken mid-form returns 409. If availability can't be loaded at all the booking still goes through **unscheduled**, as before: losing a booking is worse than losing a time.
+- **Admin overrides on purpose.** Phone bookings and edits set a time with no availability check; the booking page *warns* about a clash in the assigned cleaner's day rather than refusing it.
+- **ICS feed now emits timed events** (all-day only when there's no time yet), converted to UTC from London wall-clock so BST and GMT both come out right — verified across the DST boundary and a midnight day-rollback.
+- Recurring spawns carry the time forward (same slot every visit); the calendar sorts by time with untimed jobs sinking to the bottom, flagged amber.
+- **Degrades safely if the migration hasn't run**: every new query is wrapped, and the UI falls back to unscheduled rather than 500ing.
+- Build, typecheck and lint clean; 40/40 pricing + 59/59 scheduling checks pass.
+- **Still open:** the deposit/card-on-file work this was the prerequisite for, and a customer-facing reschedule (currently still a phone call).
+
+**Correction to the notes below:** the 2026-08-20 and 2026-08-21 migrations are marked "not yet applied" further down. They **are** applied — verified 2026-08-24 against the live DB (hourly_rate 24, product_surcharge 0, `booking_adjustments` present, Stripe columns present).
 
 **2026-08-24 — landing page content audit acted on.**
 - The page was selling the *booking*, not the cleaning. Every benefit on it was a transaction benefit (instant price, no callback, no card) and the same claim appeared in up to eight places.

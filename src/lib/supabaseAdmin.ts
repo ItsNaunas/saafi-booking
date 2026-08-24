@@ -2,6 +2,7 @@
 // Plain PostgREST fetches — no client SDK needed. Never import from client components.
 
 import type { ReasonCode } from "./adjustments";
+import { busyFromBooking, type BusyBlock, type SchedulableCleaner } from "./scheduling";
 
 export type BookingStatus = "requested" | "confirmed" | "completed" | "paid" | "cancelled";
 
@@ -33,6 +34,8 @@ export type BookingRow = {
   cleaner_id: string | null;
   quoted_price: number;
   preferred_date: string;
+  /** "09:30:00" local. Null on bookings taken before scheduling existed. */
+  start_time: string | null;
   notes: string | null;
   status: BookingStatus;
   created_at: string;
@@ -59,6 +62,10 @@ export type CleanerRow = {
   token: string;
   active: boolean;
   created_at: string;
+  /** 0=Sunday..6=Saturday, matching JS getUTCDay(). */
+  works_days: number[];
+  works_from: string;
+  works_to: string;
 };
 
 export type CustomerRow = {
@@ -156,6 +163,7 @@ export async function updateBooking(
     Pick<
       BookingRow,
       | "preferred_date"
+      | "start_time"
       | "hours"
       | "quoted_price"
       | "notes"
@@ -206,8 +214,58 @@ export async function getCleanerByToken(token: string): Promise<CleanerRow | nul
 
 export async function listBookingsForCleaner(cleanerId: string): Promise<BookingRow[]> {
   return rest<BookingRow[]>(
-    `bookings?cleaner_id=eq.${encodeURIComponent(cleanerId)}&status=in.(confirmed,completed)&select=*&order=preferred_date.asc`
+    `bookings?cleaner_id=eq.${encodeURIComponent(cleanerId)}&status=in.(confirmed,completed)&select=*&order=preferred_date.asc,start_time.asc.nullslast`
   );
+}
+
+export async function updateCleanerHours(
+  id: string,
+  worksDays: number[],
+  worksFrom: string,
+  worksTo: string
+): Promise<void> {
+  await rest(`cleaners?id=eq.${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: JSON.stringify({ works_days: worksDays, works_from: worksFrom, works_to: worksTo }),
+  });
+}
+
+/* ---------- scheduling ---------- */
+
+/** Active cleaners in the shape the scheduling engine wants. */
+export async function listSchedulableCleaners(): Promise<SchedulableCleaner[]> {
+  const rows = await rest<CleanerRow[]>(
+    "cleaners?select=id,name,works_days,works_from,works_to&active=eq.true&order=name.asc"
+  );
+  return rows.map((c) => ({
+    id: c.id,
+    name: c.name,
+    // Defensive: the columns are NOT NULL with defaults, but a row written before
+    // the migration by some other route would otherwise produce NaN slots.
+    worksDays: Array.isArray(c.works_days) ? c.works_days.map(Number) : [],
+    worksFrom: c.works_from ?? "09:00",
+    worksTo: c.works_to ?? "17:00",
+  }));
+}
+
+/**
+ * Everything already occupying a given day. Cancelled jobs free their slot back
+ * up; every other status is work the business has committed to, assigned or not.
+ * `excludeBookingId` lets a booking be rescheduled without clashing with itself.
+ */
+export async function busyBlocksForDate(
+  date: string,
+  excludeBookingId?: string
+): Promise<BusyBlock[]> {
+  const rows = await rest<Pick<BookingRow, "id" | "cleaner_id" | "start_time" | "hours">[]>(
+    `bookings?preferred_date=eq.${encodeURIComponent(date)}` +
+      `&status=in.(requested,confirmed,completed,paid)` +
+      `&select=id,cleaner_id,start_time,hours`
+  );
+  return rows
+    .filter((r) => r.id !== excludeBookingId)
+    .map(busyFromBooking)
+    .filter((b): b is BusyBlock => b !== null);
 }
 
 /* ---------- add-ons (extras) ---------- */

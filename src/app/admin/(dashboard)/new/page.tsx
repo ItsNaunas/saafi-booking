@@ -22,6 +22,7 @@ export default async function NewBookingPage({
           <Field label="Postcode" name="postcode" />
           <Field label="Address line" name="address_line" className="sm:col-span-2" />
           <Field label="Date *" name="preferred_date" type="date" />
+          <Field label="Start time" name="start_time" type="time" step="900" hint="optional" />
           <Field label="Hours" name="hours" type="number" step="0.5" defaultValue="2" />
           <Field label="Price (£)" name="price" type="number" step="0.5" defaultValue="0" />
           <label className="block">
