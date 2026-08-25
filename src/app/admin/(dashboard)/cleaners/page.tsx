@@ -1,4 +1,5 @@
 import { listCleaners, type CleanerRow } from "@/lib/supabaseAdmin";
+import { site } from "@/lib/business";
 import { addCleaner, toggleCleaner, updateCleanerSchedule } from "@/app/admin/actions";
 
 /** 0=Sunday..6=Saturday, matching JS getUTCDay() and the works_days column. */
@@ -16,7 +17,12 @@ export const dynamic = "force-dynamic";
 
 export default async function CleanersPage() {
   const cleaners = await listCleaners();
-  const base = process.env.NEXT_PUBLIC_SITE_URL ?? "https://saafi-booking.vercel.app";
+  // Always the real public domain, never the environment's. These links get pasted
+  // into WhatsApp — one opened from a local admin session must not hand a cleaner
+  // a localhost or preview URL. NEXT_PUBLIC_SITE_URL deliberately isn't used here:
+  // it follows the environment, which is right for the Stripe redirect and wrong
+  // for anything a human is given.
+  const base = site.url;
 
   return (
     <div className="mx-auto max-w-2xl">
