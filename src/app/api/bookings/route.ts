@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { secret } from "@/lib/env";
 import { appendFile, mkdir } from "fs/promises";
 import path from "path";
 import {
@@ -233,7 +234,7 @@ async function storeBooking(
 
 /** Instant alert to the business — Resend when configured, no-op otherwise. */
 async function sendAlertEmail(record: BookingRecord) {
-  const key = process.env.RESEND_API_KEY;
+  const key = secret("RESEND_API_KEY");
   const to = process.env.ALERT_EMAIL_TO; // e.g. info@saaficleaningservice.com
   if (!key || !to) return;
 

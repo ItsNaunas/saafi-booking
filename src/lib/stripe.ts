@@ -2,25 +2,26 @@
 // nothing in here may be imported from a "use client" module.
 
 import Stripe from "stripe";
+import { secret, hasSecret } from "./env";
 
 let cached: Stripe | null = null;
 
 /** Null when Stripe isn't configured — the rest of the app carries on without it. */
 export function getStripe(): Stripe | null {
   if (cached) return cached;
-  const key = process.env.STRIPE_SECRET_KEY;
+  const key = secret("STRIPE_SECRET_KEY");
   if (!key) return null;
   cached = new Stripe(key);
   return cached;
 }
 
 export function stripeConfigured(): boolean {
-  return Boolean(process.env.STRIPE_SECRET_KEY);
+  return hasSecret("STRIPE_SECRET_KEY");
 }
 
 /** Whether we're pointed at test mode — surfaced in the admin so it's never ambiguous. */
 export function stripeIsTestMode(): boolean {
-  return (process.env.STRIPE_SECRET_KEY ?? "").startsWith("sk_test_");
+  return (secret("STRIPE_SECRET_KEY") ?? "").startsWith("sk_test_");
 }
 
 /** GBP pounds -> integer pence, which is what Stripe wants. */

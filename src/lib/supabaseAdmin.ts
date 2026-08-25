@@ -1,5 +1,6 @@
 // Server-only Supabase data layer for the admin CRM (secret key, full access).
 // Plain PostgREST fetches — no client SDK needed. Never import from client components.
+import { secret } from "./env";
 
 import type { ReasonCode } from "./adjustments";
 import { busyFromBooking, type BusyBlock, type SchedulableCleaner } from "./scheduling";
@@ -80,7 +81,7 @@ export type CustomerRow = {
 
 function creds() {
   const url = process.env.SUPABASE_URL;
-  const key = process.env.SUPABASE_SECRET_KEY;
+  const key = secret("SUPABASE_SECRET_KEY");
   if (!url || !key) throw new Error("SUPABASE_URL / SUPABASE_SECRET_KEY not configured");
   return { url, key };
 }

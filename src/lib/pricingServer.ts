@@ -3,6 +3,7 @@
 // config whenever the DB is unreachable — the quote flow must never go down.
 
 import { pricingConfig, type PricingConfig, type Addon } from "./pricing";
+import { secret } from "./env";
 
 const TTL_MS = 60_000;
 let cached: { cfg: PricingConfig; addons: Addon[]; at: number } | null = null;
@@ -38,7 +39,7 @@ export async function loadPricingAndAddons(): Promise<{ cfg: PricingConfig; addo
   if (cached && Date.now() - cached.at < TTL_MS) return cached;
 
   const url = process.env.SUPABASE_URL;
-  const key = process.env.SUPABASE_SECRET_KEY;
+  const key = secret("SUPABASE_SECRET_KEY");
   // deep-clone the defaults so DB values never mutate the module constant
   const cfg: PricingConfig = structuredClone(pricingConfig);
   let addons: Addon[] = [];
