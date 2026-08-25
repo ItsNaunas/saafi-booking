@@ -18,6 +18,7 @@
 // the composition has to move.
 
 import Image from "next/image";
+import familyLight from "../../public/family-light.jpg";
 import { Headset, HouseHeart, ShieldCheck, Heart, type LucideIcon } from "lucide-react";
 import Icon from "./Icon";
 
@@ -118,11 +119,12 @@ function BrandDisc() {
 
       <div className="absolute inset-0 overflow-hidden rounded-full bg-brand-100">
         <Image
-          src="/family-light.jpg"
+          src={familyLight}
           alt=""
           aria-hidden="true"
           fill
           sizes="(max-width: 640px) 86vw, 440px"
+          placeholder="blur"
           className="object-cover"
           style={{ objectPosition: "center 38%" }}
         />

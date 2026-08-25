@@ -16,7 +16,12 @@
 // snap-scrolling row rather than a second interaction model.
 
 import { useState } from "react";
-import Image from "next/image";
+import Image, { type StaticImageData } from "next/image";
+import trustProducts from "../../public/trust-products.jpg";
+import trustSlot from "../../public/trust-slot.jpg";
+import trustHours from "../../public/trust-hours.jpg";
+import trustApprove from "../../public/trust-approve.jpg";
+import trustFamily from "../../public/trust-family.jpg";
 import Link from "next/link";
 import { ArrowUpRight } from "lucide-react";
 import Icon from "./Icon";
@@ -31,7 +36,7 @@ type Point = {
   /** Category label above an open panel's title. */
   kicker: string;
   /** Panel ground. Licensed stock — see public/IMAGE-CREDITS.md. */
-  image: string;
+  image: StaticImageData;
   /** Focal point, so the subject survives a tall narrow crop. */
   pos: string;
 };
@@ -44,7 +49,7 @@ const POINTS: Point[] = [
     detail:
       "Nothing to buy and nothing to leave out for us. It is already in the hourly rate, not added on at the end.",
     kicker: "What's in the rate",
-    image: "/trust-products.jpg",
+    image: trustProducts,
     pos: "center 62%",
   },
   {
@@ -54,7 +59,7 @@ const POINTS: Point[] = [
     detail:
       "Same day, same time, already in the diary before you have to think about it. You can plan your week around it.",
     kicker: "Why regulars stay",
-    image: "/trust-slot.jpg",
+    image: trustSlot,
     pos: "center 45%",
   },
   {
@@ -64,7 +69,7 @@ const POINTS: Point[] = [
     detail:
       "You are not paying for a job someone is rushing to finish early. You choose the hours up front and you can change them.",
     kicker: "How the time works",
-    image: "/trust-hours.jpg",
+    image: trustHours,
     pos: "center 40%",
   },
   {
@@ -74,7 +79,7 @@ const POINTS: Point[] = [
     detail:
       "If your home turns out bigger than booked we tell you and you approve the price before anything changes. If a clean simply takes us longer, that is our cost, not yours.",
     kicker: "On the bill",
-    image: "/trust-approve.jpg",
+    image: trustApprove,
     pos: "center 35%",
   },
   {
@@ -84,7 +89,7 @@ const POINTS: Point[] = [
     detail:
       "Not a different stranger each week from a booking platform. You will get to know who cleans your home, and they will get to know it.",
     kicker: "Who we are",
-    image: "/trust-family.jpg",
+    image: trustFamily,
     pos: "center 38%",
   },
 ];
@@ -125,6 +130,7 @@ export default function TrustShowcase() {
                 aria-hidden="true"
                 fill
                 sizes="(max-width: 640px) 85vw, (max-width: 1024px) 52vw, 560px"
+                placeholder="blur"
                 className={`object-cover transition-opacity duration-300 ${
                   isOpen ? "opacity-100" : "opacity-40 group-hover:opacity-60"
                 }`}

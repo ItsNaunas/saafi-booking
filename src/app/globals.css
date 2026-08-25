@@ -137,3 +137,24 @@ a {
     transform: none;
   }
 }
+
+/* The featured testimonial swapping in. Paired with a React key so the
+   animation restarts on every promotion. */
+@keyframes quote-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Anchor links glide rather than jump — but only for people who have not
+   asked the OS for less motion. */
+@media (prefers-reduced-motion: no-preference) {
+  html {
+    scroll-behavior: smooth;
+  }
+}

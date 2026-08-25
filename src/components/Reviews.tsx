@@ -1,4 +1,8 @@
+"use client";
+
+import { useState } from "react";
 import { reviews } from "@/lib/business";
+import Reveal from "./Reveal";
 
 // The one thing the page could not do for itself: let somebody other than
 // SAAFI speak. Everything else on the site is SAAFI's own account of SAAFI.
@@ -17,6 +21,11 @@ import { reviews } from "@/lib/business";
 // No rating, no star row, no "verified" badge: there is no review platform
 // behind this and inventing the furniture of one would be the dishonest part,
 // not the design.
+//
+// The supporting quotes are buttons: clicking one promotes it to the featured
+// slot and demotes the current one. It costs a line of state and turns a wall
+// of testimony into something you can move through — and every quote gets a
+// turn at the size that actually gets read.
 
 function Attribution({
   name,
@@ -55,67 +64,83 @@ function Ref({ n }: { n: number }) {
 }
 
 export default function Reviews() {
+  const [featured, setFeatured] = useState(0);
+
   if (reviews.length === 0) return null;
 
-  const [lead, ...rest] = reviews;
+  const lead = reviews[featured];
+  const rest = reviews
+    .map((r, i) => ({ r, i }))
+    .filter(({ i }) => i !== featured);
 
   return (
-    <section
-      id="reviews"
-      className="scroll-mt-20 overflow-hidden bg-brand-950"
-    >
+    <section id="reviews" className="scroll-mt-20 overflow-hidden bg-brand-950">
       <div className="mx-auto max-w-6xl px-4 py-20 sm:px-6 lg:py-28">
-        <p className="text-xs font-semibold uppercase tracking-[0.24em] text-brand-300">
-          In their words
-        </p>
-        <h2 className="mt-5 max-w-2xl font-display text-3xl font-bold leading-[1.08] tracking-tight text-white sm:text-4xl">
-          What people say once we&apos;ve been
-        </h2>
+        <Reveal>
+          <p className="text-xs font-semibold uppercase tracking-[0.24em] text-brand-300">
+            In their words
+          </p>
+          <h2 className="mt-5 max-w-2xl font-display text-3xl font-bold leading-[1.08] tracking-tight text-white sm:text-4xl">
+            What people say once we&apos;ve been
+          </h2>
+        </Reveal>
 
         <div className="mt-14 grid gap-14 lg:mt-16 lg:grid-cols-12 lg:gap-x-16">
           {/* ---- the featured quote ---- */}
-          <blockquote className="relative lg:col-span-7">
-            {/* Set in the display face at a size no heading on the page uses,
-                clipped by the section. Decoration, so it is never read out. */}
-            <span
-              aria-hidden="true"
-              className="pointer-events-none absolute -left-2 -top-16 select-none font-display text-[13rem] leading-none text-white/[0.06] sm:-top-24 sm:text-[18rem]"
+          <Reveal delay={80} className="lg:col-span-7">
+            {/* key restarts the fade whenever a different quote is promoted,
+                so the swap reads as a change rather than as text mutating. */}
+            <blockquote
+              key={featured}
+              className="relative motion-safe:animate-[quote-in_420ms_cubic-bezier(0.16,1,0.3,1)]"
             >
-              &ldquo;
-            </span>
-
-            <div className="relative">
-              <Ref n={1} />
-              <p className="mt-4 text-[26px] font-medium leading-[1.38] text-white/95 sm:text-[30px] lg:text-[34px] lg:leading-[1.35]">
-                {lead.quote}
-              </p>
+              {/* Set in the display face at a size no heading on the page uses,
+                  clipped by the section. Decoration, never read out. */}
               <span
                 aria-hidden="true"
-                className="mt-8 block h-px w-12 bg-brand-400"
-              />
-              <Attribution {...lead} className="mt-6" />
-            </div>
-          </blockquote>
+                className="pointer-events-none absolute -left-2 -top-16 select-none font-display text-[13rem] leading-none text-white/[0.06] sm:-top-24 sm:text-[18rem]"
+              >
+                &ldquo;
+              </span>
 
-          {/* ---- the two supporting quotes ---- */}
-          <div className="lg:col-span-5 lg:pt-2">
-            {rest.map((r, i) => (
-              <blockquote
-                key={`${r.name}-${i}`}
-                className={
-                  i === 0
+              <div className="relative">
+                <Ref n={featured + 1} />
+                <p className="mt-4 text-[26px] font-medium leading-[1.38] text-white/95 sm:text-[30px] lg:text-[34px] lg:leading-[1.35]">
+                  {lead.quote}
+                </p>
+                <span
+                  aria-hidden="true"
+                  className="mt-8 block h-px w-12 bg-brand-400"
+                />
+                <Attribution {...lead} className="mt-6" />
+              </div>
+            </blockquote>
+          </Reveal>
+
+          {/* ---- the others, each one a way back into the featured slot ---- */}
+          <Reveal delay={160} className="lg:col-span-5 lg:pt-2">
+            {rest.map(({ r, i }, position) => (
+              <button
+                key={r.name + i}
+                type="button"
+                onClick={() => setFeatured(i)}
+                aria-label={`Read ${r.name}'s review in full`}
+                className={`group block w-full cursor-pointer text-left outline-none focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-brand-300 ${
+                  position === 0
                     ? "pb-9"
                     : "border-t border-white/[0.14] pt-9"
-                }
+                }`}
               >
-                <Ref n={i + 2} />
-                <p className="mt-3 text-[17px] leading-relaxed text-white/70 lg:text-lg lg:leading-relaxed">
-                  {r.quote}
-                </p>
-                <Attribution {...r} className="mt-5" />
-              </blockquote>
+                <blockquote>
+                  <Ref n={i + 1} />
+                  <p className="mt-3 text-[17px] leading-relaxed text-white/70 transition-colors duration-200 group-hover:text-white/90 lg:text-lg lg:leading-relaxed">
+                    {r.quote}
+                  </p>
+                  <Attribution {...r} className="mt-5" />
+                </blockquote>
+              </button>
             ))}
-          </div>
+          </Reveal>
         </div>
       </div>
     </section>

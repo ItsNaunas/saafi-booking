@@ -1,5 +1,10 @@
 import type { Metadata } from "next";
+import type { StaticImageData } from "next/image";
 import Image from "next/image";
+import heroCleaner from "../../public/hero-cleaner.jpg";
+import roomKitchen from "../../public/room-kitchen.jpg";
+import roomBathroom from "../../public/room-bathroom.jpg";
+import roomFloors from "../../public/room-floors.jpg";
 import Link from "next/link";
 import TrustShowcase, { ShowcaseCta } from "@/components/TrustShowcase";
 import HeroSearchBar from "@/components/HeroSearchBar";
@@ -10,6 +15,9 @@ import SafetyChecks from "@/components/SafetyChecks";
 import Reviews from "@/components/Reviews";
 import ServiceArea from "@/components/ServiceArea";
 import StickyQuoteBar from "@/components/StickyQuoteBar";
+import StickyHeader from "@/components/StickyHeader";
+import Reveal from "@/components/Reveal";
+import AnimatedPrice from "@/components/AnimatedPrice";
 import {
   House,
   SprayCan,
@@ -48,7 +56,7 @@ const ROOMS: {
   n: string;
   title: string;
   copy: string;
-  image?: string;
+  image?: StaticImageData;
   imagePos?: string;
   tone: string;
 }[] = [
@@ -56,7 +64,7 @@ const ROOMS: {
     n: "01",
     title: "Kitchen",
     copy: "Surfaces, sink and hob cleaned every visit.",
-    image: "/room-kitchen.jpg",
+    image: roomKitchen,
     imagePos: "center 55%",
     tone: "bg-brand-100",
   },
@@ -64,7 +72,7 @@ const ROOMS: {
     n: "02",
     title: "Bathrooms",
     copy: "Sink, toilet, bath or shower and visible surfaces cleaned thoroughly.",
-    image: "/room-bathroom.jpg",
+    image: roomBathroom,
     imagePos: "center 42%",
     tone: "bg-slate-100",
   },
@@ -72,7 +80,7 @@ const ROOMS: {
     n: "03",
     title: "Living spaces",
     copy: "Dusting, vacuuming and surfaces wiped down throughout your main living areas.",
-    image: "/hero-cleaner.jpg",
+    image: heroCleaner,
     // cropped low and left so it reads as a different frame to the hero above
     imagePos: "center 72%",
     tone: "bg-brand-50",
@@ -81,7 +89,7 @@ const ROOMS: {
     n: "04",
     title: "Floors & finishing touches",
     copy: "Hard floors mopped, carpets vacuumed and bins emptied where needed.",
-    image: "/room-floors.jpg",
+    image: roomFloors,
     imagePos: "center 62%",
     tone: "bg-brand-50",
   },
@@ -147,9 +155,20 @@ export default async function Home() {
       <section className="relative isolate flex min-h-svh flex-col overflow-hidden">
         {/* background: photo over a gradient, so a missing/slow image still reads as design */}
         <div className="absolute inset-0 -z-20 bg-gradient-to-br from-slate-700 via-slate-800 to-brand-950" />
-        <div
-          className="absolute inset-0 -z-10 bg-cover bg-[position:center_18%]"
-          style={{ backgroundImage: "url('/hero-cleaner.jpg')" }}
+        {/* Was a CSS background-image, which the image optimiser cannot see:
+            no AVIF, no responsive sizes, no preload, and it is the LCP
+            element. As an <Image preload> it ships ~100KB of AVIF instead of
+            500KB of JPEG and gets a <link rel=preload> in the head. */}
+        <Image
+          src={heroCleaner}
+          alt=""
+          aria-hidden="true"
+          fill
+          preload
+          sizes="100vw"
+          placeholder="blur"
+          className="-z-10 object-cover"
+          style={{ objectPosition: "center 18%" }}
         />
         {/* scrim — keeps the copy legible whatever the photo does */}
         <div className="absolute inset-0 -z-10 bg-gradient-to-b from-black/55 via-black/35 to-black/65" />
@@ -237,7 +256,7 @@ export default async function Home() {
                 Regular cleans from
               </p>
               <p className="tnum mt-2 text-4xl font-bold leading-none text-white sm:text-[2.75rem]">
-                {formatGBP(recurringRate)}
+                <AnimatedPrice value={recurringRate} />
                 <span className="ml-0.5 text-lg font-medium text-white/85">
                   /hr
                 </span>
@@ -258,15 +277,18 @@ export default async function Home() {
         id="services"
         className="mx-auto max-w-6xl scroll-mt-20 px-4 py-20"
       >
-        <SectionHead
-          title="Find the right clean for your home"
-          sub="Simple pricing. The same high standard, however often you need us."
-        />
+        <Reveal>
+          <SectionHead
+            title="Find the right clean for your home"
+            sub="Simple pricing. The same high standard, however often you need us."
+          />
+        </Reveal>
 
         {/* Regular sits centre on desktop but first in the DOM, so it also leads
             on mobile without duplicating the markup. */}
         <div className="mx-auto mt-14 grid max-w-5xl gap-6 lg:grid-cols-3">
           <PlanCard
+            revealDelay={0}
             className="lg:order-2"
             featured
             icon={<Icon glyph={House} className="size-[30px]" />}
@@ -282,6 +304,7 @@ export default async function Home() {
             ]}
           />
           <PlanCard
+            revealDelay={90}
             className="lg:order-1"
             icon={<Icon glyph={CalendarDays} className="size-[30px]" />}
             title="One-off clean"
@@ -295,6 +318,7 @@ export default async function Home() {
             ]}
           />
           <PlanCard
+            revealDelay={180}
             className="lg:order-3"
             icon={<Icon glyph={Sparkles} className="size-[30px]" />}
             title="Deep clean"
@@ -320,7 +344,7 @@ export default async function Home() {
           {/* Columns are placed by hand rather than auto-flowed, so no two blocks
               share a size or a baseline. */}
           {/* heading — left-aligned on purpose, unlike every other section head */}
-          <div className="max-w-2xl">
+          <Reveal className="max-w-2xl">
             <h2 className="font-display text-3xl font-bold leading-[1.08] tracking-tight text-slate-900 lg:text-4xl">
               Every room, every visit
             </h2>
@@ -334,7 +358,7 @@ export default async function Home() {
               clean. Add any of them to your quote and we build the extra time
               into the visit.
             </p>
-          </div>
+          </Reveal>
 
           {/* One staggered band rather than two stacked rows: the asymmetry comes
               from four different circle sizes and four different top offsets, which
@@ -342,6 +366,7 @@ export default async function Home() {
           <div className="mt-10 grid grid-cols-12 gap-x-6 gap-y-12 lg:mt-8 lg:items-start">
             <Room
               {...ROOMS[0]}
+              revealDelay={0}
               size="md"
               marker="-right-1 top-6"
               className="col-span-12 sm:col-span-6 lg:col-span-3 lg:mt-10"
@@ -350,6 +375,7 @@ export default async function Home() {
             {/* dropped furthest to break the baseline */}
             <Room
               {...ROOMS[1]}
+              revealDelay={90}
               size="sm"
               marker="-left-2 top-8"
               className="col-span-12 sm:col-span-6 lg:col-span-2 lg:mt-24"
@@ -358,6 +384,7 @@ export default async function Home() {
             {/* the anchor of the composition */}
             <Room
               {...ROOMS[2]}
+              revealDelay={180}
               size="lg"
               marker="left-3 -bottom-3"
               className="col-span-12 sm:col-span-7 lg:col-span-4"
@@ -366,6 +393,7 @@ export default async function Home() {
             {/* mostly typography, in the negative space on the right */}
             <Room
               {...ROOMS[3]}
+              revealDelay={270}
               size="xs"
               marker="-right-2 bottom-1"
               className="col-span-12 sm:col-span-5 lg:col-span-3 lg:mt-16"
@@ -411,10 +439,12 @@ export default async function Home() {
         className="flex min-h-svh scroll-mt-20 flex-col justify-center bg-slate-50 py-12 lg:py-14"
       >
         <div className="mx-auto max-w-7xl px-4 sm:px-6">
-          <SectionHead
-            title="How your price is built"
-            sub="No callback, no guesswork. Here's exactly how we get to your number, the same steps the quote form walks you through."
-          />
+          <Reveal>
+            <SectionHead
+              title="How your price is built"
+              sub="No callback, no guesswork. Here's exactly how we get to your number, the same steps the quote form walks you through."
+            />
+          </Reveal>
           {/* Extras now live inside the builder, on the right, so the section
               reads as one journey: rooms, hours, frequency, quote, extras. */}
           <PriceSteps cfg={cfg} addons={addons} />
@@ -505,7 +535,7 @@ export default async function Home() {
           className="pointer-events-none absolute -bottom-72 right-24 size-[34rem] rounded-full border border-white/15"
         />
 
-        <div className="mx-auto max-w-6xl px-4 py-24 text-center sm:px-6 lg:py-28">
+        <Reveal className="mx-auto max-w-6xl px-4 py-24 text-center sm:px-6 lg:py-28">
           <h2 className="mx-auto max-w-3xl font-display text-4xl font-bold leading-[1.05] tracking-tight text-white sm:text-5xl lg:text-[3.5rem]">
             See your price in under a minute
           </h2>
@@ -534,7 +564,7 @@ export default async function Home() {
             details <span className="text-white/40">·</span> No callback to wait
             for
           </p>
-        </div>
+        </Reveal>
       </section>
 
       {/* ---------- footer ---------- */}
@@ -642,6 +672,10 @@ export default async function Home() {
       {/* Mobile only — the desktop nav is always in view. */}
       <StickyQuoteBar rate={recurringRate} />
 
+      {/* Desktop counterpart: the hero nav scrolls away, so it comes back
+          condensed once you are past it. */}
+      <StickyHeader phone={contact.phoneDisplay} phoneHref={contact.phoneHref} />
+
       {/* LocalBusiness structured data. A local service business with none of
           this is invisible to the "cleaners near me" results that should be
           feeding it. Priced from the live config so the schema can never
@@ -727,17 +761,20 @@ function Room({
   tone,
   size,
   marker,
+  revealDelay = 0,
   className = "",
 }: {
   n: string;
   title: string;
   copy: string;
-  image?: string;
+  image?: StaticImageData;
   imagePos?: string;
   tone: string;
   size: "lg" | "md" | "sm" | "xs";
   /** Tailwind position utilities for the number, so it sits differently each time. */
   marker: string;
+  /** Milliseconds behind the circle before it, so the four land in sequence. */
+  revealDelay?: number;
   className?: string;
 }) {
   // Circles are viewport-width on mobile and capped per size on larger screens,
@@ -762,7 +799,7 @@ function Room({
   }[size];
 
   return (
-    <div className={className}>
+    <Reveal delay={revealDelay} className={`group/room ${className}`}>
       <div className={`relative ${width}`}>
         <div className="relative aspect-square overflow-hidden rounded-full">
           {image ? (
@@ -771,7 +808,8 @@ function Room({
               alt={title}
               fill
               sizes={sizes}
-              className="object-cover"
+              placeholder="blur"
+              className="object-cover transition-transform duration-500 ease-out group-hover/room:scale-[1.06]"
               style={imagePos ? { objectPosition: imagePos } : undefined}
             />
           ) : (
@@ -779,7 +817,7 @@ function Room({
           )}
         </div>
         <span
-          className={`absolute flex size-12 items-center justify-center rounded-full bg-white text-sm font-semibold tabular-nums text-slate-900 ring-1 ring-slate-200 lg:size-14 ${marker}`}
+          className={`absolute flex size-12 items-center justify-center rounded-full bg-white text-sm font-semibold tabular-nums text-slate-900 ring-1 ring-slate-200 transition-all duration-500 ease-out group-hover/room:ring-brand-300 group-hover/room:text-brand-700 lg:size-14 ${marker}`}
         >
           {n}
         </span>
@@ -790,7 +828,7 @@ function Room({
       <p className="mt-1.5 max-w-[15rem] text-sm leading-relaxed text-slate-600">
         {copy}
       </p>
-    </div>
+    </Reveal>
   );
 }
 
@@ -814,6 +852,7 @@ function PlanCard({
   text,
   points,
   featured,
+  revealDelay = 0,
   className = "",
 }: {
   icon: React.ReactNode;
@@ -824,14 +863,16 @@ function PlanCard({
   text: string;
   points: string[];
   featured?: boolean;
+  revealDelay?: number;
   className?: string;
 }) {
   return (
-    <div
-      className={`relative flex flex-col  border p-7 ${
+    <Reveal
+      delay={revealDelay}
+      className={`relative flex flex-col border p-7 transition-[border-color,transform,box-shadow] duration-300 ease-out hover:-translate-y-1 ${
         featured
-          ? "border-brand-300 bg-brand-50/70 shadow-sm lg:-mt-4 lg:pb-9"
-          : "border-slate-200 bg-white"
+          ? "border-brand-300 bg-brand-50/70 shadow-sm hover:shadow-lg lg:-mt-4 lg:pb-9"
+          : "border-slate-200 bg-white hover:border-brand-300 hover:shadow-lg"
       } ${className}`}
     >
       {featured && (
@@ -887,7 +928,7 @@ function PlanCard({
       >
         Get a quote
       </Link>
-    </div>
+    </Reveal>
   );
 }
 
