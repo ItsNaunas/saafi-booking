@@ -261,3 +261,33 @@ export function formatTimeRange(hhmm: string, hours: number): string {
   if (start === null) return hhmm;
   return `${formatTime(hhmm)}–${formatTime(toHHMM(start + Math.round(hours * 60)))}`;
 }
+
+/** How well a given cleaner suits a given job. */
+export type CleanerFit = "free" | "busy" | "off";
+
+/**
+ * Whether this cleaner could actually take this job.
+ *
+ * Used to annotate the assignment dropdown, so the office sees who is free
+ * *before* choosing rather than being warned afterwards. It never blocks: the
+ * owner is allowed to assign a busy cleaner deliberately, and sometimes should.
+ *
+ * "off" covers both not working that weekday and the job falling outside their
+ * hours — from the office's point of view those are the same answer.
+ */
+export function fitForJob(opts: {
+  date: string;
+  start: number;
+  end: number;
+  cleaner: SchedulableCleaner;
+  busy: BusyBlock[];
+}): CleanerFit {
+  const { date, start, end, cleaner, busy } = opts;
+
+  if (!cleaner.worksDays.includes(weekdayOf(date))) return "off";
+  const from = toMinutes(cleaner.worksFrom);
+  const to = toMinutes(cleaner.worksTo);
+  if (from === null || to === null || start < from || end > to) return "off";
+
+  return assignmentConflict({ cleanerId: cleaner.id, start, end, busy }) ? "busy" : "free";
+}

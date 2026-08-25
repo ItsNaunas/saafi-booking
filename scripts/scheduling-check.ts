@@ -17,6 +17,7 @@ import {
   busyFromBooking,
   formatTime,
   formatTimeRange,
+  fitForJob,
   schedulingDefaults,
   type SchedulableCleaner,
   type BusyBlock,
@@ -239,6 +240,39 @@ check("formatTime midnight", formatTime("00:00"), "12am");
 check("formatTime drops :00", formatTime("09:00"), "9am");
 check("formatTime keeps minutes", formatTime("09:30"), "9:30am");
 check("formatTimeRange", formatTimeRange("09:30", 3.5), "9:30am–1pm");
+
+/* ---------- who can take this job ---------- */
+
+const wedDate = "2026-08-26";
+const fit = (cleaner: SchedulableCleaner, busy: BusyBlock[] = []) =>
+  fitForJob({ date: wedDate, start: 600, end: 780, cleaner, busy }); // 10:00-13:00
+
+check("a free weekday cleaner fits", fit(weekdayCleaner), "free");
+check(
+  "a cleaner who does not work that day is off",
+  fitForJob({ date: "2026-08-29", start: 600, end: 780, cleaner: weekdayCleaner, busy: [] }),
+  "off"
+);
+check(
+  "a job running past their hours is off",
+  fitForJob({ date: wedDate, start: 960, end: 1140, cleaner: weekdayCleaner, busy: [] }),
+  "off"
+);
+check(
+  "an overlapping job makes them busy",
+  fit(weekdayCleaner, [{ cleanerId: "c1", start: 660, end: 720 }]),
+  "busy"
+);
+check(
+  "somebody else's job does not",
+  fit(weekdayCleaner, [{ cleanerId: "c2", start: 660, end: 720 }]),
+  "free"
+);
+check(
+  "back-to-back is still free",
+  fit(weekdayCleaner, [{ cleanerId: "c1", start: 780, end: 900 }]),
+  "free"
+);
 
 if (failed) {
   console.error(`\n${failed} check(s) FAILED`);

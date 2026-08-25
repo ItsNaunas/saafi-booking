@@ -9,6 +9,14 @@ import {
   type CleanerRow,
 } from "@/lib/supabaseAdmin";
 import { setBookingStatus, stopRecurring, assignCleaner } from "@/app/admin/actions";
+import {
+  busyFromBooking,
+  fitForJob,
+  toMinutes,
+  type BusyBlock,
+  type CleanerFit,
+  type SchedulableCleaner,
+} from "@/lib/scheduling";
 import { formatGBP, FREQUENCY_LABEL } from "@/lib/pricing";
 
 export const dynamic = "force-dynamic";
@@ -19,6 +27,17 @@ const COLUMNS: { status: BookingStatus; title: string; accent: string }[] = [
   { status: "completed", title: "Completed", accent: "bg-violet-400" },
   { status: "paid", title: "Paid", accent: "bg-brand-500" },
 ];
+
+/**
+ * Shown against each name in the assignment dropdown. The office is still free to
+ * pick a busy cleaner — they sometimes know something the calendar doesn't — but
+ * they now find out before choosing rather than from a warning afterwards.
+ */
+const FIT_SUFFIX: Record<CleanerFit, string> = {
+  free: "",
+  busy: " — already on a job then",
+  off: " — not working then",
+};
 
 const NEXT_ACTION: Partial<Record<BookingStatus, { to: BookingStatus; label: string }>> = {
   requested: { to: "confirmed", label: "Confirm" },
@@ -41,6 +60,40 @@ export default async function PipelinePage({
     listPendingAdjustments().catch(() => []),
   ]);
   const activeCleaners = cleaners.filter((c) => c.active);
+
+  // Everything already occupying each day, built once from the bookings we have
+  // in hand — annotating the assignment dropdown costs no extra queries.
+  const busyByDate = new Map<string, BusyBlock[]>();
+  for (const bk of allBookings) {
+    if (bk.status === "cancelled" || bk.status === "no_access") continue;
+    const block = busyFromBooking(bk);
+    if (!block) continue;
+    const list = busyByDate.get(bk.preferred_date);
+    if (list) list.push({ ...block, id: bk.id } as BusyBlock & { id: string });
+    else busyByDate.set(bk.preferred_date, [{ ...block, id: bk.id } as BusyBlock & { id: string }]);
+  }
+  /** Which cleaners could take this job, keyed by cleaner id. */
+  const fitFor = (bk: BookingRow): Map<string, CleanerFit> => {
+    const out = new Map<string, CleanerFit>();
+    const start = bk.start_time ? toMinutes(bk.start_time) : null;
+    if (start === null) return out; // no time yet — nothing to judge them against
+    const end = start + Math.round(Number(bk.hours) * 60);
+    const busy = (busyByDate.get(bk.preferred_date) ?? []).filter(
+      (x) => (x as BusyBlock & { id?: string }).id !== bk.id
+    );
+    for (const c of schedulable) {
+      out.set(c.id, fitForJob({ date: bk.preferred_date, start, end, cleaner: c, busy }));
+    }
+    return out;
+  };
+
+  const schedulable: SchedulableCleaner[] = activeCleaners.map((c) => ({
+    id: c.id,
+    name: c.name,
+    worksDays: Array.isArray(c.works_days) ? c.works_days.map(Number) : [],
+    worksFrom: c.works_from ?? "09:00",
+    worksTo: c.works_to ?? "17:00",
+  }));
 
   const needle = (q ?? "").trim().toLowerCase();
   const bookings = needle
@@ -116,7 +169,7 @@ export default async function PipelinePage({
               <div className="space-y-3">
                 {rows.length === 0 && <p className="px-1 pb-2 text-sm text-slate-400">Nothing here.</p>}
                 {rows.map((b) => (
-                  <BookingCard key={b.id} b={b} cleaners={activeCleaners} />
+                  <BookingCard key={b.id} b={b} cleaners={activeCleaners} fit={fitFor(b)} />
                 ))}
               </div>
             </section>
@@ -131,7 +184,7 @@ export default async function PipelinePage({
           </summary>
           <div className="mt-3 grid gap-3 md:grid-cols-3">
             {cancelled.map((b) => (
-              <BookingCard key={b.id} b={b} cleaners={activeCleaners} />
+              <BookingCard key={b.id} b={b} cleaners={activeCleaners} fit={fitFor(b)} />
             ))}
           </div>
         </details>
@@ -140,7 +193,16 @@ export default async function PipelinePage({
   );
 }
 
-function BookingCard({ b, cleaners }: { b: BookingRow; cleaners: CleanerRow[] }) {
+function BookingCard({
+  b,
+  cleaners,
+  fit,
+}: {
+  b: BookingRow;
+  cleaners: CleanerRow[];
+  /** Empty when the booking has no time yet, so there is nothing to judge. */
+  fit: Map<string, CleanerFit>;
+}) {
   const next = NEXT_ACTION[b.status];
   const isRecurring = b.frequency !== "one_off";
   const needsCleaner = !b.cleaner_id && (b.status === "requested" || b.status === "confirmed");
@@ -213,6 +275,7 @@ function BookingCard({ b, cleaners }: { b: BookingRow; cleaners: CleanerRow[] })
             {cleaners.map((c) => (
               <option key={c.id} value={c.id}>
                 {c.name}
+                {FIT_SUFFIX[fit.get(c.id) ?? "free"]}
               </option>
             ))}
           </select>
