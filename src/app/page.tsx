@@ -385,6 +385,7 @@ export default async function Home() {
             {/* dropped furthest to break the baseline */}
             <Room
               {...ROOMS[1]}
+              flip
               revealDelay={90}
               size="sm"
               marker="-left-2 top-8"
@@ -403,6 +404,7 @@ export default async function Home() {
             {/* mostly typography, in the negative space on the right */}
             <Room
               {...ROOMS[3]}
+              flip
               revealDelay={270}
               size="xs"
               marker="-right-2 bottom-1"
@@ -772,6 +774,7 @@ function Room({
   size,
   marker,
   revealDelay = 0,
+  flip = false,
   className = "",
 }: {
   n: string;
@@ -785,6 +788,14 @@ function Room({
   marker: string;
   /** Milliseconds behind the circle before it, so the four land in sequence. */
   revealDelay?: number;
+  /**
+   * Pushes the block to the right edge — but only in the single-column stack.
+   * Alternating it down the page turns four left-aligned circles into a
+   * zigzag, which is the closest the phone layout gets to the deliberate
+   * off-baseline composition the desktop band is built on. From sm up there
+   * are two columns doing that job already, so it switches itself off.
+   */
+  flip?: boolean;
   className?: string;
 }) {
   // Circles are viewport-width on mobile and capped per size on larger screens,
@@ -810,6 +821,11 @@ function Room({
 
   return (
     <Reveal delay={revealDelay} className={`group/room ${className}`}>
+      <div
+        className={`flex flex-col sm:items-start sm:text-left ${
+          flip ? "items-end text-right" : "items-start text-left"
+        }`}
+      >
       <div className={`relative ${width}`}>
         <div className="relative aspect-square overflow-hidden rounded-full">
           {image ? (
@@ -838,6 +854,7 @@ function Room({
       <p className="mt-1.5 max-w-[15rem] text-sm leading-relaxed text-slate-600">
         {copy}
       </p>
+      </div>
     </Reveal>
   );
 }

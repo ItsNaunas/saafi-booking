@@ -11,9 +11,14 @@
 // made. Five panels of equal weight is a carousel, and a carousel is what you
 // build when you have not decided what matters most.
 //
-// State and keyboard behaviour are unchanged: each panel is a real <button>,
-// focus order is the DOM order, and the mobile fallback is the same
-// snap-scrolling row rather than a second interaction model.
+// State and keyboard behaviour are the same at every width: each panel is a
+// real <button> carrying aria-expanded, and focus order is DOM order.
+//
+// The LAYOUT changes below lg, because the desktop gesture does not survive the
+// trip. A horizontal snap-scroller hides four of five panels behind a swipe
+// nobody is told about, on the section carrying the reasons to book. On a phone
+// it is a vertical accordion instead: five visible rows, one open. Same
+// component, same state, same single-open rule — only the axis differs.
 
 import { useState } from "react";
 import Image, { type StaticImageData } from "next/image";
@@ -23,7 +28,7 @@ import trustHours from "../../public/trust-hours.jpg";
 import trustApprove from "../../public/trust-approve.jpg";
 import trustFamily from "../../public/trust-family.jpg";
 import Link from "next/link";
-import { ArrowUpRight } from "lucide-react";
+import { ArrowUpRight, ChevronDown } from "lucide-react";
 import Icon from "./Icon";
 
 type Point = {
@@ -99,7 +104,7 @@ export default function TrustShowcase() {
   const [open, setOpen] = useState(1);
 
   return (
-    <div className="flex snap-x snap-mandatory gap-2 overflow-x-auto pb-4 [scrollbar-width:none] lg:overflow-visible lg:pb-0 [&::-webkit-scrollbar]:hidden">
+    <div className="flex flex-col gap-2 lg:flex-row">
       {POINTS.map((p, i) => {
         const isOpen = open === i;
         return (
@@ -112,15 +117,13 @@ export default function TrustShowcase() {
             // flex-grow is what animates: the open panel takes roughly two and a
             // half times the width and its neighbours give it up.
             style={{ flexGrow: isOpen ? 2.6 : 1 }}
-            className="group w-[85vw] shrink-0 snap-start text-left outline-none focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-brand-300 sm:w-[52vw] lg:w-0 lg:flex-1 lg:basis-0 lg:transition-[flex-grow] lg:duration-300 lg:ease-out"
+            className="group w-full text-left outline-none focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-brand-300 lg:w-0 lg:flex-1 lg:basis-0 lg:transition-[flex-grow] lg:duration-300 lg:ease-out"
           >
             <div
-              // Height is fixed from lg up, where equal-height panels are the
-              // whole point of the strip. Below that every panel shows its
-              // detail strip too, and panel 04 carries the longest copy on the
-              // page — a fixed box would clip it, so mobile gets a minimum and
-              // grows.
-              className={`relative flex min-h-[430px] flex-col overflow-hidden border transition-colors duration-300 lg:h-[430px] lg:min-h-0 ${
+              // Fixed height from lg up, where equal-height panels are the
+              // whole point of the strip. On a phone a closed row is only as
+              // tall as its title, which is what makes five of them fit.
+              className={`relative flex flex-col overflow-hidden border transition-colors duration-300 lg:h-[430px] ${
                 isOpen
                   ? "border-white/25"
                   : "border-white/10 group-hover:border-white/25"
@@ -137,7 +140,9 @@ export default function TrustShowcase() {
                 sizes="(max-width: 640px) 85vw, (max-width: 1024px) 52vw, 560px"
                 placeholder="blur"
                 className={`object-cover transition-opacity duration-300 ${
-                  isOpen ? "opacity-100" : "opacity-40 group-hover:opacity-60"
+                  isOpen
+                    ? "opacity-100"
+                    : "opacity-0 lg:opacity-40 lg:group-hover:opacity-60"
                 }`}
                 style={{ objectPosition: p.pos }}
               />
@@ -152,7 +157,7 @@ export default function TrustShowcase() {
                 }`}
               />
 
-              <div className="relative flex flex-1 flex-col overflow-hidden p-5 lg:p-6">
+              <div className="relative flex flex-1 flex-col overflow-hidden p-4 sm:p-5 lg:p-6">
                 <div className="flex items-start justify-between gap-3">
                   <span
                     className={`text-xs font-semibold tabular-nums transition-colors ${
@@ -161,17 +166,28 @@ export default function TrustShowcase() {
                   >
                     {p.n}
                   </span>
+                  {/* Two indicators, because they say different things. A
+                      chevron means "this opens downward"; the diagonal arrow
+                      means "this expands sideways". Neither reads correctly in
+                      the other layout. */}
                   <span
                     aria-hidden="true"
-                    className={`flex size-8 shrink-0 items-center justify-center rounded-full transition duration-200 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 ${
+                    className={`flex size-8 shrink-0 items-center justify-center rounded-full transition duration-200 lg:group-hover:translate-x-0.5 lg:group-hover:-translate-y-0.5 ${
                       isOpen
                         ? "bg-brand-400 text-slate-900"
                         : "bg-white/10 text-white/70"
                     }`}
                   >
                     <Icon
+                      glyph={ChevronDown}
+                      className={`size-4 transition-transform duration-300 lg:hidden ${
+                        isOpen ? "-rotate-180" : ""
+                      }`}
+                      strokeWidth={2.2}
+                    />
+                    <Icon
                       glyph={ArrowUpRight}
-                      className="size-3.5"
+                      className="hidden size-3.5 lg:block"
                       strokeWidth={2.2}
                     />
                   </span>
@@ -179,7 +195,7 @@ export default function TrustShowcase() {
 
                 {/* Closed, the title sits at the foot and is the whole panel.
                     Open, it rises and the argument appears beneath it. */}
-                <div className={isOpen ? "mt-7" : "mt-auto"}>
+                <div className={isOpen ? "mt-5 lg:mt-7" : "mt-3 lg:mt-auto"}>
                   {isOpen && (
                     <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.16em] text-brand-300">
                       {p.kicker}
@@ -202,8 +218,10 @@ export default function TrustShowcase() {
                 </div>
               </div>
 
-              {/* Always present on mobile, revealed by opening on desktop. */}
-              <div className={`relative ${isOpen ? "block" : "block lg:hidden"}`}>
+              {/* Belongs to the open state everywhere now. On a phone it used
+                  to show on every panel because a swipe strip had no way to
+                  toggle; an accordion does. */}
+              <div className={`relative ${isOpen ? "block" : "hidden"}`}>
                 <p className="bg-white px-5 py-4 text-sm leading-relaxed text-slate-700 lg:px-6">
                   {p.detail}
                 </p>
