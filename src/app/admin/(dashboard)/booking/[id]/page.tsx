@@ -13,10 +13,12 @@ import {
   rejectAdjustment,
   createPaymentLink,
   emailPaymentLink,
+  setBookingStatus,
 } from "@/app/admin/actions";
 import { stripeConfigured, stripeIsTestMode } from "@/lib/stripe";
 import { FREQUENCY_LABEL, formatGBP } from "@/lib/pricing";
 import { reasonLabel } from "@/lib/adjustments";
+import { outcomeLabel, chargeableJourney } from "@/lib/outcomes";
 
 export const dynamic = "force-dynamic";
 
@@ -54,6 +56,53 @@ export default async function BookingDetailPage({
         {b.reference} · status <b>{b.status}</b> · {FREQUENCY_LABEL[b.frequency]}
         {b.frequency !== "one_off" && !b.recurring_active && " (recurring stopped)"}
       </p>
+
+      {b.status === "no_access" && b.outcome_reason && (
+        <div className="mb-4 bg-rose-50 p-5 text-sm ring-1 ring-rose-200">
+          <h2 className="font-semibold text-rose-900">
+            This visit didn&apos;t happen — {outcomeLabel(b.outcome_reason).toLowerCase()}
+          </h2>
+          {b.outcome_note && (
+            <p className="mt-1 text-rose-800">&ldquo;{b.outcome_note}&rdquo;</p>
+          )}
+          <p className="mt-2 text-rose-800">
+            Nothing has been charged.{" "}
+            {chargeableJourney(b.outcome_reason)
+              ? "This one is arguably the customer's to pay for."
+              : "This one isn't the customer's fault."}{" "}
+            Your call:
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <form action={setBookingStatus}>
+              <input type="hidden" name="id" value={b.id} />
+              <input type="hidden" name="from" value={b.status} />
+              <input type="hidden" name="to" value="cancelled" />
+              <button className="border border-rose-300 bg-white px-4 py-2 text-xs font-semibold text-rose-800 hover:bg-rose-100">
+                Write it off
+              </button>
+            </form>
+            <form action={setBookingStatus}>
+              <input type="hidden" name="id" value={b.id} />
+              <input type="hidden" name="from" value={b.status} />
+              <input type="hidden" name="to" value="completed" />
+              <button className="bg-rose-700 px-4 py-2 text-xs font-bold text-white hover:bg-rose-800">
+                Charge for the journey
+              </button>
+            </form>
+            <form action={setBookingStatus}>
+              <input type="hidden" name="id" value={b.id} />
+              <input type="hidden" name="from" value={b.status} />
+              <input type="hidden" name="to" value="confirmed" />
+              <button className="border border-slate-300 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50">
+                Put it back on
+              </button>
+            </form>
+          </div>
+          <p className="mt-2 text-xs text-rose-700">
+            Charging keeps the quoted price — edit it below first if it should be less.
+          </p>
+        </div>
+      )}
 
       {/* ---------- payment ---------- */}
       <div className="mb-4 bg-white p-5 text-sm shadow-sm ring-1 ring-slate-200">

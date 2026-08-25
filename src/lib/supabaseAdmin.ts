@@ -4,8 +4,16 @@ import { secret } from "./env";
 
 import type { ReasonCode } from "./adjustments";
 import { busyFromBooking, type BusyBlock, type SchedulableCleaner } from "./scheduling";
+import type { OutcomeReason } from "./outcomes";
 
-export type BookingStatus = "requested" | "confirmed" | "completed" | "paid" | "cancelled";
+export type BookingStatus =
+  | "requested"
+  | "confirmed"
+  | "completed"
+  | "paid"
+  | "cancelled"
+  /** Turned up, could not do it. Not a decision about money — the office resolves it. */
+  | "no_access";
 
 export type Frequency = "one_off" | "weekly" | "fortnightly" | "four_weekly";
 
@@ -55,6 +63,9 @@ export type BookingRow = {
   paid_at: string | null;
   /** When the link was emailed. Null = never emailed (may still have gone by hand). */
   payment_link_sent_at: string | null;
+  /** Why a visit did not happen. Null on every normal booking. */
+  outcome_reason: OutcomeReason | null;
+  outcome_note: string | null;
 };
 
 export type CleanerRow = {
@@ -180,6 +191,8 @@ export async function updateBooking(
       | "price_status"
       | "started_at"
       | "finished_at"
+      | "outcome_reason"
+      | "outcome_note"
     >
   >
 ): Promise<BookingRow | null> {

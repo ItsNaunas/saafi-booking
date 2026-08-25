@@ -24,6 +24,8 @@ const NEXT_ACTION: Partial<Record<BookingStatus, { to: BookingStatus; label: str
   requested: { to: "confirmed", label: "Confirm" },
   confirmed: { to: "completed", label: "Complete" },
   completed: { to: "paid", label: "Mark paid" },
+  // no_access deliberately has no single "next" — the office picks between
+  // writing it off and charging for it, and that choice lives on the booking page.
 };
 
 export default async function PipelinePage({

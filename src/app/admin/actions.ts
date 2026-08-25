@@ -33,10 +33,13 @@ import { toMinutes, toHHMM } from "@/lib/scheduling";
 
 const ALLOWED: Record<BookingStatus, BookingStatus[]> = {
   requested: ["confirmed", "cancelled"],
-  confirmed: ["completed", "cancelled"],
+  confirmed: ["completed", "cancelled", "no_access"],
   completed: ["paid"],
   paid: [],
   cancelled: ["requested"], // allow re-opening a cancelled request
+  // A wasted journey is unresolved, not finished. The office decides which it
+  // becomes: cancelled and nobody pays, or completed and something is charged.
+  no_access: ["cancelled", "completed", "confirmed"],
 };
 
 export async function setBookingStatus(formData: FormData) {

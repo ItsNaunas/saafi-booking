@@ -1,8 +1,9 @@
 import { notFound } from "next/navigation";
 import { formatTimeRange } from "@/lib/scheduling";
 import { getCleanerByToken, listBookingsForCleaner, type BookingRow } from "@/lib/supabaseAdmin";
-import { cleanerStartJob, cleanerFinishJob } from "./actions";
+import { cleanerStartJob, cleanerFinishJob, cleanerCannotDoJob } from "./actions";
 import { REASONS, elapsedHours } from "@/lib/adjustments";
+import { OUTCOMES } from "@/lib/outcomes";
 
 export const dynamic = "force-dynamic";
 
@@ -191,6 +192,53 @@ function JobCard({
             The price only changes if the job itself was bigger than booked, and the office approves it first.
           </p>
         </form>
+      )}
+
+      {live && !done && (
+        <details className="mt-2 group">
+          <summary className="cursor-pointer list-none py-1 text-sm font-medium text-slate-400 transition hover:text-amber-700">
+            Can&apos;t do this job?
+          </summary>
+          <form action={cleanerCannotDoJob} className="mt-2 bg-amber-50 p-3 ring-1 ring-amber-200">
+            <input type="hidden" name="token" value={token} />
+            <input type="hidden" name="booking_id" value={j.id} />
+            <p className="mb-2 text-sm text-amber-900">
+              Tell the office now and they&apos;ll sort it. Nothing gets charged either way.
+            </p>
+            <label className="block">
+              <span className="mb-1 block text-sm font-medium text-slate-700">What happened</span>
+              <select
+                name="outcome_reason"
+                required
+                defaultValue=""
+                className="w-full border border-slate-300 px-3 py-2 text-base"
+              >
+                <option value="" disabled>
+                  Choose one
+                </option>
+                {OUTCOMES.map((o) => (
+                  <option key={o.code} value={o.code}>
+                    {o.label} — {o.hint}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="mt-2 block">
+              <span className="mb-1 block text-sm font-medium text-slate-700">
+                Anything to add (optional)
+              </span>
+              <input
+                type="text"
+                name="outcome_note"
+                placeholder="e.g. key safe code didn't work"
+                className="w-full border border-slate-300 px-3 py-2 text-base"
+              />
+            </label>
+            <button className="mt-3 w-full rounded-full bg-amber-600 px-4 py-3 text-base font-semibold text-white hover:bg-amber-700">
+              Tell the office
+            </button>
+          </form>
+        </details>
       )}
     </article>
   );

@@ -3,7 +3,7 @@
 // Cleaner actions — authenticated by the cleaner's personal token, NOT the admin session.
 
 import { revalidatePath } from "next/cache";
-import { sendAdjustmentPendingEmail } from "@/lib/email";
+import { sendAdjustmentPendingEmail, sendVisitFailedEmail } from "@/lib/email";
 import {
   getCleanerByToken,
   getBooking,
@@ -19,6 +19,7 @@ import {
   roundQuarter,
   type ReasonCode,
 } from "@/lib/adjustments";
+import { isOutcomeReason } from "@/lib/outcomes";
 
 /** Booking the cleaner is allowed to touch right now, or null. */
 async function ownConfirmedJob(token: string, bookingId: string) {
@@ -134,4 +135,54 @@ export async function cleanerFinishJob(formData: FormData) {
 
   revalidatePath(`/c/${token}`);
   revalidatePath("/admin");
+}
+
+/**
+ * Tapped when the visit cannot happen at all.
+ *
+ * Deliberately separate from finishing. Finishing with zero hours used to be the
+ * only way to record a wasted journey, and it quietly repriced the job down to
+ * the two-hour minimum as though the clean had simply gone quickly — the cleaner
+ * appeared to have done it fast, and nobody found out otherwise.
+ *
+ * This records what happened and stops. It sets no price and completes nothing:
+ * whether a locked door is chargeable is SAAFI's policy, and the office resolves
+ * it from the booking page.
+ */
+export async function cleanerCannotDoJob(formData: FormData) {
+  const token = String(formData.get("token") ?? "");
+  const bookingId = String(formData.get("booking_id") ?? "");
+  const found = await ownConfirmedJob(token, bookingId);
+  if (!found) return;
+  const { cleaner, booking } = found;
+
+  const raw = String(formData.get("outcome_reason") ?? "");
+  if (!isOutcomeReason(raw)) return;
+  const note = String(formData.get("outcome_note") ?? "").trim() || null;
+
+  // The office hearing about this is the part that matters — a cleaner is stood
+  // outside a door right now and somebody may still be able to fix it. So the
+  // alert goes first and independently of the write: if the database is having a
+  // bad moment, the worst case is a status nobody updated, not a silent failure
+  // that leaves the cleaner waiting and the office none the wiser.
+  await sendVisitFailedEmail(booking, raw, note, cleaner.name).catch((e) =>
+    console.error("[cleaner] wasted journey alert failed:", e)
+  );
+
+  try {
+    await updateBooking(bookingId, {
+      status: "no_access",
+      outcome_reason: raw,
+      outcome_note: note,
+      finished_at: new Date().toISOString(),
+    });
+  } catch (e) {
+    // Also the pre-migration case: the status constraint and the outcome columns
+    // arrive with 2026-08-25-visit-outcomes.sql.
+    console.error("[cleaner] could not record the wasted journey:", e);
+  }
+
+  revalidatePath(`/c/${token}`);
+  revalidatePath("/admin");
+  revalidatePath("/admin/calendar");
 }

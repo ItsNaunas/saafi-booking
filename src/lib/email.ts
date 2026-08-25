@@ -3,6 +3,7 @@
 import type { BookingRow } from "./supabaseAdmin";
 import { secret } from "./env";
 import { formatTimeRange } from "@/lib/scheduling";
+import { chargeableJourney, outcomeLabel, type OutcomeReason } from "./outcomes";
 
 export async function sendConfirmationEmail(booking: BookingRow): Promise<void> {
   const key = secret("RESEND_API_KEY");
@@ -389,6 +390,45 @@ export async function sendNextVisitEmail(booking: BookingRow): Promise<{ ok: boo
       `to this email and we'll move it.`,
       ``,
       `SAAFI Cleaning Service`,
+    ],
+  });
+}
+
+/**
+ * A cleaner is standing outside a job that cannot happen.
+ *
+ * Goes to the office immediately rather than waiting to be noticed: there may
+ * still be time to ring the customer, or to send the cleaner somewhere useful
+ * instead of losing the slot entirely.
+ */
+export async function sendVisitFailedEmail(
+  booking: BookingRow,
+  reason: OutcomeReason,
+  note: string | null,
+  cleanerName: string
+): Promise<{ ok: boolean; reason?: string }> {
+  const chargeable = chargeableJourney(reason);
+  return send({
+    to: officeAddress(),
+    subject: `Wasted journey — ${booking.customer_name}, ${outcomeLabel(reason).toLowerCase()}`,
+    lines: [
+      `${cleanerName} could not do a clean and is there now.`,
+      ``,
+      `Customer: ${booking.customer_name}`,
+      `Phone:    ${booking.customer_phone}`,
+      `Where:    ${booking.address_line}, ${booking.postcode}`,
+      `When:     ${whenLine(booking)}`,
+      ``,
+      `Reason:   ${outcomeLabel(reason)}`,
+      note && `They said: ${note}`,
+      ``,
+      chargeable
+        ? `Nothing has been charged. This one is arguably the customer's to pay for —`
+        : `Nothing has been charged, and this one is not the customer's fault —`,
+      `you decide from the booking page whether it is cancelled or charged:`,
+      `${process.env.NEXT_PUBLIC_SITE_URL ?? "https://saaficleaningservice.com"}/admin/booking/${booking.id}`,
+      ``,
+      `Reference: ${booking.reference}`,
     ],
   });
 }

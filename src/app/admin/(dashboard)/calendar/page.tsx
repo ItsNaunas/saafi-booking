@@ -12,8 +12,10 @@ const STATUS_DOT: Record<string, string> = {
   confirmed: "bg-sky-400",
   completed: "bg-violet-400",
   paid: "bg-brand-500",
+  no_access: "bg-rose-400",
 };
 const STATUS_CHIP: Record<string, string> = {
+  no_access: "bg-rose-50 text-rose-800 ring-rose-200",
   requested: "bg-amber-50 text-amber-800 ring-amber-200",
   confirmed: "bg-sky-50 text-sky-800 ring-sky-200",
   completed: "bg-violet-50 text-violet-800 ring-violet-200",
