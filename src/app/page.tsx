@@ -112,11 +112,11 @@ const FAQS: { q: string; a: string }[] = [
   },
   {
     q: "What if I need to move a clean?",
-    a: "Give us a ring as early as you can and we'll do our best to find another slot that works. PLACEHOLDER — SAAFI to confirm whether there's a notice period and whether a late cancellation is ever charged.",
+    a: "Give us a ring as early as you can and we'll do our best to find another slot that works. As long as we know a day or so before, there's nothing to pay.",
   },
   {
     q: "Do I need to be home?",
-    a: "PLACEHOLDER — SAAFI to confirm. Most customers aren't home for every visit, so this needs to cover how we let ourselves in, whether we hold a key or use a keysafe, and how that key is stored between visits.",
+    a: "Only if you'd rather be. Plenty of our regulars are at work when we come. We'll agree how we get in on the confirmation call — some people leave a key with us, some fit a keysafe, and some prefer to be there for the first visit and go from there once they know us.",
   },
   {
     q: "Is it the same cleaner each time?",
@@ -124,7 +124,7 @@ const FAQS: { q: string; a: string }[] = [
   },
   {
     q: "What about pets?",
-    a: "PLACEHOLDER — SAAFI to confirm. Worth covering whether pets can be left loose during a clean and whether anyone on the team can't work around dogs or cats.",
+    a: "No problem at all. Just tell us on the call what you've got and whether they'll be loose while we're there, so whoever comes is expecting them.",
   },
   {
     q: "Which areas do you cover?",

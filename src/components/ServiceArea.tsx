@@ -42,7 +42,6 @@ function Contours() {
 
 export default function ServiceArea({ areas }: { areas: string[] }) {
   const list = areas.length > 0 ? areas : fallbackAreas;
-  const fromDb = areas.length > 0;
 
   if (list.length === 0) return null;
 
@@ -106,14 +105,6 @@ export default function ServiceArea({ areas }: { areas: string[] }) {
                 strokeWidth={2.2}
               />
             </Link>
-
-            {!fromDb && (
-              <p className="text-sm text-slate-500">
-                Placeholder districts — the live coverage list is still empty in
-                the database, so the quote form currently accepts any UK
-                postcode.
-              </p>
-            )}
           </div>
         </div>
       </div>

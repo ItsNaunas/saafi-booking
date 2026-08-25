@@ -1,5 +1,4 @@
 import { reviews } from "@/lib/business";
-import PlaceholderNote from "./PlaceholderNote";
 
 // The one thing the page could not do for itself: let somebody other than
 // SAAFI speak. Everything else on the site is SAAFI's own account of SAAFI.
@@ -118,11 +117,6 @@ export default function Reviews() {
             ))}
           </div>
         </div>
-
-        <PlaceholderNote>
-          sample text, not real customers. Publishing invented reviews is a
-          banned practice under the DMCC Act — replace or delete before launch.
-        </PlaceholderNote>
       </div>
     </section>
   );

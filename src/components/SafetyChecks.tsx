@@ -1,7 +1,6 @@
 import { checks } from "@/lib/business";
 import { UserCheck, House, ClipboardCheck, ShieldCheck } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import PlaceholderNote from "./PlaceholderNote";
 import Icon from "./Icon";
 
 // The objection the page never addressed: it isn't price, it's letting a
@@ -77,11 +76,6 @@ export default function SafetyChecks() {
                 </li>
               );
             })}
-
-            <PlaceholderNote>
-              none of these checks are confirmed by SAAFI yet. Confirm or delete
-              each one before launch.
-            </PlaceholderNote>
           </ul>
         </div>
       </div>

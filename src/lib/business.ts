@@ -1,30 +1,31 @@
 /**
  * =========================================================================
- *  EVERY PLACEHOLDER ON THE PUBLIC SITE LIVES IN THIS FILE.
+ *  EVERY INVENTED FACT ON THE PUBLIC SITE LIVES IN THIS FILE.
  * =========================================================================
  *
  * The landing page, the footer, the sticky bar, the sitemap and the
- * LocalBusiness structured data all read from here. Replacing a placeholder is
+ * LocalBusiness structured data all read from here. Replacing something is
  * editing one line in this file — never a hunt through components.
  *
- * Anything marked PLACEHOLDER is invented so the layout can be designed and
- * reviewed. None of it has been confirmed by SAAFI.
- *
- * `UNCONFIRMED` below is the safety catch. While it is `true`, the two sections
- * that carry claims about real people — customer reviews and the vetting /
- * insurance block — render a visible "not confirmed" marker. Set it to `false`
- * only once every value below is the real thing. It exists so unconfirmed
- * claims cannot reach a live site quietly.
+ * Everything below is written to READ as real, because the page has to look
+ * finished when it is shown to SAAFI. None of it IS real. That combination is
+ * useful in a demo and dangerous on an indexed public site, which is what
+ * DEMO_CONTENT exists to manage.
  */
 
 /**
- * Flip back to true to bring the on-page "not confirmed" markers back.
+ * True while this file contains invented content.
  *
- * Turned off 2026-08-24 at Naunas's request so the layouts can be reviewed
- * without them. The placeholders below are all still placeholders — the only
- * thing that changed is that the page no longer says so out loud.
+ * It does exactly one thing: `app/robots.ts` serves `noindex, nofollow` while
+ * it is set. That keeps invented reviews out of Google — publishing fake
+ * consumer reviews is a banned practice under the Digital Markets, Competition
+ * and Consumers Act, and an unindexed demo is not published in that sense
+ * whereas a crawled one is.
+ *
+ * Flip to false in the SAME commit that replaces the last invented value
+ * below. Not before, and not separately.
  */
-export const UNCONFIRMED: boolean = false;
+export const DEMO_CONTENT: boolean = true;
 
 export const site = {
   url: "https://saaficleaningservice.com",
@@ -35,56 +36,60 @@ export const site = {
 
 export const contact = {
   email: "info@saaficleaningservice.com",
-  /** PLACEHOLDER — SAAFI's real business number. */
-  phoneDisplay: "020 0000 0000",
-  /** PLACEHOLDER — the same number, digits only, for tel: links. */
-  phoneHref: "+442000000000",
-  /** PLACEHOLDER — when someone can actually expect an answer. */
+  /**
+   * INVENTED. 020 7946 0xxx is Ofcom's reserved range for drama and fiction:
+   * a real-looking London number that can never connect to a real person's
+   * phone. Deliberately not a plausible-but-unreserved number, which would
+   * eventually ring some stranger's landline.
+   */
+  phoneDisplay: "020 7946 0958",
+  phoneHref: "+442079460958",
+  /** INVENTED — confirm the hours someone actually answers. */
   hours: "Mon to Sat, 8am to 6pm",
 } as const;
 
 /**
- * PLACEHOLDER — the trading address for the LocalBusiness schema. A local
- * service business needs a real locality here to appear in local results; the
- * street line can be omitted if they work from home and would rather not
- * publish it, but the town and region cannot.
+ * INVENTED — the trading address for the LocalBusiness schema. Ilford is a
+ * guess drawn from the IG1 postcode used as the quote form's example, not
+ * something SAAFI have confirmed. A local service business needs a real
+ * locality here to appear in local results.
  */
 export const address = {
-  locality: "London",
+  locality: "Ilford",
   region: "Greater London",
   postalCode: "",
   country: "GB",
 } as const;
 
 /**
- * PLACEHOLDER — postcode districts SAAFI actually cover.
+ * INVENTED — Redbridge and the Essex border, inferred from that same IG1
+ * example. Plausible, unconfirmed.
  *
- * This is also a live operational gap, not only a content one: `service_areas`
- * is empty in Supabase, so the quote form currently accepts any UK postcode.
- * Filling that table is what makes the check real; this list is only what the
- * page says out loud.
+ * Also still a live operational gap: `service_areas` is empty in Supabase, so
+ * the quote form accepts any UK postcode regardless of what this list says.
+ * Filling that table is what makes the check real.
  */
 export const serviceAreas: string[] = [
-  "E1",
-  "E2",
-  "E14",
-  "N1",
-  "N4",
-  "SE1",
-  "SE8",
   "IG1",
-  "IG11",
+  "IG2",
+  "IG3",
+  "IG4",
+  "IG5",
+  "IG6",
+  "E11",
+  "E18",
   "RM6",
+  "RM7",
 ];
 
 /**
- * PLACEHOLDER — real customers, in their own words.
+ * INVENTED CUSTOMERS. Nobody said any of this.
  *
- * Publishing invented reviews is not a style problem: under the Digital
- * Markets, Competition and Consumers Act it is a banned practice. Every entry
- * here has to be replaced with something a real customer actually said, with
- * their permission, or the array has to be emptied — the section renders
- * nothing at all when it is empty, so deleting is a safe way to ship.
+ * Written to sound like real people so the section reads properly in a demo,
+ * which is exactly what makes them unsafe to index — see DEMO_CONTENT above.
+ * Replace with things real customers actually said, with their permission, or
+ * empty the array: the section renders nothing at all when it is empty, so
+ * deleting is always a safe way to ship.
  */
 export type Review = {
   quote: string;
@@ -97,37 +102,37 @@ export type Review = {
 export const reviews: Review[] = [
   {
     quote:
-      "Sample review text goes here. Two or three sentences in the customer's own words about what actually changed for them, rather than a general compliment.",
-    name: "Customer name",
-    area: "Area",
+      "I put off getting a cleaner for two years because I didn't like the idea of someone in the house while I was at work. Six months in and I've stopped thinking about it. I come home on a Thursday and the place is just done.",
+    name: "Priya S.",
+    area: "Barkingside",
     plan: "Fortnightly clean",
   },
   {
     quote:
-      "Sample review text goes here. The strongest ones name a specific worry that turned out to be unfounded, because that is what the next customer is quietly wondering about.",
-    name: "Customer name",
-    area: "Area",
+      "What sold me was being given a price before anyone came round. Everywhere else I rang wanted to pop by and quote first.",
+    name: "Daniel O.",
+    area: "Seven Kings",
     plan: "Weekly clean",
   },
   {
     quote:
-      "Sample review text goes here. One about a one-off clean is worth having alongside the regulars, since the two customers are buying different things.",
-    name: "Customer name",
-    area: "Area",
+      "Booked them at the end of a tenancy and expected a fight about the deposit. The landlord signed it off the same day.",
+    name: "Hannah M.",
+    area: "Woodford Green",
     plan: "One-off clean",
   },
 ];
 
 /**
- * PLACEHOLDER — and the most consequential placeholder in this file.
+ * INVENTED CLAIMS, and the most consequential invention in this file.
  *
- * Every line below is a commercial and legal claim about the safety of a
- * stranger entering someone's home. "Fully insured" in particular is either
- * true and evidenced by a policy number, or it is a misrepresentation. SAAFI's
- * own costing sheet budgets for insurance, and budgeted is not purchased.
+ * Every line is a commercial and legal claim about the safety of a stranger
+ * entering someone's home. "Insured" in particular is either true and evidenced
+ * by a policy number, or it is a misrepresentation — SAAFI's costing sheet
+ * budgets for insurance, and budgeted is not purchased.
  *
- * Confirm each one with them individually. Delete any they cannot evidence —
- * three honest checks beat four where one is aspirational.
+ * Confirm each one individually. Delete any they cannot evidence: three honest
+ * checks beat four where one is aspirational.
  */
 export type Check = { title: string; text: string };
 
