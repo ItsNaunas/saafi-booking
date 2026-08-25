@@ -4,6 +4,23 @@ import Link from "next/link";
 import TrustShowcase, { ShowcaseCta } from "@/components/TrustShowcase";
 import HeroSearchBar from "@/components/HeroSearchBar";
 import PriceSteps from "@/components/PriceSteps";
+import VisitJourney from "@/components/VisitJourney";
+import TheFamily from "@/components/TheFamily";
+import SafetyChecks from "@/components/SafetyChecks";
+import Reviews from "@/components/Reviews";
+import ServiceArea from "@/components/ServiceArea";
+import StickyQuoteBar from "@/components/StickyQuoteBar";
+import {
+  House,
+  SprayCan,
+  CreditCard,
+  CalendarDays,
+  Sparkles,
+  Check,
+  type LucideIcon,
+} from "lucide-react";
+import Icon from "@/components/Icon";
+import { contact, site, address } from "@/lib/business";
 import { loadPricingAndAddons } from "@/lib/pricingServer";
 import {
   formatGBP,
@@ -63,28 +80,10 @@ const ROOMS: {
   },
 ];
 
-const HERO_POINTS: { icon: () => React.ReactElement; text: string }[] = [
-  { icon: HomeIcon, text: "Family-run, local team" },
-  { icon: SprayIcon, text: "Cleaning products included" },
-  { icon: CardIcon, text: "Nothing to pay upfront" },
-];
-
-const STEPS = [
-  {
-    n: "1",
-    title: "Tell us about your home",
-    text: "Postcode, how many rooms, and how long you'd like us to stay. Takes about a minute.",
-  },
-  {
-    n: "2",
-    title: "See your price straight away",
-    text: "A real number on screen before you commit — not a callback, not an estimate by email.",
-  },
-  {
-    n: "3",
-    title: "We call to confirm",
-    text: "A quick chat to lock in your date and time, check we've got your home right, and answer anything you're unsure about.",
-  },
+const HERO_POINTS: { icon: LucideIcon; text: string }[] = [
+  { icon: House, text: "Family-run, local team" },
+  { icon: SprayCan, text: "Cleaning products included" },
+  { icon: CreditCard, text: "Nothing to pay upfront" },
 ];
 
 const FAQS: { q: string; a: string }[] = [
@@ -106,7 +105,19 @@ const FAQS: { q: string; a: string }[] = [
   },
   {
     q: "What if I need to move a clean?",
-    a: "Give us a ring as early as you can and we'll do our best to find another slot that works.",
+    a: "Give us a ring as early as you can and we'll do our best to find another slot that works. PLACEHOLDER — SAAFI to confirm whether there's a notice period and whether a late cancellation is ever charged.",
+  },
+  {
+    q: "Do I need to be home?",
+    a: "PLACEHOLDER — SAAFI to confirm. Most customers aren't home for every visit, so this needs to cover how we let ourselves in, whether we hold a key or use a keysafe, and how that key is stored between visits.",
+  },
+  {
+    q: "Is it the same cleaner each time?",
+    a: "For regular cleans we keep you with the same person wherever we can, because a cleaner who already knows your home does a better job of it. If they're ever off, we'll tell you before the visit rather than send a stranger unannounced.",
+  },
+  {
+    q: "What about pets?",
+    a: "PLACEHOLDER — SAAFI to confirm. Worth covering whether pets can be left loose during a clean and whether anyone on the team can't work around dogs or cats.",
   },
   {
     q: "Which areas do you cover?",
@@ -155,16 +166,29 @@ export default async function Home() {
               <a className="transition hover:text-white" href="#pricing">
                 Pricing
               </a>
+              <a className="transition hover:text-white" href="#how">
+                How it works
+              </a>
               <a className="transition hover:text-white" href="#faqs">
                 FAQs
               </a>
             </nav>
-            <Link
-              href="/quote"
-              className="shrink-0 rounded-full bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800"
-            >
-              Get a quote
-            </Link>
+            <div className="flex shrink-0 items-center gap-4">
+              {/* The site had no phone number anywhere. The people most likely
+                  to book a cleaner are the least likely to fill in a form. */}
+              <a
+                href={`tel:${contact.phoneHref}`}
+                className="hidden text-sm font-semibold text-white transition hover:text-brand-200 sm:block"
+              >
+                {contact.phoneDisplay}
+              </a>
+              <Link
+                href="/quote"
+                className="rounded-full bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800"
+              >
+                Get a quote
+              </Link>
+            </div>
           </div>
         </header>
 
@@ -191,9 +215,9 @@ export default async function Home() {
         <div className="relative z-10 mx-auto w-full max-w-5xl px-4 pb-6 sm:px-8 sm:pb-8">
           <div className="mb-14 flex flex-col items-center justify-between gap-7 sm:flex-row sm:items-end sm:gap-6">
             <ul className="space-y-4">
-              {HERO_POINTS.map(({ icon: Icon, text }) => (
+              {HERO_POINTS.map(({ icon: glyph, text }) => (
                 <li key={text} className="flex items-center gap-3.5 text-white">
-                  <Icon />
+                  <Icon glyph={glyph} className="size-[22px]" />
                   <span className="text-[15px] font-medium leading-none">
                     {text}
                   </span>
@@ -238,7 +262,7 @@ export default async function Home() {
           <PlanCard
             className="lg:order-2"
             featured
-            icon={<HomeLine />}
+            icon={<Icon glyph={House} className="size-[30px]" />}
             title="Regular clean"
             price={formatGBP(recurringRate)}
             unit="/hr"
@@ -252,7 +276,7 @@ export default async function Home() {
           />
           <PlanCard
             className="lg:order-1"
-            icon={<CalendarLine />}
+            icon={<Icon glyph={CalendarDays} className="size-[30px]" />}
             title="One-off clean"
             price={formatGBP(cfg.hourlyRate)}
             unit="/hr"
@@ -265,7 +289,7 @@ export default async function Home() {
           />
           <PlanCard
             className="lg:order-3"
-            icon={<SparkleLine />}
+            icon={<Icon glyph={Sparkles} className="size-[30px]" />}
             title="Deep clean"
             price="Call for a price"
             text="For when a regular clean isn't enough. We'll agree exactly what's covered with you first, then price it for your property."
@@ -297,6 +321,11 @@ export default async function Home() {
                 We don&apos;t just clean what&apos;s obvious. We work through your
                 home properly, from kitchens and bathrooms to floors, living
               spaces and the finishing touches.
+            </p>
+            <p className="mt-4 max-w-lg text-sm leading-relaxed text-slate-500">
+              Ovens, fridges, inside windows and laundry sit outside a standard
+              clean. Add any of them to your quote and we build the extra time
+              into the visit.
             </p>
           </div>
 
@@ -363,8 +392,17 @@ export default async function Home() {
         </div>
       </section>
 
+      {/* ---------- who we send into your home ----------
+           The trust block above says what the service promises. This says who
+           turns up to deliver it, which is the objection that actually stops
+           people booking a cleaner. */}
+      <SafetyChecks />
+
       {/* ---------- pricing ---------- */}
-      <section id="pricing" className="scroll-mt-20 bg-slate-50 py-20 sm:py-24">
+      <section
+        id="pricing"
+        className="flex min-h-svh scroll-mt-20 flex-col justify-center bg-slate-50 py-12 lg:py-14"
+      >
         <div className="mx-auto max-w-7xl px-4 sm:px-6">
           <SectionHead
             title="How your price is built"
@@ -376,28 +414,19 @@ export default async function Home() {
         </div>
       </section>
 
-      {/* ---------- how it works ---------- */}
-      <section
-        id="how"
-        className="scroll-mt-20 py-16"
-      >
-        <div className="mx-auto max-w-6xl px-4">
-          <SectionHead title="Three steps, no phone tag" />
-          <div className="mt-10 grid gap-8 sm:grid-cols-3">
-            {STEPS.map((s) => (
-              <div key={s.n}>
-                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-brand-600 text-xl font-bold text-white shadow-sm">
-                  {s.n}
-                </div>
-                <h3 className="mt-4 font-semibold text-slate-900">{s.title}</h3>
-                <p className="mx-auto mt-2 max-w-xs text-sm leading-relaxed text-slate-500">
-                  {s.text}
-                </p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
+      {/* ---------- from quote to clean ----------
+           Owns its own heading block, capsule label included — see
+           VisitJourney.tsx. Was "Three steps, no phone tag", which only ever
+           described the booking, and the booking was never the anxious part. */}
+      <VisitJourney />
+
+      {/* ---------- the people behind it ---------- */}
+      <TheFamily />
+
+      {/* ---------- what people say ----------
+           The only section on the page where somebody other than SAAFI speaks.
+           Renders nothing when lib/business.ts has no reviews in it. */}
+      <Reviews />
 
       {/* ---------- faqs ---------- */}
       <section id="faqs" className="mx-auto max-w-3xl scroll-mt-20 px-4 py-20">
@@ -418,6 +447,11 @@ export default async function Home() {
           ))}
         </div>
       </section>
+
+      {/* ---------- where we clean ----------
+           Reads the live service_areas table and only falls back to the
+           placeholder list when it is empty, which it currently is. */}
+      <ServiceArea areas={areas} />
 
       {/* ---------- closing CTA ---------- */}
       <section className="border-t border-slate-100 bg-brand-600">
@@ -492,6 +526,14 @@ export default async function Home() {
                   FAQs
                 </a>
               </li>
+              <li>
+                <a
+                  href="mailto:info@saaficleaningservice.com?subject=Cleaning%20work"
+                  className="transition hover:text-brand-400"
+                >
+                  Work with us
+                </a>
+              </li>
             </ul>
           </div>
           <div>
@@ -501,18 +543,26 @@ export default async function Home() {
             <ul className="mt-4 space-y-2 text-sm">
               <li>
                 <a
-                  href="mailto:info@saaficleaningservice.com"
-                  className="transition hover:text-brand-400"
+                  href={`tel:${contact.phoneHref}`}
+                  className="text-base font-semibold text-white transition hover:text-brand-400"
                 >
-                  info@saaficleaningservice.com
+                  {contact.phoneDisplay}
                 </a>
               </li>
-              <li>saaficleaningservice.com</li>
-              {areas.length > 0 && (
-                <li className="pt-2 text-xs">
-                  Covering {areas.join(", ")} and surrounding areas
-                </li>
-              )}
+              <li className="text-xs">{contact.hours}</li>
+              <li className="pt-1">
+                <a
+                  href={`mailto:${contact.email}`}
+                  className="transition hover:text-brand-400"
+                >
+                  {contact.email}
+                </a>
+              </li>
+              <li>
+                <a href="#areas" className="transition hover:text-brand-400">
+                  Areas we cover
+                </a>
+              </li>
             </ul>
           </div>
         </div>
@@ -523,6 +573,63 @@ export default async function Home() {
           </div>
         </div>
       </footer>
+
+      {/* Mobile only — the desktop nav is always in view. */}
+      <StickyQuoteBar rate={recurringRate} />
+
+      {/* LocalBusiness structured data. A local service business with none of
+          this is invisible to the "cleaners near me" results that should be
+          feeding it. Priced from the live config so the schema can never
+          advertise a rate the site has stopped charging. */}
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: JSON.stringify({
+            "@context": "https://schema.org",
+            "@type": "HomeAndConstructionBusiness",
+            name: site.legalName,
+            url: site.url,
+            email: contact.email,
+            telephone: contact.phoneHref,
+            image: `${site.url}/opengraph-image`,
+            description:
+              "Family-run home cleaning with an honest hourly rate. See your price online in under a minute.",
+            address: {
+              "@type": "PostalAddress",
+              addressLocality: address.locality,
+              addressRegion: address.region,
+              addressCountry: address.country,
+            },
+            areaServed: areas.map((a) => ({
+              "@type": "PostalCodeRangeSpecification",
+              postalCodeBegin: a,
+            })),
+            priceRange: "££",
+            makesOffer: [
+              {
+                "@type": "Offer",
+                name: "Regular home cleaning",
+                priceSpecification: {
+                  "@type": "UnitPriceSpecification",
+                  price: recurringRate,
+                  priceCurrency: "GBP",
+                  unitCode: "HUR",
+                },
+              },
+              {
+                "@type": "Offer",
+                name: "One-off home cleaning",
+                priceSpecification: {
+                  "@type": "UnitPriceSpecification",
+                  price: cfg.hourlyRate,
+                  priceCurrency: "GBP",
+                  unitCode: "HUR",
+                },
+              },
+            ],
+          }),
+        }}
+      />
     </main>
   );
 }
@@ -530,22 +637,14 @@ export default async function Home() {
 /** Extras can be priced flat or purely by the time they add — render whichever applies. */
 /* ---------- small presentational bits ---------- */
 
+/** 14px, so it takes the heavier stroke the Icon wrapper documents. */
 function Tick({ className = "text-brand-600" }: { className?: string }) {
   return (
-    <svg
-      viewBox="0 0 16 16"
-      width="14"
-      height="14"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2.25"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className={`mt-0.5 shrink-0 ${className}`}
-      aria-hidden="true"
-    >
-      <path d="M3 8.5 6.2 12 13 4.5" />
-    </svg>
+    <Icon
+      glyph={Check}
+      className={`mt-0.5 size-3.5 ${className}`}
+      strokeWidth={3}
+    />
   );
 }
 
@@ -727,94 +826,3 @@ function PlanCard({
   );
 }
 
-/* ---------- hero benefit icons (SVG Repo assets, recoloured via currentColor) ---------- */
-
-function HomeIcon() {
-  return (
-    <svg
-      width="21"
-      height="21"
-      viewBox="0 0 24 24"
-      fill="currentColor"
-      aria-hidden="true"
-      className="shrink-0"
-    >
-      <path d="M12 3.1 1.8 11.4a1 1 0 0 0 1.26 1.55l.44-.36V20a1.4 1.4 0 0 0 1.4 1.4h4.3v-5.3h5.6v5.3h4.3A1.4 1.4 0 0 0 20.5 20v-7.41l.44.36a1 1 0 0 0 1.26-1.55L12 3.1Z" />
-    </svg>
-  );
-}
-
-function SprayIcon() {
-  return (
-    <svg
-      width="21"
-      height="21"
-      viewBox="-14.94 0 122.88 122.88"
-      fill="currentColor"
-      aria-hidden="true"
-      className="shrink-0"
-    >
-      <path d="M14.6,43.74h15.78c4.87,0,6.1,3.36,6.1,7.71c0,2.02-0.29,4.29-0.58,6.49c-0.47,3.64-0.91,7.06,0.09,8.3 c1.67,2.08,4.08,4.49,6.66,7.07c6.39,6.4,13.77,13.79,14.32,20.41c0.33,4.05,0.4,9.27-0.33,14.09c-0.56,3.72-1.61,7.23-3.38,9.85 c-0.91,1.34-1.97,2.54-3.33,3.46c-1.37,0.92-3.02,1.55-5.09,1.74c-0.03,0-0.07,0-0.1,0v0H18.08c-0.05,0-0.1,0-0.14-0.01 c-2.84-0.16-5.4-0.81-7.55-2.13c-2.21-1.36-3.95-3.41-5.1-6.34c-0.03-0.08-0.05-0.16-0.06-0.24c-2.42-11.87-3.41-23.7-2.25-35.36 c1.16-11.71,4.48-23.25,10.68-34.47C13.84,43.95,14.22,43.75,14.6,43.74L14.6,43.74L14.6,43.74z M4.75,84.84 c18.15,4.31,27.95-9.61,44.29-1.6c-2.41-2.85-5.26-5.71-7.92-8.38c-2.62-2.62-5.07-5.08-6.82-7.24c-1.59-1.97-1.09-5.84-0.56-9.95 c0.27-2.1,0.55-4.27,0.55-6.21c0-3.1-0.79-5.51-3.91-5.51H15.25C9.41,56.72,6.26,67.78,5.15,79C4.95,80.94,4.82,82.89,4.75,84.84 L4.75,84.84z M46.12,6.97L46,20.87c0,0.5-0.34,0.92-0.8,1.04l0,0c-3.35,0.95-6.3,2.23-8.56,4.22c-2.2,1.94-3.78,4.6-4.49,8.36v4.75 c0,0.61-0.49,1.1-1.1,1.1H15.12c-0.95,0.09-1.71-0.13-2.3-0.72c-0.54-0.55-0.83-1.39-0.84-2.57c0-0.04,0-0.08,0-0.11 c0.36-3.9-0.44-6.81-2.28-9.08c-1.89-2.32-4.93-4.05-8.98-5.52c-0.57-0.21-0.86-0.83-0.66-1.4l0-0.01h0c2.19-5.8,5.57-9.5,9.8-11.8 c4.18-2.27,9.16-3.13,14.62-3.28c3.41-0.09,6.84-0.16,10.28-0.17c3.44-0.01,6.87,0.03,10.29,0.16C45.67,5.85,46.14,6.36,46.12,6.97 L46.12,6.97L46.12,6.97z M43.82,20.04l0.1-12.05c-3.06-0.1-6.11-0.13-9.15-0.12c-3.4,0.01-6.81,0.08-10.23,0.17 c-5.14,0.14-9.79,0.94-13.63,3.02c-3.54,1.92-6.41,4.96-8.39,9.63c3.9,1.52,6.88,3.35,8.88,5.8c2.21,2.71,3.17,6.11,2.77,10.6 c0.01,0.55,0.09,0.88,0.22,1.02c0.07,0.07,0.25,0.09,0.52,0.07c0.06-0.01,0.12-0.02,0.18-0.02h14.87v-3.73h0 c0-0.06,0.01-0.13,0.02-0.19c0.8-4.36,2.63-7.45,5.21-9.73C37.56,22.41,40.5,21.04,43.82,20.04L43.82,20.04z M48.36,6.65 l0.09,13.36h6.53c0.92,0.03,1.39-0.74,1.17-2.73V8.9c-0.02-0.73-0.32-1.21-0.88-1.46L48.36,6.65L48.36,6.65z M70.11,10.99 c1.89,0,3.42,1.29,3.42,2.89c0,1.6-1.53,2.89-3.42,2.89c-1.89,0-3.42-1.29-3.42-2.89C66.69,12.28,68.22,10.99,70.11,10.99 L70.11,10.99z M89.58,10.7c1.89,0,3.42,1.29,3.42,2.89c0,1.6-1.53,2.89-3.42,2.89c-1.89,0-3.42-1.29-3.42-2.89 C86.16,11.99,87.69,10.7,89.58,10.7L89.58,10.7z M89.2,21.59c1.89,0,3.42,1.29,3.42,2.89c0,1.6-1.53,2.89-3.42,2.89 s-3.42-1.29-3.42-2.89C85.78,22.88,87.31,21.59,89.2,21.59L89.2,21.59z M79.75,16.48c1.89,0,3.42,1.29,3.42,2.89 c0,1.6-1.53,2.89-3.42,2.89c-1.89,0-3.42-1.29-3.42-2.89C76.33,17.78,77.86,16.48,79.75,16.48L79.75,16.48z M89.58,0 C91.47,0,93,1.29,93,2.89c0,1.6-1.53,2.89-3.42,2.89c-1.89,0-3.42-1.29-3.42-2.89C86.16,1.29,87.69,0,89.58,0L89.58,0z M79.85,5.49 c1.89,0,3.42,1.29,3.42,2.89c0,1.6-1.53,2.89-3.42,2.89c-1.89,0-3.42-1.29-3.42-2.89C76.42,6.79,77.96,5.49,79.85,5.49L79.85,5.49z M36.89,35.65c1.16-4.65,3.94-7.71,8.62-8.9c1.05,7.48,3.33,13.49,6.51,18.38c1.94,2.74-1.21,5.57-3.48,2.68l-7.36-12.04 L36.89,35.65L36.89,35.65z" />
-    </svg>
-  );
-}
-
-function CardIcon() {
-  return (
-    <svg
-      width="21"
-      height="21"
-      viewBox="0 0 64 64"
-      fill="currentColor"
-      aria-hidden="true"
-      className="shrink-0"
-    >
-      <rect x="46" y="40" width="6" height="4" />
-      <rect y="20" width="64" height="8" />
-      <path d="M64,18v-6c0-2.211-1.789-4-4-4H4c-2.211,0-4,1.789-4,4v6H64z" />
-      <path d="M0,30v22c0,2.211,1.789,4,4,4h56c2.211,0,4-1.789,4-4V30H0z M21,46H11c-0.553,0-1-0.447-1-1s0.447-1,1-1h10 c0.553,0,1,0.447,1,1S21.553,46,21,46z M25,40H11c-0.553,0-1-0.447-1-1s0.447-1,1-1h14c0.553,0,1,0.447,1,1S25.553,40,25,40z M35,40h-6c-0.553,0-1-0.447-1-1s0.447-1,1-1h6c0.553,0,1,0.447,1,1S35.553,40,35,40z M54,45c0,0.553-0.447,1-1,1h-8 c-0.553,0-1-0.447-1-1v-6c0-0.553,0.447-1,1-1h8c0.553,0,1,0.447,1,1V45z" />
-    </svg>
-  );
-}
-
-/* ---------- plan icons: thin line, teal, ~30px ---------- */
-
-const PLAN_ICON = {
-  width: 30,
-  height: 30,
-  viewBox: "0 0 24 24",
-  fill: "none",
-  stroke: "currentColor",
-  strokeWidth: 1.4,
-  strokeLinecap: "round" as const,
-  strokeLinejoin: "round" as const,
-  "aria-hidden": true,
-} as const;
-
-function CalendarLine() {
-  return (
-    <svg {...PLAN_ICON}>
-      <rect x="3.2" y="5" width="17.6" height="16" rx="2.4" />
-      <path d="M3.2 9.8h17.6M8 3v4M16 3v4" />
-    </svg>
-  );
-}
-
-function HomeLine() {
-  return (
-    <svg {...PLAN_ICON}>
-      <path d="M3.4 10.7 12 4l8.6 6.7" />
-      <path d="M5.9 9.6V20h12.2V9.6" />
-      <path d="M10 20v-4.6h4V20" />
-    </svg>
-  );
-}
-
-function SparkleLine() {
-  return (
-    <svg {...PLAN_ICON}>
-      <path d="M12 3.2 13.7 8l4.8 1.7-4.8 1.7L12 16.2l-1.7-4.8L5.5 9.7 10.3 8 12 3.2Z" />
-      <path d="M18.6 15.4l.7 1.9 1.9.7-1.9.7-.7 1.9-.7-1.9-1.9-.7 1.9-.7.7-1.9Z" />
-    </svg>
-  );
-}

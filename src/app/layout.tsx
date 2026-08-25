@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import localFont from "next/font/local";
 import "./globals.css";
+import { site } from "@/lib/business";
 
 /**
  * Self-hosted so the site never depends on a third-party font host at render
@@ -29,9 +30,24 @@ const cabinetGrotesk = localFont({
 });
 
 export const metadata: Metadata = {
+  // metadataBase is what lets the generated OG image resolve to an absolute
+  // URL. Without it, shares render as a grey box — which matters more than
+  // usual here, because this business shares its own link over WhatsApp.
+  metadataBase: new URL(site.url),
   title: "SAAFI Cleaning Service — book your home clean",
   description:
     "Family-run cleaning service. Get an instant quote and book your home clean in minutes.",
+  alternates: { canonical: "/" },
+  openGraph: {
+    type: "website",
+    siteName: site.name,
+    locale: "en_GB",
+    url: site.url,
+    title: "SAAFI Cleaning Service — home cleaning with an honest hourly price",
+    description:
+      "Family-run home cleaning. See your price online in under a minute — clear hourly rates, no hidden extras, nothing to pay upfront.",
+  },
+  twitter: { card: "summary_large_image" },
 };
 
 export default function RootLayout({

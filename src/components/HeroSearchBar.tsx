@@ -1,5 +1,7 @@
 "use client";
 
+import { MapPin, BedDouble, Bath, Repeat } from "lucide-react";
+import Icon from "./Icon";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { normalisePostcode, looksLikeUkPostcode, FREQUENCY_LABEL, type Frequency } from "@/lib/pricing";
@@ -40,7 +42,7 @@ export default function HeroSearchBar() {
   return (
     <div className="w-full">
       <div className="flex flex-col gap-2 bg-white p-2 shadow-2xl lg:flex-row lg:items-center lg:gap-0 lg:rounded-full">
-        <Field icon={<PinIcon />} label="Postcode" className="lg:flex-[1.4]">
+        <Field icon={<Icon glyph={MapPin} className="size-[17px]" />} label="Postcode" className="lg:flex-[1.4]">
           <input
             value={postcode}
             onChange={(e) => {
@@ -57,19 +59,19 @@ export default function HeroSearchBar() {
 
         <Divider />
 
-        <Field icon={<BedIcon />} label="Bedrooms">
+        <Field icon={<Icon glyph={BedDouble} className="size-[17px]" />} label="Bedrooms">
           <Select value={bedrooms} onChange={setBedrooms} max={6} aria-label="Bedrooms" />
         </Field>
 
         <Divider />
 
-        <Field icon={<BathIcon />} label="Bathrooms">
+        <Field icon={<Icon glyph={Bath} className="size-[17px]" />} label="Bathrooms">
           <Select value={bathrooms} onChange={setBathrooms} max={4} aria-label="Bathrooms" />
         </Field>
 
         <Divider />
 
-        <Field icon={<RepeatIcon />} label="How often">
+        <Field icon={<Icon glyph={Repeat} className="size-[17px]" />} label="How often">
           <select
             value={frequency}
             onChange={(e) => setFrequency(e.target.value as Frequency)}
@@ -158,44 +160,3 @@ function Select({
   );
 }
 
-/* ---------- icons (inline, no dependency) ---------- */
-
-const S = { fill: "none", stroke: "currentColor", strokeWidth: 1.7, strokeLinecap: "round" as const, strokeLinejoin: "round" as const };
-
-function PinIcon() {
-  return (
-    <svg width="17" height="17" viewBox="0 0 24 24" {...S}>
-      <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 1 1 16 0Z" />
-      <circle cx="12" cy="10" r="3" />
-    </svg>
-  );
-}
-
-function BedIcon() {
-  return (
-    <svg width="17" height="17" viewBox="0 0 24 24" {...S}>
-      <path d="M3 18v-9m0 5h18v4m0-4v-2a2 2 0 0 0-2-2H9v4" />
-      <circle cx="6.5" cy="10.5" r="1.5" />
-    </svg>
-  );
-}
-
-function BathIcon() {
-  return (
-    <svg width="17" height="17" viewBox="0 0 24 24" {...S}>
-      <path d="M4 12h16v3a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4v-3ZM6 12V6a2 2 0 0 1 4 0" />
-      <path d="M7 19l-1 2m11-2 1 2" />
-    </svg>
-  );
-}
-
-function RepeatIcon() {
-  return (
-    <svg width="17" height="17" viewBox="0 0 24 24" {...S}>
-      <path d="M17 2l4 4-4 4" />
-      <path d="M3 12V10a4 4 0 0 1 4-4h14" />
-      <path d="M7 22l-4-4 4-4" />
-      <path d="M21 12v2a4 4 0 0 1-4 4H3" />
-    </svg>
-  );
-}

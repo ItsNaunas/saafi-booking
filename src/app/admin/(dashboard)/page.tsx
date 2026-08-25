@@ -1,3 +1,4 @@
+import { ChevronDown } from "lucide-react";
 import Link from "next/link";
 import {
   listBookings,
@@ -179,15 +180,11 @@ function BookingCard({ b, cleaners }: { b: BookingRow; cleaners: CleanerRow[] })
         </div>
         <div className="flex shrink-0 items-center gap-2">
           <span className="font-semibold text-brand-700">{formatGBP(Number(b.quoted_price))}</span>
-          <svg
+          <ChevronDown
+            aria-hidden="true"
+            strokeWidth={2}
             className="h-4 w-4 text-slate-300 transition-transform group-open:rotate-180"
-            viewBox="0 0 20 20"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-          >
-            <path d="M6 8l4 4 4-4" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
+          />
         </div>
       </summary>
 

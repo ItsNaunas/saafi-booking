@@ -10,6 +10,8 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { ArrowUpRight } from "lucide-react";
+import Icon from "./Icon";
 
 type Point = {
   n: string;
@@ -69,19 +71,7 @@ function Arrow({ active = false }: { active?: boolean }) {
         active ? "bg-brand-400 text-slate-900" : "bg-white/15 text-white"
       }`}
     >
-      <svg
-        viewBox="0 0 16 16"
-        className="size-3.5"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.8"
-      >
-        <path
-          d="M4 12L12 4M12 4H6M12 4v6"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-      </svg>
+      <Icon glyph={ArrowUpRight} className="size-3.5" strokeWidth={2.2} />
     </span>
   );
 }

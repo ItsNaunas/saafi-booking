@@ -1,3 +1,4 @@
+import { Check } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 
@@ -23,19 +24,7 @@ export default async function PaidPage({
   return (
     <main className="flex min-h-svh flex-col items-center justify-center bg-slate-50 px-4 py-16 text-center">
       <span className="flex h-14 w-14 items-center justify-center rounded-full bg-brand-100 text-brand-700">
-        <svg
-          viewBox="0 0 24 24"
-          width="26"
-          height="26"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          aria-hidden="true"
-        >
-          <path d="m4.5 12.5 5 5 10-11" />
-        </svg>
+        <Check aria-hidden="true" strokeWidth={2} className="size-[26px]" />
       </span>
 
       <h1 className="mt-6 text-3xl font-bold tracking-tight text-slate-900">
