@@ -15,8 +15,8 @@ export function newReference(): string {
  * Carries the QUOTED hours and price forward, never the actuals: one unusually
  * messy Tuesday must not permanently reprice a weekly customer.
  */
-export async function spawnNextOccurrence(b: BookingRow): Promise<void> {
-  if (b.frequency === "one_off" || !b.recurring_active) return;
+export async function spawnNextOccurrence(b: BookingRow): Promise<BookingRow | null> {
+  if (b.frequency === "one_off" || !b.recurring_active) return null;
 
   const days = FREQUENCY_DAYS[b.frequency as Exclude<Frequency, "one_off">];
   const next = new Date(b.preferred_date + "T00:00:00Z");
@@ -24,7 +24,7 @@ export async function spawnNextOccurrence(b: BookingRow): Promise<void> {
 
   const quotedHours = b.quoted_hours ?? b.hours;
 
-  await insertBooking({
+  const next_ = await insertBooking({
     reference: newReference(),
     customer_id: b.customer_id,
     customer_name: b.customer_name,
@@ -54,4 +54,14 @@ export async function spawnNextOccurrence(b: BookingRow): Promise<void> {
     notes: b.notes,
     status: "confirmed",
   });
+
+  // Tell the customer it exists. A recurring customer used to have no idea their
+  // next visit was booked until somebody turned up on the doorstep.
+  if (next_) {
+    const { sendNextVisitEmail } = await import("./email");
+    await sendNextVisitEmail(next_).catch((e) =>
+      console.error("[recurring] next visit email failed:", e)
+    );
+  }
+  return next_;
 }

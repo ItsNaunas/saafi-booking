@@ -34,7 +34,9 @@ const SKEY = process.env.SUPABASE_SECRET_KEY!;
 const SITE = "https://saaficleaningservice.com";
 const MARKER = "ZZ Seed";
 
-async function db(path: string, init?: RequestInit, tries = 5): Promise<any> {
+type Row = Record<string, string | number | boolean | null>;
+
+async function db(path: string, init?: RequestInit, tries = 5): Promise<Row[]> {
   for (let n = 1; ; n++) {
     try {
       const r = await fetch(`${SUPA}/rest/v1/${path}`, {
@@ -48,7 +50,7 @@ async function db(path: string, init?: RequestInit, tries = 5): Promise<any> {
         },
       });
       const t = await r.text();
-      return t ? JSON.parse(t) : null;
+      return t ? JSON.parse(t) : [];
     } catch (e) {
       if (n >= tries) throw e;
       await new Promise((r) => setTimeout(r, 1500 * n));
@@ -92,11 +94,11 @@ if (!cleaners.length) {
   process.exit(1);
 }
 const cleaner = wantedCleaner
-  ? cleaners.find((c: any) => c.name.toLowerCase().includes(wantedCleaner.toLowerCase()))
+  ? cleaners.find((c) => String(c.name).toLowerCase().includes(wantedCleaner.toLowerCase()))
   : cleaners[0];
 if (!cleaner) {
   console.log(`no active cleaner matching "${wantedCleaner}". Available:`);
-  cleaners.forEach((c: any) => console.log(`  ${c.name}`));
+  cleaners.forEach((c) => console.log(`  ${c.name}`));
   process.exit(1);
 }
 

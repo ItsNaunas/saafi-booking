@@ -3,6 +3,7 @@
 // Cleaner actions — authenticated by the cleaner's personal token, NOT the admin session.
 
 import { revalidatePath } from "next/cache";
+import { sendAdjustmentPendingEmail } from "@/lib/email";
 import {
   getCleanerByToken,
   getBooking,
@@ -108,6 +109,22 @@ export async function cleanerFinishJob(formData: FormData) {
       cleaner_id: cleaner.id,
       status: outcome.resolution === "pending" ? "pending" : "auto",
     }).catch((e) => console.error("[cleaner] adjustment log failed:", e));
+
+    // Pending means money is waiting on the owner. Nothing used to chase it.
+    if (outcome.resolution === "pending") {
+      await sendAdjustmentPendingEmail(
+        booking,
+        {
+          from_hours: quotedHours,
+          to_hours: actualHours,
+          from_price: Number(booking.quoted_price),
+          to_price: outcome.newPrice,
+          reason_code: reason,
+          note,
+        },
+        cleaner.name
+      ).catch((e) => console.error("[cleaner] approval alert failed:", e));
+    }
   }
 
   // The series carries on from the original quote, not from today's actuals.

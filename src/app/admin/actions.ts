@@ -13,6 +13,7 @@ import {
   addServiceAreaPrefix,
   removeServiceAreaPrefix,
   createCleaner,
+  listCleaners,
   setCleanerActive,
   updateCleanerHours,
   getBooking,
@@ -24,7 +25,7 @@ import {
   type BookingStatus,
 } from "@/lib/supabaseAdmin";
 import { getStripe, toPence, siteUrl } from "@/lib/stripe";
-import { sendConfirmationEmail, sendAdjustmentEmail, sendPaymentLinkEmail } from "@/lib/email";
+import { sendConfirmationEmail, sendAdjustmentEmail, sendPaymentLinkEmail, sendCleanerAssignedEmail } from "@/lib/email";
 import { invalidatePricingCache } from "@/lib/pricingServer";
 import { type Frequency } from "@/lib/pricing";
 import { newReference, spawnNextOccurrence } from "@/lib/recurring";
@@ -73,7 +74,19 @@ export async function assignCleaner(formData: FormData) {
   const id = String(formData.get("id") ?? "");
   const cleanerId = String(formData.get("cleaner_id") ?? "");
   if (!id) return;
-  await updateBooking(id, { cleaner_id: cleanerId || null });
+  const updated = await updateBooking(id, { cleaner_id: cleanerId || null });
+
+  // Tell them. Until this existed a cleaner found out they had a job only by
+  // opening their link and noticing something new sitting there.
+  if (updated && cleanerId) {
+    const cleaner = (await listCleaners()).find((c) => c.id === cleanerId);
+    if (cleaner) {
+      await sendCleanerAssignedEmail(cleaner, updated).catch((e) =>
+        console.error("[admin] cleaner assignment email failed:", e)
+      );
+    }
+  }
+
   revalidatePath("/admin");
   revalidatePath("/admin/calendar");
 }

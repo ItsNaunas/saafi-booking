@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getStripe, fromPence } from "@/lib/stripe";
 import { getBookingByPaymentLink, markBookingPaid } from "@/lib/supabaseAdmin";
+import { sendPaymentReceivedEmails } from "@/lib/email";
 
 // Stripe needs the raw body to verify the signature, so this route must never
 // be statically optimised or have its body parsed for us.
@@ -75,6 +76,11 @@ export async function POST(req: Request) {
         fromPence(session.amount_total ?? 0)
       );
       console.log(`[stripe] booking ${booking.reference} marked paid`);
+
+      // Thank the customer, and tell the office without them refreshing Stripe.
+      await sendPaymentReceivedEmails(booking, fromPence(session.amount_total ?? 0)).catch(
+        (e) => console.error("[stripe] payment emails failed:", e)
+      );
     }
 
     return NextResponse.json({ received: true });

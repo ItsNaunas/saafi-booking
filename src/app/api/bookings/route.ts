@@ -16,6 +16,7 @@ import {
 import { loadPricingAndAddons } from "@/lib/pricingServer";
 import { isSlotBookable, toMinutes, toHHMM, formatTimeRange } from "@/lib/scheduling";
 import { listSchedulableCleaners, busyBlocksForDate } from "@/lib/supabaseAdmin";
+import { sendBookingReceivedEmail } from "@/lib/email";
 import type { BookingRecord, BookingRequest } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -156,6 +157,21 @@ export async function POST(req: NextRequest) {
   if (!stored.ok) return bad("Something went wrong saving your booking — please call us instead", 500);
 
   await sendAlertEmail(record).catch((e) => console.error("[bookings] alert email failed:", e));
+
+  // And tell the customer. Until this existed they saw a reference on screen and
+  // then heard nothing at all until somebody rang them.
+  await sendBookingReceivedEmail({
+    name: record.name,
+    email: record.email,
+    reference: stored.reference,
+    preferredDate: record.preferredDate,
+    startTime: record.startTime ?? null,
+    hours: record.hours + record.addonsHours,
+    price: record.quotedPrice,
+    addressLine: record.addressLine,
+    postcode: record.postcode,
+    recurring: record.frequency !== "one_off",
+  }).catch((e) => console.error("[bookings] customer receipt failed:", e));
 
   return NextResponse.json({ ok: true, quotedPrice, reference: stored.reference });
 }
