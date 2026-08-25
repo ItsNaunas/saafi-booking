@@ -17,6 +17,7 @@
 // inner <div> for an <Image fill className="object-cover">, and nothing else in
 // the composition has to move.
 
+import Image from "next/image";
 import { Headset, HouseHeart, ShieldCheck, Heart, type LucideIcon } from "lucide-react";
 import Icon from "./Icon";
 
@@ -95,10 +96,16 @@ function Bubble({ point }: { point: (typeof POINTS)[number] }) {
 }
 
 /**
- * The anchor. A brand disc rather than a photograph, because there isn't one —
- * see the note at the top of the file. Dappled light is drawn with layered
- * radial gradients so it carries the warmth of a real frame without pretending
- * to be one.
+ * The anchor.
+ *
+ * The reference this was built from showed a brand plate over dappled leaf
+ * light, and that is what this is: a licensed Unsplash texture behind a mint
+ * scrim, with the wordmark over the top. Texture rather than faces is a
+ * deliberate choice — this is the one circle sitting next to copy that says
+ * "the people who own it", so a stock family here would read as a claim about
+ * who they are rather than as decoration.
+ *
+ * A real photograph of the family replaces the <Image> src and nothing else.
  */
 function BrandDisc() {
   return (
@@ -109,36 +116,41 @@ function BrandDisc() {
         className="absolute inset-0 translate-x-3 translate-y-3 rounded-full border border-brand-300/70"
       />
 
-      <div
-        className="absolute inset-0 flex flex-col items-center justify-center overflow-hidden rounded-full bg-brand-100"
-        style={{
-          backgroundImage: [
-            "radial-gradient(circle at 24% 26%, rgba(255,255,255,0.85) 0 9%, transparent 10%)",
-            "radial-gradient(circle at 62% 16%, rgba(255,255,255,0.6) 0 6%, transparent 7%)",
-            "radial-gradient(circle at 78% 40%, rgba(255,255,255,0.75) 0 11%, transparent 12%)",
-            "radial-gradient(circle at 34% 62%, rgba(255,255,255,0.5) 0 8%, transparent 9%)",
-            "radial-gradient(circle at 66% 78%, rgba(255,255,255,0.7) 0 10%, transparent 11%)",
-            "radial-gradient(circle at 14% 48%, rgba(255,255,255,0.45) 0 5%, transparent 6%)",
-            "radial-gradient(circle at 30% 20%, rgba(255,255,255,0.55), transparent 62%)",
-          ].join(","),
-        }}
-      >
-        <p className="font-display text-3xl font-bold tracking-[0.34em] text-slate-900 sm:text-4xl">
-          <span className="ml-[0.34em]">SAAFI</span>
-        </p>
-        <span
+      <div className="absolute inset-0 overflow-hidden rounded-full bg-brand-100">
+        <Image
+          src="/family-light.jpg"
+          alt=""
           aria-hidden="true"
-          className="mt-4 block h-px w-14 bg-slate-900/25"
+          fill
+          sizes="(max-width: 640px) 86vw, 440px"
+          className="object-cover"
+          style={{ objectPosition: "center 38%" }}
         />
-        <p className="mt-4 text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-600">
-          Family-run home cleaning
-        </p>
-        {/* The one solid mark on the site: a hairline heart at this size
-            reads as a mistake rather than a flourish. */}
-        <Heart
+        {/* Scrim, not a filter: it tints the photo to the brand and buys the
+            wordmark the contrast it needs over a variable image. */}
+        <div
           aria-hidden="true"
-          className="mt-5 size-5 fill-brand-500 text-brand-500"
+          className="absolute inset-0 bg-brand-50/75"
         />
+
+        <div className="relative flex h-full flex-col items-center justify-center">
+          <p className="font-display text-3xl font-bold tracking-[0.34em] text-slate-900 sm:text-4xl">
+            <span className="ml-[0.34em]">SAAFI</span>
+          </p>
+          <span
+            aria-hidden="true"
+            className="mt-4 block h-px w-14 bg-slate-900/25"
+          />
+          <p className="mt-4 text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-600">
+            Family-run home cleaning
+          </p>
+          {/* The one solid mark on the site: a hairline heart at this size
+              reads as a mistake rather than a flourish. */}
+          <Heart
+            aria-hidden="true"
+            className="mt-5 size-5 fill-brand-500 text-brand-500"
+          />
+        </div>
       </div>
 
       <span

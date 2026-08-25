@@ -17,6 +17,7 @@ import {
   CalendarDays,
   Sparkles,
   Check,
+  ArrowRight,
   type LucideIcon,
 } from "lucide-react";
 import Icon from "@/components/Icon";
@@ -38,10 +39,10 @@ export const dynamic = "force-dynamic";
 /**
  * The four things a standard clean covers, as an editorial sequence.
  *
- * `image` is a path under /public. Only the living-spaces circle has a photo so
- * far; the rest render as tonal circles until real photography lands, which is a
- * deliberate design state rather than a broken one. Drop a file in and set the
- * path here and it becomes a photograph with no other change.
+ * `image` is a path under /public. Three of the four are licensed Unsplash
+ * stock standing in until SAAFI's own photography lands — see
+ * public/IMAGE-CREDITS.md. They are rooms, not people, so nothing here makes a
+ * claim about the business. Swap the path and the circle changes with it.
  */
 const ROOMS: {
   n: string;
@@ -55,12 +56,16 @@ const ROOMS: {
     n: "01",
     title: "Kitchen",
     copy: "Surfaces, sink and hob cleaned every visit.",
+    image: "/room-kitchen.jpg",
+    imagePos: "center 55%",
     tone: "bg-brand-100",
   },
   {
     n: "02",
     title: "Bathrooms",
     copy: "Sink, toilet, bath or shower and visible surfaces cleaned thoroughly.",
+    image: "/room-bathroom.jpg",
+    imagePos: "center 42%",
     tone: "bg-slate-100",
   },
   {
@@ -76,6 +81,8 @@ const ROOMS: {
     n: "04",
     title: "Floors & finishing touches",
     copy: "Hard floors mopped, carpets vacuumed and bins emptied where needed.",
+    image: "/room-floors.jpg",
+    imagePos: "center 62%",
     tone: "bg-brand-50",
   },
 ];
@@ -428,23 +435,49 @@ export default async function Home() {
            Renders nothing when lib/business.ts has no reviews in it. */}
       <Reviews />
 
-      {/* ---------- faqs ---------- */}
-      <section id="faqs" className="mx-auto max-w-3xl scroll-mt-20 px-4 py-20">
-        <SectionHead title="Questions we get asked a lot" />
-        <div className="mt-8 divide-y divide-slate-100 overflow-hidden ring-1 ring-slate-200">
-          {FAQS.map((f) => (
-            <details key={f.q} className="group bg-white">
-              <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-5 py-4 font-semibold text-slate-900 transition hover:bg-slate-50">
-                {f.q}
-                <span className="shrink-0 text-xl font-normal text-brand-600 transition group-open:rotate-45">
-                  +
-                </span>
-              </summary>
-              <p className="px-5 pb-5 text-sm leading-relaxed text-slate-600">
-                {f.a}
-              </p>
-            </details>
-          ))}
+      {/* ---------- faqs ----------
+           Still native <details>/<summary>: it is keyboard accessible, works
+           without JS and announces its own state. The plus/minus is two spans
+           where the vertical bar collapses on open, which is a real minus
+           rather than a plus rotated into an ×. */}
+      <section
+        id="faqs"
+        className="relative isolate scroll-mt-20 overflow-hidden bg-white py-20 lg:py-24"
+      >
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute -right-32 top-24 -z-10 size-[26rem] rounded-full bg-brand-50"
+        />
+
+        <div className="mx-auto max-w-4xl px-4 sm:px-6">
+          <div className="text-center">
+            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-brand-700">
+              Questions, answered
+            </p>
+            <h2 className="mt-5 font-display text-3xl font-bold tracking-tight text-slate-900 sm:text-4xl">
+              Questions we get asked a lot
+            </h2>
+          </div>
+
+          <div className="mt-12 border-t border-slate-200">
+            {FAQS.map((f) => (
+              <details key={f.q} className="group border-b border-slate-200">
+                <summary className="flex cursor-pointer list-none items-center justify-between gap-6 py-6 text-left text-lg font-semibold text-slate-900 transition-colors hover:text-brand-700 group-open:text-brand-800 [&::-webkit-details-marker]:hidden">
+                  {f.q}
+                  <span
+                    aria-hidden="true"
+                    className="relative grid size-6 shrink-0 place-items-center text-slate-400 transition-colors group-hover:text-brand-600 group-open:text-brand-600"
+                  >
+                    <span className="absolute h-px w-[18px] bg-current" />
+                    <span className="absolute h-[18px] w-px bg-current transition-transform duration-300 ease-out group-open:scale-y-0" />
+                  </span>
+                </summary>
+                <p className="max-w-[68ch] pb-7 pr-10 text-[15px] leading-relaxed text-slate-600 motion-safe:animate-[faq-in_240ms_ease-out]">
+                  {f.a}
+                </p>
+              </details>
+            ))}
+          </div>
         </div>
       </section>
 
@@ -453,22 +486,54 @@ export default async function Home() {
            placeholder list when it is empty, which it currently is. */}
       <ServiceArea areas={areas} />
 
-      {/* ---------- closing CTA ---------- */}
-      <section className="border-t border-slate-100 bg-brand-600">
-        <div className="mx-auto max-w-6xl px-4 py-16 text-center">
-          <h2 className="text-3xl font-extrabold tracking-tight text-white">
+      {/* ---------- closing CTA ----------
+           The visual callback is the circle language from "The people behind
+           it", scaled up and bled off both edges — not a second crop of the
+           hero photograph, which would read as running out of pictures. No
+           bottom border and no gap: the teal runs straight into the footer. */}
+      <section className="relative isolate overflow-hidden bg-brand-600">
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute -left-40 -top-40 size-[38rem] rounded-full border border-white/15"
+        />
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute -bottom-56 -right-32 size-[42rem] rounded-full bg-white/[0.06]"
+        />
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute -bottom-72 right-24 size-[34rem] rounded-full border border-white/15"
+        />
+
+        <div className="mx-auto max-w-6xl px-4 py-24 text-center sm:px-6 lg:py-28">
+          <h2 className="mx-auto max-w-3xl font-display text-4xl font-bold leading-[1.05] tracking-tight text-white sm:text-5xl lg:text-[3.5rem]">
             See your price in under a minute
           </h2>
-          <p className="mx-auto mt-3 max-w-lg text-brand-50">
-            No card, no commitment — just your postcode and a few details about
-            your home.
+          <p className="mx-auto mt-6 max-w-lg text-lg leading-relaxed text-white/80">
+            Just your postcode and a few details about your home. We&apos;ll ring
+            to confirm the date.
           </p>
+
           <Link
             href="/quote"
-            className="mt-8 inline-block rounded-full bg-white px-8 py-3.5 text-base font-semibold text-brand-700 shadow-md transition hover:bg-brand-50"
+            className="group mt-10 inline-flex items-center gap-2.5 rounded-sm bg-white px-8 py-4 text-base font-semibold text-slate-900 transition hover:bg-brand-50"
           >
             Start my quote
+            <Icon
+              glyph={ArrowRight}
+              className="size-[18px] transition-transform duration-200 group-hover:translate-x-1"
+              strokeWidth={2.2}
+            />
           </Link>
+
+          {/* Both halves are stated elsewhere on the page and true of the
+              build: the quote form takes no card, and confirmation is a call
+              we make, not one you wait for. */}
+          <p className="mt-6 text-sm text-white/70">
+            No payment upfront <span className="text-white/40">·</span> No card
+            details <span className="text-white/40">·</span> No callback to wait
+            for
+          </p>
         </div>
       </section>
 
