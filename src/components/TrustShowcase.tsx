@@ -115,7 +115,12 @@ export default function TrustShowcase() {
             className="group w-[85vw] shrink-0 snap-start text-left outline-none focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-brand-300 sm:w-[52vw] lg:w-0 lg:flex-1 lg:basis-0 lg:transition-[flex-grow] lg:duration-300 lg:ease-out"
           >
             <div
-              className={`relative flex h-[430px] flex-col overflow-hidden border transition-colors duration-300 ${
+              // Height is fixed from lg up, where equal-height panels are the
+              // whole point of the strip. Below that every panel shows its
+              // detail strip too, and panel 04 carries the longest copy on the
+              // page — a fixed box would clip it, so mobile gets a minimum and
+              // grows.
+              className={`relative flex min-h-[430px] flex-col overflow-hidden border transition-colors duration-300 lg:h-[430px] lg:min-h-0 ${
                 isOpen
                   ? "border-white/25"
                   : "border-white/10 group-hover:border-white/25"

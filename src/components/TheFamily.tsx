@@ -73,12 +73,16 @@ function Bubble({ point }: { point: (typeof POINTS)[number] }) {
     <div
       className={`relative aspect-square w-[86vw] ${size} md:w-full ${place}`}
     >
-      <div className="absolute inset-0 flex flex-col items-center justify-center rounded-full border border-brand-200 bg-white px-[15%] text-center">
+      {/* A circle is a hostile container for text: the usable width shrinks as
+          you move away from the middle, so the copy that fits at 340px spills
+          at 280px. Below sm the geometry relaxes to a soft square, which keeps
+          the composition on phones without clipping panel 03. */}
+      <div className="absolute inset-0 flex flex-col items-center justify-center rounded-[2rem] border border-brand-200 bg-white px-[10%] text-center sm:rounded-full sm:px-[15%]">
         <Icon glyph={Glyph} className="size-8 text-brand-600 sm:size-9" />
         <h3 className="mt-3 text-base font-semibold leading-snug text-slate-900 sm:mt-4 sm:text-lg">
           {title}
         </h3>
-        <p className="mt-1.5 text-[13px] leading-[1.55] text-slate-600 sm:mt-2 sm:text-sm sm:leading-relaxed">
+        <p className="mt-2 text-sm leading-relaxed text-slate-600">
           {text}
         </p>
       </div>

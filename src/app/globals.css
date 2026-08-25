@@ -158,3 +158,15 @@ a {
     scroll-behavior: smooth;
   }
 }
+
+/* iOS Safari zooms the entire page when you focus a control whose font-size is
+   under 16px, and it does not zoom back out. On a landing page that reads as
+   the layout breaking the moment someone taps the postcode field. Floor every
+   control on small screens; the designed sizes still apply from sm up. */
+@media (max-width: 639px) {
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+}

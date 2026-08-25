@@ -98,7 +98,7 @@ export default function Reviews() {
                   clipped by the section. Decoration, never read out. */}
               <span
                 aria-hidden="true"
-                className="pointer-events-none absolute -left-2 -top-16 select-none font-display text-[13rem] leading-none text-white/[0.06] sm:-top-24 sm:text-[18rem]"
+                className="pointer-events-none absolute -left-2 -top-10 select-none font-display text-[8rem] leading-none text-white/[0.06] sm:-top-24 sm:text-[18rem]"
               >
                 &ldquo;
               </span>
