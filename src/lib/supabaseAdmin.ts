@@ -53,6 +53,8 @@ export type BookingRow = {
   stripe_payment_intent: string | null;
   amount_paid: number | null;
   paid_at: string | null;
+  /** When the link was emailed. Null = never emailed (may still have gone by hand). */
+  payment_link_sent_at: string | null;
 };
 
 export type CleanerRow = {
@@ -413,5 +415,13 @@ export async function markBookingPaid(
       amount_paid: amountPaid,
       paid_at: new Date().toISOString(),
     }),
+  });
+}
+
+/** Stamp the moment the payment link was emailed to the customer. */
+export async function markPaymentLinkSent(id: string): Promise<void> {
+  await rest(`bookings?id=eq.${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: JSON.stringify({ payment_link_sent_at: new Date().toISOString() }),
   });
 }

@@ -12,6 +12,7 @@ import {
   approveAdjustment,
   rejectAdjustment,
   createPaymentLink,
+  emailPaymentLink,
 } from "@/app/admin/actions";
 import { stripeConfigured, stripeIsTestMode } from "@/lib/stripe";
 import { FREQUENCY_LABEL, formatGBP } from "@/lib/pricing";
@@ -21,10 +22,12 @@ export const dynamic = "force-dynamic";
 
 export default async function BookingDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ sent?: string; why?: string }>;
 }) {
-  const { id } = await params;
+  const [{ id }, sendResult] = await Promise.all([params, searchParams]);
   const b = await getBooking(id);
   if (!b) notFound();
 
@@ -88,14 +91,41 @@ export default async function BookingDetailPage({
               value={b.stripe_payment_link_url}
               className="w-full border border-slate-300 bg-slate-50 px-3 py-2 font-mono text-xs text-slate-700"
             />
-            <a
-              href={b.stripe_payment_link_url}
-              target="_blank"
-              rel="noreferrer"
-              className="mt-2 inline-block text-xs font-semibold text-brand-700 underline underline-offset-2"
-            >
-              Open the payment page
-            </a>
+            <div className="mt-3 flex flex-wrap items-center gap-3">
+              <form action={emailPaymentLink}>
+                <input type="hidden" name="id" value={b.id} />
+                <button className="bg-brand-600 px-4 py-2 text-xs font-bold text-white transition hover:bg-brand-700">
+                  {b.payment_link_sent_at ? "Send it again" : "Email it to the customer"}
+                </button>
+              </form>
+              <a
+                href={b.stripe_payment_link_url}
+                target="_blank"
+                rel="noreferrer"
+                className="text-xs font-semibold text-brand-700 underline underline-offset-2"
+              >
+                Open the payment page
+              </a>
+            </div>
+
+            {b.payment_link_sent_at && (
+              <p className="mt-2 text-xs text-slate-500">
+                Emailed to {b.customer_email} on{" "}
+                {new Date(b.payment_link_sent_at).toLocaleString("en-GB")}.
+              </p>
+            )}
+
+            {sendResult.sent === "ok" && (
+              <p className="mt-2 bg-brand-50 px-3 py-2 text-xs font-medium text-brand-800 ring-1 ring-brand-200">
+                Sent.
+              </p>
+            )}
+            {sendResult.sent === "fail" && (
+              <p className="mt-2 bg-red-50 px-3 py-2 text-xs font-medium text-red-700">
+                Couldn&apos;t send it — {sendResult.why || "unknown problem"}. The link above still
+                works, so you can copy it across by hand.
+              </p>
+            )}
           </>
         ) : (
           <form action={createPaymentLink}>

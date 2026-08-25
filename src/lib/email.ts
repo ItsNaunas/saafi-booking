@@ -94,3 +94,70 @@ export async function sendAdjustmentEmail(
     }),
   });
 }
+
+/**
+ * Send the customer their payment link.
+ *
+ * Never sent automatically when the link is raised — the owner triggers it, so
+ * they get a chance to check the amount before it reaches a customer, and can
+ * still send it over WhatsApp instead if that suits that customer better.
+ */
+export async function sendPaymentLinkEmail(
+  booking: BookingRow,
+  amount: number
+): Promise<{ ok: boolean; reason?: string }> {
+  const key = secret("RESEND_API_KEY");
+  if (!key) return { ok: false, reason: "email isn't configured" };
+  if (!booking.stripe_payment_link_url) return { ok: false, reason: "no payment link yet" };
+  if (!looksLikeARealAddress(booking.customer_email)) {
+    return { ok: false, reason: "that booking has no real email address" };
+  }
+
+  const from = process.env.ALERT_EMAIL_FROM ?? "bookings@saaficleaningservice.com";
+  const res = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      from: `SAAFI Cleaning Service <${from}>`,
+      to: [booking.customer_email],
+      subject: `Your clean on ${booking.preferred_date} — £${amount} (${booking.reference})`,
+      text: [
+        `Hi ${booking.customer_name.split(" ")[0]},`,
+        ``,
+        `Here's the link to pay for your clean.`,
+        ``,
+        `Date:     ${booking.preferred_date}`,
+        booking.start_time
+          ? `Time:     ${formatTimeRange(booking.start_time, Number(booking.hours))}`
+          : `Time:     to be agreed`,
+        `Address:  ${booking.address_line}, ${booking.postcode}`,
+        `Total:    £${amount}`,
+        `Reference: ${booking.reference}`,
+        ``,
+        booking.stripe_payment_link_url,
+        ``,
+        `The link stays valid, so there's no rush — pay whenever suits you.`,
+        `Anything look wrong? Just reply to this email.`,
+        ``,
+        `SAAFI Cleaning Service`,
+        `saaficleaningservice.com`,
+      ].join("\n"),
+    }),
+  });
+
+  if (!res.ok) {
+    console.error("[email] payment link send failed:", res.status, await res.text());
+    return { ok: false, reason: "the email provider rejected it" };
+  }
+  return { ok: true };
+}
+
+/**
+ * Phone bookings taken without an email get a synthesised `<digits>@phone.saafi`
+ * address so the row is valid. Sending there would hard-bounce against a domain
+ * that does not exist, which costs real deliverability on the addresses that do.
+ */
+function looksLikeARealAddress(email: string): boolean {
+  if (email.endsWith("@phone.saafi")) return false;
+  return /^\S+@\S+\.\S+$/.test(email);
+}

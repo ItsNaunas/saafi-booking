@@ -20,10 +20,11 @@ import {
   setAdjustmentStatus,
   amountDueFor,
   saveBookingPaymentLink,
+  markPaymentLinkSent,
   type BookingStatus,
 } from "@/lib/supabaseAdmin";
 import { getStripe, toPence, siteUrl } from "@/lib/stripe";
-import { sendConfirmationEmail, sendAdjustmentEmail } from "@/lib/email";
+import { sendConfirmationEmail, sendAdjustmentEmail, sendPaymentLinkEmail } from "@/lib/email";
 import { invalidatePricingCache } from "@/lib/pricingServer";
 import { type Frequency } from "@/lib/pricing";
 import { newReference, spawnNextOccurrence } from "@/lib/recurring";
@@ -349,4 +350,30 @@ export async function updateCleanerSchedule(formData: FormData) {
 
   await updateCleanerHours(id, days, toHHMM(from), toHHMM(to));
   revalidatePath("/admin/cleaners");
+}
+
+/**
+ * Email the customer their payment link.
+ *
+ * Separate from raising the link on purpose. Creating a link is reversible and
+ * private; sending one is neither, so the owner gets to see the amount on screen
+ * before anything reaches a customer — and can still send it over WhatsApp
+ * instead, which some customers prefer.
+ */
+export async function emailPaymentLink(formData: FormData) {
+  const id = String(formData.get("id") ?? "");
+  if (!id) return;
+
+  const booking = await getBooking(id);
+  if (!booking) return;
+  if (booking.status === "paid") redirect(`/admin/booking/${id}?sent=already-paid`);
+
+  const result = await sendPaymentLinkEmail(booking, amountDueFor(booking));
+  if (!result.ok) {
+    redirect(`/admin/booking/${id}?sent=fail&why=${encodeURIComponent(result.reason ?? "")}`);
+  }
+
+  await markPaymentLinkSent(id);
+  revalidatePath(`/admin/booking/${id}`);
+  redirect(`/admin/booking/${id}?sent=ok`);
 }
