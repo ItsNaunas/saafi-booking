@@ -155,7 +155,14 @@ export default async function Home() {
     // never be scrolled into view.
     <main className="min-h-screen bg-white pb-24 lg:pb-0">
       {/* ---------- hero ---------- */}
-      <section className="relative isolate flex min-h-svh flex-col overflow-hidden">
+      {/* The hero ends as a rounded-bottom panel: flat straight across, curved
+          only at the two corners. overflow-hidden is what clips the photograph,
+          the gradient and the scrim to that shape — they are all absolute
+          children of this element.
+
+          The page's one exception to the square-corner rule, and it is the
+          block being shaped rather than a box inside the layout. */}
+      <section className="relative isolate flex min-h-svh flex-col overflow-hidden rounded-b-[2rem] sm:rounded-b-[2.5rem] lg:rounded-b-[3rem]">
         {/* background: photo over a gradient, so a missing/slow image still reads as design */}
         <div className="absolute inset-0 -z-20 bg-gradient-to-br from-slate-700 via-slate-800 to-brand-950" />
         {/* Was a CSS background-image, which the image optimiser cannot see:
@@ -175,24 +182,6 @@ export default async function Home() {
         />
         {/* scrim — keeps the copy legible whatever the photo does */}
         <div className="absolute inset-0 -z-10 bg-gradient-to-b from-black/55 via-black/35 to-black/65" />
-
-        {/* The hero's curved foot: the white section below sweeps up into the
-            photograph. preserveAspectRatio="none" lets one path stretch to any
-            width, and the arc is shallow on phones and deeper on desktop so it
-            never eats the search bar sitting just above it.
-
-            This is the page's one curved edge and a deliberate exception to the
-            square-corner rule — an arc across a full-bleed image is a different
-            gesture to a rounded box corner. */}
-        <svg
-          aria-hidden="true"
-          viewBox="0 0 1440 120"
-          preserveAspectRatio="none"
-          className="absolute inset-x-0 bottom-0 z-10 h-8 w-full text-white sm:h-14 lg:h-[70px]"
-          fill="currentColor"
-        >
-          <path d="M0 120V64C240 14 520 0 720 0s480 14 720 64v56H0Z" />
-        </svg>
 
         {/* nav, over the image */}
         <header className="relative z-10">
@@ -259,7 +248,7 @@ export default async function Home() {
             The benefits and price share its container so they align to its
             edges and read as one group with the form, rather than floating in
             the dead space between the headline and the bar. */}
-        <div className="relative z-20 mx-auto w-full max-w-5xl px-4 pb-10 sm:px-8 sm:pb-16 lg:pb-24">
+        <div className="relative z-20 mx-auto w-full max-w-5xl px-4 pb-8 sm:px-8 sm:pb-12">
           <div className="mb-8 flex flex-col items-center justify-between gap-5 sm:mb-14 sm:flex-row sm:items-end sm:gap-6">
             <ul className="space-y-2.5 sm:space-y-4">
               {HERO_POINTS.map(({ icon: glyph, text }) => (
