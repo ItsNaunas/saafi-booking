@@ -240,7 +240,7 @@ async function sendAlertEmail(record: BookingRecord) {
 
   const from = process.env.ALERT_EMAIL_FROM ?? "bookings@saaficleaningservice.com";
   const r = record.rooms;
-  await fetch("https://api.resend.com/emails", {
+  const res = await fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -275,4 +275,12 @@ async function sendAlertEmail(record: BookingRecord) {
       ].join("\n"),
     }),
   });
+
+  // A rejected send used to look identical to a successful one: the fetch resolves,
+  // nothing throws, and the booking returns 200 either way. That is how a BOM in
+  // RESEND_API_KEY went unnoticed for days. Make both outcomes visible in the logs.
+  if (!res.ok) {
+    throw new Error(`Resend rejected the alert: ${res.status} ${await res.text()}`);
+  }
+  console.log(`[bookings] alert email sent to the office for ${record.name}`);
 }
