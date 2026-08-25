@@ -4,6 +4,7 @@ import {
   listAdjustmentsForBooking,
   amountDueFor,
   busyBlocksForDate,
+  getCustomer,
   type AdjustmentRow,
 } from "@/lib/supabaseAdmin";
 import { assignmentConflict, toMinutes, toHHMM, formatTimeRange } from "@/lib/scheduling";
@@ -14,11 +15,14 @@ import {
   createPaymentLink,
   emailPaymentLink,
   setBookingStatus,
+  sendCardSetupLink,
+  chargeCardNow,
 } from "@/app/admin/actions";
 import { stripeConfigured, stripeIsTestMode } from "@/lib/stripe";
 import { FREQUENCY_LABEL, formatGBP } from "@/lib/pricing";
 import { reasonLabel } from "@/lib/adjustments";
 import { outcomeLabel, chargeableJourney } from "@/lib/outcomes";
+import { describeCard } from "@/lib/cardOnFile";
 
 export const dynamic = "force-dynamic";
 
@@ -27,14 +31,19 @@ export default async function BookingDetailPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ sent?: string; why?: string }>;
+  searchParams: Promise<{ sent?: string; why?: string; card?: string; url?: string }>;
 }) {
   const [{ id }, sendResult] = await Promise.all([params, searchParams]);
+  const cardResult = sendResult;
   const b = await getBooking(id);
   if (!b) notFound();
 
   // Tolerate the table not existing yet (pre-migration) rather than 500ing.
   const adjustments = await listAdjustmentsForBooking(id).catch(() => [] as AdjustmentRow[]);
+
+  // Tolerate the card columns not existing yet (pre-migration).
+  const customer = b.customer_id ? await getCustomer(b.customer_id).catch(() => null) : null;
+  const card = describeCard(customer);
 
   // Does this job collide with something else in the same cleaner's day? The
   // owner is allowed to do that on purpose, so this only ever warns.
@@ -101,6 +110,77 @@ export default async function BookingDetailPage({
           <p className="mt-2 text-xs text-rose-700">
             Charging keeps the quoted price — edit it below first if it should be less.
           </p>
+        </div>
+      )}
+
+      {/* ---------- card on file ---------- */}
+      {b.status !== "paid" && stripeConfigured() && (
+        <div className="mb-4 bg-white p-5 text-sm shadow-sm ring-1 ring-slate-200">
+          <div className="mb-3 flex items-baseline justify-between gap-3">
+            <h2 className="font-semibold text-slate-900">Card on file</h2>
+            {card && <span className="text-xs font-medium text-brand-700">{card}</span>}
+          </div>
+
+          {card ? (
+            <>
+              <p className="text-slate-600">
+                Finished cleans settle themselves against this card, for whatever the visit
+                actually came to. Nothing is taken while a price is still pending.
+              </p>
+              <form action={chargeCardNow} className="mt-3">
+                <input type="hidden" name="id" value={b.id} />
+                <button className="bg-brand-600 px-4 py-2 text-xs font-bold text-white transition hover:bg-brand-700">
+                  Charge {formatGBP(amountDueFor(b))} now
+                </button>
+              </form>
+            </>
+          ) : (
+            <>
+              <p className="text-slate-600">
+                No card saved. Sending one takes the chasing out of every future clean — they
+                save it once on Stripe&apos;s own page and we never see the details.
+              </p>
+              <form action={sendCardSetupLink} className="mt-3">
+                <input type="hidden" name="id" value={b.id} />
+                <button className="border border-brand-600 px-4 py-2 text-xs font-bold text-brand-700 transition hover:bg-brand-50">
+                  Email a card-saving link
+                </button>
+              </form>
+            </>
+          )}
+
+          {b.charge_error && (
+            <p className="mt-3 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+              Last automatic charge didn&apos;t go through — {b.charge_error}. The payment link
+              below still works.
+            </p>
+          )}
+
+          {cardResult.card === "sent" && (
+            <p className="mt-3 bg-brand-50 px-3 py-2 text-xs font-medium text-brand-800">
+              Sent — they&apos;ve got 24 hours to use it before it expires.
+            </p>
+          )}
+          {cardResult.card === "charged" && (
+            <p className="mt-3 bg-brand-50 px-3 py-2 text-xs font-medium text-brand-800">
+              Charged.
+            </p>
+          )}
+          {(cardResult.card === "declined" || cardResult.card === "fail") && (
+            <p className="mt-3 bg-red-50 px-3 py-2 text-xs font-medium text-red-700">
+              {cardResult.why || "That didn't work"}. Send a payment link instead.
+            </p>
+          )}
+          {cardResult.card === "link" && cardResult.url && (
+            <div className="mt-3 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+              Couldn&apos;t email it — {cardResult.why || "no usable address"}. Send this by hand:
+              <input
+                readOnly
+                value={cardResult.url}
+                className="mt-1 w-full border border-amber-300 bg-white px-2 py-1 font-mono text-[11px]"
+              />
+            </div>
+          )}
         </div>
       )}
 

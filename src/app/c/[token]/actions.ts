@@ -20,6 +20,7 @@ import {
   type ReasonCode,
 } from "@/lib/adjustments";
 import { isOutcomeReason } from "@/lib/outcomes";
+import { settleBookingWithSavedCard } from "@/lib/cardOnFile";
 
 /** Booking the cleaner is allowed to touch right now, or null. */
 async function ownConfirmedJob(token: string, bookingId: string) {
@@ -132,6 +133,20 @@ export async function cleanerFinishJob(formData: FormData) {
   await spawnNextOccurrence(booking).catch((e) =>
     console.error("[cleaner] recurring spawn failed:", e)
   );
+
+  // If the price needed no argument and there is a card on file, the clean pays
+  // for itself the moment the cleaner walks out. A pending adjustment stops this
+  // on its own — nothing is charged before the owner has agreed the figure.
+  if (outcome.resolution !== "pending") {
+    const settled = await getBooking(bookingId);
+    if (settled) {
+      const r = await settleBookingWithSavedCard(settled).catch((e) => {
+        console.error("[cleaner] automatic charge threw:", e);
+        return { ok: false as const, reason: "could not be attempted" };
+      });
+      if (!r.ok) console.log(`[cleaner] ${settled.reference} not auto-charged — ${r.reason}`);
+    }
+  }
 
   revalidatePath(`/c/${token}`);
   revalidatePath("/admin");

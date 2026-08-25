@@ -17,18 +17,21 @@ import {
   setCleanerActive,
   updateCleanerHours,
   getBooking,
+  getCustomer,
   getAdjustment,
   setAdjustmentStatus,
   amountDueFor,
   saveBookingPaymentLink,
   markPaymentLinkSent,
   type BookingStatus,
+  type BookingRow,
 } from "@/lib/supabaseAdmin";
 import { getStripe, toPence, siteUrl } from "@/lib/stripe";
-import { sendConfirmationEmail, sendAdjustmentEmail, sendPaymentLinkEmail, sendCleanerAssignedEmail } from "@/lib/email";
+import { sendConfirmationEmail, sendAdjustmentEmail, sendPaymentLinkEmail, sendCleanerAssignedEmail, sendCardSetupEmail } from "@/lib/email";
 import { invalidatePricingCache } from "@/lib/pricingServer";
 import { type Frequency } from "@/lib/pricing";
 import { newReference, spawnNextOccurrence, ensureSeriesHorizon } from "@/lib/recurring";
+import { settleBookingWithSavedCard, createCardSetupLink } from "@/lib/cardOnFile";
 import { toMinutes, toHHMM } from "@/lib/scheduling";
 
 const ALLOWED: Record<BookingStatus, BookingStatus[]> = {
@@ -67,6 +70,7 @@ export async function setBookingStatus(formData: FormData) {
     await spawnNextOccurrence(updated).catch((e) =>
       console.error("[admin] recurring spawn failed:", e)
     );
+    await settle(updated);
   }
   revalidatePath("/admin");
   revalidatePath("/admin/calendar");
@@ -281,6 +285,10 @@ export async function approveAdjustment(formData: FormData) {
     console.error("[admin] adjustment email failed:", e)
   );
 
+  // The price is agreed now, so the job can finally settle itself.
+  const agreed = await getBooking(adj.booking_id);
+  if (agreed) await settle(agreed);
+
   revalidatePath("/admin");
   revalidatePath(`/admin/booking/${adj.booking_id}`);
 }
@@ -398,4 +406,72 @@ export async function emailPaymentLink(formData: FormData) {
   await markPaymentLinkSent(id);
   revalidatePath(`/admin/booking/${id}`);
   redirect(`/admin/booking/${id}?sent=ok`);
+}
+
+/**
+ * Take the money off the card on file, if the booking is ready and there is one.
+ *
+ * Every outcome is fine: no card, price not agreed, a decline, a card that wants
+ * the customer present. All of them just mean the payment link is still how this
+ * one gets paid, which is exactly how every booking worked before.
+ */
+async function settle(booking: BookingRow) {
+  const result = await settleBookingWithSavedCard(booking).catch((e) => {
+    console.error("[admin] automatic charge threw:", e);
+    return { ok: false as const, reason: "the charge could not be attempted" };
+  });
+  console.log(
+    result.ok
+      ? `[admin] ${booking.reference} settled on the card on file`
+      : `[admin] ${booking.reference} not auto-charged — ${result.reason}`
+  );
+  revalidatePath(`/admin/booking/${booking.id}`);
+}
+
+/**
+ * Raise a hosted Stripe page where the customer saves a card, and email it.
+ *
+ * Setup sessions expire after 24 hours, unlike payment links, so this is raised
+ * on demand rather than stored — there is nothing useful to keep.
+ */
+export async function sendCardSetupLink(formData: FormData) {
+  const id = String(formData.get("id") ?? "");
+  if (!id) return;
+
+  const booking = await getBooking(id);
+  if (!booking) return;
+
+  const customer = booking.customer_id ? await getCustomer(booking.customer_id) : null;
+  const link = await createCardSetupLink(booking, customer?.stripe_customer_id ?? null);
+
+  if ("error" in link) {
+    redirect(`/admin/booking/${id}?card=fail&why=${encodeURIComponent(link.error)}`);
+  }
+
+  const sent = await sendCardSetupEmail(booking, link.url);
+  redirect(
+    sent.ok
+      ? `/admin/booking/${id}?card=sent`
+      : `/admin/booking/${id}?card=link&why=${encodeURIComponent(sent.reason ?? "")}&url=${encodeURIComponent(link.url)}`
+  );
+}
+
+/** Charge the card on file now, rather than waiting for the job to complete. */
+export async function chargeCardNow(formData: FormData) {
+  const id = String(formData.get("id") ?? "");
+  if (!id) return;
+  const booking = await getBooking(id);
+  if (!booking) return;
+
+  const result = await settleBookingWithSavedCard(booking).catch(() => ({
+    ok: false as const,
+    reason: "the charge could not be attempted",
+  }));
+
+  revalidatePath(`/admin/booking/${id}`);
+  redirect(
+    result.ok
+      ? `/admin/booking/${id}?card=charged`
+      : `/admin/booking/${id}?card=declined&why=${encodeURIComponent(result.reason)}`
+  );
 }

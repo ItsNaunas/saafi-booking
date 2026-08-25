@@ -1,6 +1,14 @@
 import { NextResponse } from "next/server";
 import { getStripe, fromPence } from "@/lib/stripe";
-import { getBookingByPaymentLink, markBookingPaid } from "@/lib/supabaseAdmin";
+import type Stripe from "stripe";
+import {
+  getBookingByPaymentLink,
+  markBookingPaid,
+  getBooking,
+  getCustomer,
+  getCustomerByEmail,
+  saveCustomerCard,
+} from "@/lib/supabaseAdmin";
 import { sendPaymentReceivedEmails } from "@/lib/email";
 
 // Stripe needs the raw body to verify the signature, so this route must never
@@ -38,6 +46,12 @@ export async function POST(req: Request) {
   try {
     if (event.type === "checkout.session.completed") {
       const session = event.data.object;
+
+      // A setup session carries no payment at all — it is somebody saving a card
+      // for later. Different shape, different meaning, handled separately.
+      if (session.mode === "setup") {
+        return handleCardSaved(session);
+      }
 
       // Only settle when the money is actually there. `complete` sessions can
       // still be unpaid (e.g. a delayed payment method).
@@ -90,4 +104,65 @@ export async function POST(req: Request) {
     console.error("[stripe] handler failed:", e);
     return NextResponse.json({ error: "handler failed" }, { status: 500 });
   }
+}
+
+/**
+ * Somebody finished saving a card on Stripe's hosted page.
+ *
+ * The session itself only carries a setup_intent id, so the payment method has
+ * to be fetched to learn anything human-readable about it. Storing the brand and
+ * last four is not decoration: it is how the office and the customer both confirm
+ * they are talking about the same card.
+ */
+async function handleCardSaved(session: Stripe.Checkout.Session) {
+  const bookingId = session.metadata?.booking_id;
+  if (!bookingId) {
+    return NextResponse.json({ received: true, ignored: "setup session with no booking" });
+  }
+
+  const booking = await getBooking(bookingId);
+  if (!booking) {
+    console.error("[stripe] card saved for a booking that does not exist", bookingId);
+    return NextResponse.json({ received: true, ignored: "no matching booking" });
+  }
+
+  const stripe = getStripe();
+  const setupIntentId =
+    typeof session.setup_intent === "string" ? session.setup_intent : session.setup_intent?.id;
+  if (!stripe || !setupIntentId) {
+    return NextResponse.json({ received: true, ignored: "no setup intent on the session" });
+  }
+
+  const intent = await stripe.setupIntents.retrieve(setupIntentId);
+  const pmId =
+    typeof intent.payment_method === "string" ? intent.payment_method : intent.payment_method?.id;
+  const customerId =
+    typeof session.customer === "string" ? session.customer : session.customer?.id;
+
+  if (!pmId || !customerId) {
+    return NextResponse.json({ received: true, ignored: "setup completed without a card" });
+  }
+
+  const pm = await stripe.paymentMethods.retrieve(pmId);
+
+  // The card belongs to the person, not this one visit — so every future clean in
+  // the series can settle against it too.
+  const customer = booking.customer_id
+    ? await getCustomer(booking.customer_id).catch(() => null)
+    : await getCustomerByEmail(booking.customer_email).catch(() => null);
+
+  if (!customer) {
+    console.error("[stripe] card saved but no customer row to attach it to", booking.reference);
+    return NextResponse.json({ received: true, ignored: "no customer row" });
+  }
+
+  await saveCustomerCard(customer.id, {
+    stripe_customer_id: customerId,
+    stripe_payment_method_id: pmId,
+    card_brand: pm.card?.brand ?? null,
+    card_last4: pm.card?.last4 ?? null,
+  });
+
+  console.log(`[stripe] card saved for ${booking.customer_name} (${booking.reference})`);
+  return NextResponse.json({ received: true, saved: "card" });
 }

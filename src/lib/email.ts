@@ -446,3 +446,36 @@ export async function sendSeriesBookedEmail(
     ],
   });
 }
+
+/**
+ * Invite the customer to put a card on file.
+ *
+ * Sold as convenience because that is what it is for them — no link to chase
+ * after every clean — while being the thing that takes SAAFI out of the chasing
+ * business entirely.
+ */
+export async function sendCardSetupEmail(
+  booking: BookingRow,
+  url: string
+): Promise<{ ok: boolean; reason?: string }> {
+  return send({
+    to: booking.customer_email,
+    subject: `Save a card for your cleans — ${booking.reference}`,
+    lines: [
+      `Hi ${booking.customer_name.split(" ")[0]},`,
+      ``,
+      `If you'd rather not deal with a payment link after every clean, you can save`,
+      `a card once and we'll charge it when the job's done — for whatever the visit`,
+      `actually came to, never more.`,
+      ``,
+      url,
+      ``,
+      `Nothing is charged now. The page is Stripe's own, so we never see your card`,
+      `details, and you can stop at any time by telling us.`,
+      ``,
+      `Reference: ${booking.reference}`,
+      ``,
+      `SAAFI Cleaning Service`,
+    ],
+  });
+}

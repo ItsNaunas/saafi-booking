@@ -66,6 +66,9 @@ export type BookingRow = {
   /** Why a visit did not happen. Null on every normal booking. */
   outcome_reason: OutcomeReason | null;
   outcome_note: string | null;
+  /** Automatic charge against a saved card. Null until one is tried. */
+  charge_attempted_at: string | null;
+  charge_error: string | null;
 };
 
 export type CleanerRow = {
@@ -90,6 +93,13 @@ export type CustomerRow = {
   address_line: string | null;
   postcode: string | null;
   created_at: string;
+  // Card on file (2026-08-25 migration). Handles only — Stripe holds the card,
+  // so there is nothing here worth stealing.
+  stripe_customer_id: string | null;
+  stripe_payment_method_id: string | null;
+  card_brand: string | null;
+  card_last4: string | null;
+  card_saved_at: string | null;
 };
 
 function creds() {
@@ -450,4 +460,42 @@ export async function listSeriesBookings(seriesId: string): Promise<BookingRow[]
   return rest<BookingRow[]>(
     `bookings?or=(id.eq.${id},series_id.eq.${id})&select=*&order=preferred_date.asc`
   );
+}
+
+/* ---------- card on file ---------- */
+
+export async function getCustomer(id: string): Promise<CustomerRow | null> {
+  const rows = await rest<CustomerRow[]>(`customers?id=eq.${encodeURIComponent(id)}&select=*&limit=1`);
+  return rows[0] ?? null;
+}
+
+/** Find a customer by the email a booking carries, for rows predating customer_id. */
+export async function getCustomerByEmail(email: string): Promise<CustomerRow | null> {
+  const rows = await rest<CustomerRow[]>(
+    `customers?email=eq.${encodeURIComponent(email)}&select=*&limit=1`
+  );
+  return rows[0] ?? null;
+}
+
+export async function saveCustomerCard(
+  id: string,
+  fields: {
+    stripe_customer_id: string;
+    stripe_payment_method_id: string;
+    card_brand: string | null;
+    card_last4: string | null;
+  }
+): Promise<void> {
+  await rest(`customers?id=eq.${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: JSON.stringify({ ...fields, card_saved_at: new Date().toISOString() }),
+  });
+}
+
+/** Record how an automatic charge went, successful or not. */
+export async function recordChargeAttempt(id: string, error: string | null): Promise<void> {
+  await rest(`bookings?id=eq.${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: JSON.stringify({ charge_attempted_at: new Date().toISOString(), charge_error: error }),
+  });
 }
