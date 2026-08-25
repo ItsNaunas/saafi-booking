@@ -438,3 +438,16 @@ export async function markPaymentLinkSent(id: string): Promise<void> {
     body: JSON.stringify({ payment_link_sent_at: new Date().toISOString() }),
   });
 }
+
+/**
+ * Every booking in a recurring series, including the one that started it.
+ *
+ * The first booking of a series has no `series_id` — it *is* the series — so both
+ * shapes have to be matched.
+ */
+export async function listSeriesBookings(seriesId: string): Promise<BookingRow[]> {
+  const id = encodeURIComponent(seriesId);
+  return rest<BookingRow[]>(
+    `bookings?or=(id.eq.${id},series_id.eq.${id})&select=*&order=preferred_date.asc`
+  );
+}

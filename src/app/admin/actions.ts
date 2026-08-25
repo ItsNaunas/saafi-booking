@@ -28,7 +28,7 @@ import { getStripe, toPence, siteUrl } from "@/lib/stripe";
 import { sendConfirmationEmail, sendAdjustmentEmail, sendPaymentLinkEmail, sendCleanerAssignedEmail } from "@/lib/email";
 import { invalidatePricingCache } from "@/lib/pricingServer";
 import { type Frequency } from "@/lib/pricing";
-import { newReference, spawnNextOccurrence } from "@/lib/recurring";
+import { newReference, spawnNextOccurrence, ensureSeriesHorizon } from "@/lib/recurring";
 import { toMinutes, toHHMM } from "@/lib/scheduling";
 
 const ALLOWED: Record<BookingStatus, BookingStatus[]> = {
@@ -54,6 +54,12 @@ export async function setBookingStatus(formData: FormData) {
   if (updated && to === "confirmed") {
     await sendConfirmationEmail(updated).catch((e) =>
       console.error("[admin] confirmation email failed:", e)
+    );
+    // A recurring booking becoming real is when its series should appear in the
+    // calendar — not while it was still an unconfirmed request holding slots it
+    // might never use.
+    await ensureSeriesHorizon(updated).catch((e) =>
+      console.error("[admin] series top-up failed:", e)
     );
   }
   // Completing a recurring clean books the next one automatically.

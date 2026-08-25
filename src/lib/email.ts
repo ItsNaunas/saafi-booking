@@ -369,32 +369,6 @@ export async function sendCleanerAssignedEmail(
 }
 
 /**
- * The series rolled on. Recurring customers had no idea their next visit existed
- * until somebody turned up.
- */
-export async function sendNextVisitEmail(booking: BookingRow): Promise<{ ok: boolean; reason?: string }> {
-  return send({
-    to: booking.customer_email,
-    subject: `Your next clean — ${booking.preferred_date}`,
-    lines: [
-      `Hi ${booking.customer_name.split(" ")[0]},`,
-      ``,
-      `Your next clean is booked in.`,
-      ``,
-      `When:  ${whenLine(booking)}`,
-      `Where: ${booking.address_line}, ${booking.postcode}`,
-      `Price: £${booking.quoted_price}`,
-      `Reference: ${booking.reference}`,
-      ``,
-      `Same slot as usual. If that doesn't suit this time, give us a ring or reply`,
-      `to this email and we'll move it.`,
-      ``,
-      `SAAFI Cleaning Service`,
-    ],
-  });
-}
-
-/**
  * A cleaner is standing outside a job that cannot happen.
  *
  * Goes to the office immediately rather than waiting to be noticed: there may
@@ -429,6 +403,46 @@ export async function sendVisitFailedEmail(
       `${process.env.NEXT_PUBLIC_SITE_URL ?? "https://saaficleaningservice.com"}/admin/booking/${booking.id}`,
       ``,
       `Reference: ${booking.reference}`,
+    ],
+  });
+}
+
+/**
+ * "Your next few cleans are booked."
+ *
+ * Takes the whole batch, because filling eight weeks of a weekly series at once
+ * would otherwise mean eight separate emails — a reliable way to teach somebody
+ * to ignore you.
+ */
+export async function sendSeriesBookedEmail(
+  bookings: BookingRow[]
+): Promise<{ ok: boolean; reason?: string }> {
+  const first = bookings[0];
+  if (!first) return { ok: false, reason: "nothing to tell them about" };
+  const many = bookings.length > 1;
+
+  return send({
+    to: first.customer_email,
+    subject: many
+      ? `Your next ${bookings.length} cleans are booked`
+      : `Your next clean — ${first.preferred_date}`,
+    lines: [
+      `Hi ${first.customer_name.split(" ")[0]},`,
+      ``,
+      many
+        ? `Your regular cleans are booked in. Here they are:`
+        : `Your next clean is booked in.`,
+      ``,
+      ...bookings.map((b) => `  ${whenLine(b)}`),
+      ``,
+      `Where: ${first.address_line}, ${first.postcode}`,
+      `Price: £${first.quoted_price} per clean`,
+      ``,
+      `Same slot each time. If one of those doesn't suit, give us a ring or reply`,
+      `to this email and we'll move it — no need to change the rest.`,
+      ``,
+      `SAAFI Cleaning Service`,
+      `saaficleaningservice.com`,
     ],
   });
 }
