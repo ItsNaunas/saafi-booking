@@ -28,8 +28,8 @@ import {
 } from "@/lib/supabaseAdmin";
 import { getStripe, toPence, siteUrl } from "@/lib/stripe";
 import { sendConfirmationEmail, sendAdjustmentEmail, sendPaymentLinkEmail, sendCleanerAssignedEmail, sendCardSetupEmail } from "@/lib/email";
-import { invalidatePricingCache } from "@/lib/pricingServer";
-import { type Frequency } from "@/lib/pricing";
+import { invalidatePricingCache, loadPricingConfig } from "@/lib/pricingServer";
+import { quotePrice, type Frequency } from "@/lib/pricing";
 import { newReference, spawnNextOccurrence, ensureSeriesHorizon } from "@/lib/recurring";
 import { settleBookingWithSavedCard, createCardSetupLink } from "@/lib/cardOnFile";
 import { toMinutes, toHHMM } from "@/lib/scheduling";
@@ -130,7 +130,6 @@ export async function createManualBooking(formData: FormData) {
     redirect("/admin/new?error=1");
   }
   const hours = Math.max(0.5, Number(get("hours")) || 2);
-  const price = Math.max(0, Number(get("price")) || 0);
   // The owner books over the top of availability on purpose — a phone booking is
   // already agreed with the customer, so this records the time, it doesn't police it.
   const startMinutes = toMinutes(get("start_time"));
@@ -140,6 +139,14 @@ export async function createManualBooking(formData: FormData) {
       ? get("frequency")
       : "one_off"
   ) as Frequency;
+  // Left blank, the price falls back to the engine — the same quotePrice the
+  // public form uses — so a phone booking never goes in at £0 by accident.
+  // A typed price always wins.
+  let price = Math.max(0, Number(get("price")) || 0);
+  if (price === 0) {
+    const cfg = await loadPricingConfig();
+    price = quotePrice(hours, true, cfg, frequency);
+  }
 
   await insertBooking({
     reference: newReference(),
@@ -167,22 +174,65 @@ export async function createManualBooking(formData: FormData) {
 export async function editBooking(formData: FormData) {
   const id = String(formData.get("id") ?? "");
   if (!id) return;
-  const date = String(formData.get("preferred_date") ?? "");
+  const before = await getBooking(id);
+  if (!before) return;
+
+  const get = (k: string) => String(formData.get(k) ?? "").trim();
+  const date = get("preferred_date");
   const hours = Number(formData.get("hours"));
-  const price = Number(formData.get("quoted_price"));
-  const notes = String(formData.get("notes") ?? "").trim();
+  let price = Number(formData.get("quoted_price"));
+  const notes = get("notes");
   // An empty time field is meaningful — it puts the job back to "needs a slot".
   const startMinutes = toMinutes(String(formData.get("start_time") ?? ""));
+
+  // Price follows the hours (2026-08-25 review) — but only while the admin has
+  // not touched the price field themselves. A submitted price that differs
+  // from the stored one is an explicit decision and always wins; an untouched
+  // price alongside changed hours means "reprice this for me".
+  const hoursChanged = Number.isFinite(hours) && hours > 0 && hours !== Number(before.hours);
+  const priceUntouched =
+    Number.isFinite(price) && Math.abs(price - Number(before.quoted_price)) < 0.005;
+  if (hoursChanged && priceUntouched) {
+    const cfg = await loadPricingConfig();
+    price = quotePrice(
+      hours,
+      before.customer_provides_products,
+      cfg,
+      before.frequency,
+      Number(before.addons_total ?? 0),
+    );
+  }
+
+  // Contact details: only written when the field actually changed, so an old
+  // form left open cannot quietly blank a fixed-up record.
+  const contact: Record<string, string> = {};
+  for (const [form, col] of [
+    ["customer_name", "customer_name"],
+    ["customer_phone", "customer_phone"],
+    ["customer_email", "customer_email"],
+    ["address_line", "address_line"],
+    ["postcode", "postcode"],
+  ] as const) {
+    const v = form === "postcode" ? get(form).toUpperCase().replace(/\s+/g, "") : get(form);
+    if (v && v !== String((before as unknown as Record<string, unknown>)[col] ?? "")) {
+      contact[col] = v;
+    }
+  }
+
   await updateBooking(id, {
     ...(/^\d{4}-\d{2}-\d{2}$/.test(date) ? { preferred_date: date } : {}),
     ...(Number.isFinite(hours) && hours > 0 ? { hours } : {}),
     ...(Number.isFinite(price) && price >= 0 ? { quoted_price: price } : {}),
+    ...contact,
     start_time: startMinutes === null ? null : toHHMM(startMinutes),
     notes: notes || null,
   } as Parameters<typeof updateBooking>[1]);
   revalidatePath("/admin");
   revalidatePath("/admin/calendar");
-  redirect("/admin");
+  revalidatePath(`/admin/booking/${id}`);
+  // Stay on the booking: bouncing to the pipeline made a successful save look
+  // like nothing happened.
+  redirect(`/admin/booking/${id}?saved=1`);
 }
 
 export async function savePricing(formData: FormData) {

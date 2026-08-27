@@ -194,6 +194,14 @@ export async function updateBooking(
       | "status"
       | "cleaner_id"
       | "frequency"
+      // Contact details, editable per booking: a customer correcting a phone
+      // number or a move mid-series edits the job, not history. The customers
+      // table row is matched by email at insert time and left alone here.
+      | "customer_name"
+      | "customer_phone"
+      | "customer_email"
+      | "address_line"
+      | "postcode"
       | "recurring_active"
       | "quoted_hours"
       | "actual_hours"

@@ -1,4 +1,6 @@
 import { createManualBooking } from "@/app/admin/actions";
+import { loadPricingConfig } from "@/lib/pricingServer";
+import ManualPriceFields from "@/components/ManualPriceFields";
 
 export const dynamic = "force-dynamic";
 
@@ -7,7 +9,7 @@ export default async function NewBookingPage({
 }: {
   searchParams: Promise<{ error?: string }>;
 }) {
-  const { error } = await searchParams;
+  const [{ error }, cfg] = await Promise.all([searchParams, loadPricingConfig()]);
   return (
     <div className="mx-auto max-w-xl">
       <h1 className="mb-1 text-2xl font-bold text-slate-900">New booking</h1>
@@ -23,20 +25,10 @@ export default async function NewBookingPage({
           <Field label="Address line" name="address_line" className="sm:col-span-2" />
           <Field label="Date *" name="preferred_date" type="date" />
           <Field label="Start time" name="start_time" type="time" step="900" hint="optional" />
-          <Field label="Hours" name="hours" type="number" step="0.5" defaultValue="2" />
-          <Field label="Price (£)" name="price" type="number" step="0.5" defaultValue="0" />
-          <label className="block">
-            <span className="mb-1 block text-sm font-medium text-slate-700">Frequency</span>
-            <select
-              name="frequency"
-              className="w-full border border-slate-300 px-3 py-2 outline-none focus:border-brand-500"
-            >
-              <option value="one_off">One-off</option>
-              <option value="weekly">Weekly</option>
-              <option value="fortnightly">Every 2 weeks</option>
-              <option value="four_weekly">Every 4 weeks</option>
-            </select>
-          </label>
+          {/* Hours, frequency and price live in one client component so the
+              engine's price can follow the first two as the admin types.
+              Blank price = the engine's number, server-side too. */}
+          <ManualPriceFields cfg={cfg} />
           <label className="block sm:col-span-2">
             <span className="mb-1 block text-sm font-medium text-slate-700">Notes</span>
             <textarea

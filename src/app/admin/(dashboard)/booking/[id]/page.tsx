@@ -31,7 +31,7 @@ export default async function BookingDetailPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ sent?: string; why?: string; card?: string; url?: string }>;
+  searchParams: Promise<{ sent?: string; why?: string; card?: string; url?: string; saved?: string }>;
 }) {
   const [{ id }, sendResult] = await Promise.all([params, searchParams]);
   const cardResult = sendResult;
@@ -313,7 +313,63 @@ export default async function BookingDetailPage({
 
       <form action={editBooking} className="bg-white p-5 shadow-sm ring-1 ring-slate-200">
         <input type="hidden" name="id" value={b.id} />
-        <div className="grid gap-4 sm:grid-cols-3">
+        {sendResult.saved === "1" && (
+          <p className="mb-4 bg-brand-50 px-3 py-2 text-sm font-medium text-brand-800">
+            Saved. If you changed the hours and left the price alone, the price
+            was recalculated to match.
+          </p>
+        )}
+
+        {/* Contact details — edits this booking's record. The customer list is
+            matched by email at insert time and is left alone here. */}
+        <div className="grid gap-4 sm:grid-cols-2">
+          <label className="block">
+            <span className="mb-1 block text-sm font-medium text-slate-700">Customer name</span>
+            <input
+              name="customer_name"
+              defaultValue={b.customer_name}
+              className="w-full border border-slate-300 px-3 py-2"
+            />
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-sm font-medium text-slate-700">Phone</span>
+            <input
+              name="customer_phone"
+              type="tel"
+              defaultValue={b.customer_phone}
+              className="w-full border border-slate-300 px-3 py-2"
+            />
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-sm font-medium text-slate-700">Email</span>
+            <input
+              name="customer_email"
+              type="email"
+              defaultValue={b.customer_email}
+              className="w-full border border-slate-300 px-3 py-2"
+            />
+          </label>
+          <div className="grid grid-cols-[1fr_7rem] gap-3">
+            <label className="block">
+              <span className="mb-1 block text-sm font-medium text-slate-700">Address</span>
+              <input
+                name="address_line"
+                defaultValue={b.address_line ?? ""}
+                className="w-full border border-slate-300 px-3 py-2"
+              />
+            </label>
+            <label className="block">
+              <span className="mb-1 block text-sm font-medium text-slate-700">Postcode</span>
+              <input
+                name="postcode"
+                defaultValue={b.postcode ?? ""}
+                className="w-full border border-slate-300 px-3 py-2 uppercase"
+              />
+            </label>
+          </div>
+        </div>
+
+        <div className="mt-4 grid gap-4 border-t border-slate-100 pt-4 sm:grid-cols-3">
           <label className="block">
             <span className="mb-1 block text-sm font-medium text-slate-700">Date</span>
             <input
