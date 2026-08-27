@@ -275,6 +275,36 @@ export default async function BookingDetailPage({
 
       <div className="mb-4 bg-white p-5 text-sm shadow-sm ring-1 ring-slate-200">
         <Row k="Contact" v={`${b.customer_phone} · ${b.customer_email}`} />
+        {(b.started_lat != null || b.finished_lat != null) && (
+          <Row
+            k="Location stamps"
+            v={
+              <>
+                {b.started_lat != null && (
+                  <a
+                    className="text-brand-700 hover:underline"
+                    href={`https://www.google.com/maps?q=${b.started_lat},${b.started_lng}`}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    start ↗
+                  </a>
+                )}
+                {b.started_lat != null && b.finished_lat != null && " · "}
+                {b.finished_lat != null && (
+                  <a
+                    className="text-brand-700 hover:underline"
+                    href={`https://www.google.com/maps?q=${b.finished_lat},${b.finished_lng}`}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    finish ↗
+                  </a>
+                )}
+              </>
+            }
+          />
+        )}
         {b.service_type === "deep" && (
           <Row
             k="Service"
@@ -435,7 +465,7 @@ export default async function BookingDetailPage({
   );
 }
 
-function Row({ k, v }: { k: string; v: string }) {
+function Row({ k, v }: { k: string; v: React.ReactNode }) {
   return (
     <div className="flex justify-between gap-4 border-b border-slate-100 py-1.5 last:border-0">
       <dt className="text-slate-500">{k}</dt>

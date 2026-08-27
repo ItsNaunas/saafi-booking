@@ -38,6 +38,11 @@ export type BookingRow = {
   /** 'standard' | 'deep' — optional so the app runs before the migration lands. */
   service_type?: "standard" | "deep";
   cleaners_needed?: number;
+  /** One GPS fix at start and finish — a stamp, not a track. */
+  started_lat?: number | null;
+  started_lng?: number | null;
+  finished_lat?: number | null;
+  finished_lng?: number | null;
   addons: { key: string; label: string; price: number }[];
   addons_total: number;
   frequency: Frequency;
@@ -212,6 +217,10 @@ export async function updateBooking(
       | "price_status"
       | "started_at"
       | "finished_at"
+      | "started_lat"
+      | "started_lng"
+      | "finished_lat"
+      | "finished_lng"
       | "outcome_reason"
       | "outcome_note"
     >

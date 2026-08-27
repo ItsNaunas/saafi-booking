@@ -2,6 +2,8 @@ import { notFound } from "next/navigation";
 import { formatTimeRange } from "@/lib/scheduling";
 import { getCleanerByToken, listBookingsForCleaner, type BookingRow } from "@/lib/supabaseAdmin";
 import { cleanerStartJob, cleanerFinishJob, cleanerCannotDoJob } from "./actions";
+import JobClock from "./JobClock";
+import LocationStamp from "./LocationStamp";
 import { REASONS, elapsedHours } from "@/lib/adjustments";
 import { OUTCOMES } from "@/lib/outcomes";
 
@@ -129,6 +131,7 @@ function JobCard({
           <button className="w-full rounded-full bg-brand-600 px-4 py-3 text-base font-semibold text-white hover:bg-brand-700">
             ▶ Start job
           </button>
+          <LocationStamp prefix="started" />
         </form>
       )}
 
@@ -137,7 +140,10 @@ function JobCard({
           <input type="hidden" name="token" value={token} />
           <input type="hidden" name="booking_id" value={j.id} />
 
-          <p className="mb-2 text-sm text-slate-600">
+          {/* The live tracker: ticks every second while the job runs. The
+              static line beneath survives without JS. */}
+          <JobClock startedAt={j.started_at as string} />
+          <p className="mb-2 mt-1 text-sm text-slate-600">
             Started {new Date(j.started_at as string).toLocaleTimeString("en-GB", {
               hour: "2-digit",
               minute: "2-digit",
@@ -185,6 +191,7 @@ function JobCard({
             />
           </label>
 
+          <LocationStamp prefix="finished" />
           <button className="mt-3 w-full rounded-full bg-brand-600 px-4 py-3 text-base font-semibold text-white hover:bg-brand-700">
             ✓ Finish job
           </button>

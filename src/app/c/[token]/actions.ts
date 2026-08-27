@@ -38,8 +38,23 @@ export async function cleanerStartJob(formData: FormData) {
   const found = await ownConfirmedJob(token, bookingId);
   if (!found || found.booking.started_at) return;
 
-  await updateBooking(bookingId, { started_at: new Date().toISOString() });
+  await updateBooking(bookingId, {
+    started_at: new Date().toISOString(),
+    ...gpsStamp(formData, "started"),
+  });
   revalidatePath(`/c/${token}`);
+}
+
+/**
+ * The optional start/finish location fix. Absent, denied or malformed all
+ * collapse to "no stamp" — location is evidence, never a gate on working.
+ */
+function gpsStamp(formData: FormData, prefix: "started" | "finished") {
+  const lat = Number(formData.get(`${prefix}_lat`));
+  const lng = Number(formData.get(`${prefix}_lng`));
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return {};
+  if (Math.abs(lat) > 90 || Math.abs(lng) > 180) return {};
+  return { [`${prefix}_lat`]: lat, [`${prefix}_lng`]: lng };
 }
 
 /**
@@ -91,6 +106,7 @@ export async function cleanerFinishJob(formData: FormData) {
     status: "completed",
     actual_hours: actualHours,
     finished_at: finishedAt,
+    ...gpsStamp(formData, "finished"),
     quoted_hours: quotedHours,
     // A proposal leaves the money unsettled until the owner decides.
     ...(outcome.resolution === "pending"
