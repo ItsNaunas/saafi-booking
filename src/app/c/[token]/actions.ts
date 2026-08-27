@@ -3,13 +3,16 @@
 // Cleaner actions — authenticated by the cleaner's personal token, NOT the admin session.
 
 import { revalidatePath } from "next/cache";
-import { sendAdjustmentPendingEmail, sendVisitFailedEmail } from "@/lib/email";
+import { sendAdjustmentPendingEmail, sendVisitFailedEmail, sendCleanCompletedEmail } from "@/lib/email";
 import {
   getCleanerByToken,
   getBooking,
   updateBooking,
   insertAdjustment,
+  amountDueFor,
+  markPaymentLinkSent,
 } from "@/lib/supabaseAdmin";
+import { raiseBookingPaymentLink } from "@/lib/paymentLink";
 import { loadPricingConfig } from "@/lib/pricingServer";
 import { spawnNextOccurrence } from "@/lib/recurring";
 import {
@@ -160,7 +163,22 @@ export async function cleanerFinishJob(formData: FormData) {
         console.error("[cleaner] automatic charge threw:", e);
         return { ok: false as const, reason: "could not be attempted" };
       });
-      if (!r.ok) console.log(`[cleaner] ${settled.reference} not auto-charged — ${r.reason}`);
+      if (!r.ok) {
+        console.log(`[cleaner] ${settled.reference} not auto-charged — ${r.reason}`);
+        // No card on file: the "your clean is done" email carries the payment
+        // link out by itself, instead of the job sitting unbilled until the
+        // office remembers. Best-effort — the manual send button remains.
+        try {
+          const amount = amountDueFor(settled);
+          const url = amount > 0 ? await raiseBookingPaymentLink(settled) : null;
+          if (url) {
+            await sendCleanCompletedEmail(settled, amount, url);
+            await markPaymentLinkSent(settled.id).catch(() => {});
+          }
+        } catch (e) {
+          console.error(`[cleaner] auto-invoice for ${settled.reference} failed:`, e);
+        }
+      }
     }
   }
 

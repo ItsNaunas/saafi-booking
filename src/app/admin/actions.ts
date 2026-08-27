@@ -27,7 +27,18 @@ import {
   type BookingRow,
 } from "@/lib/supabaseAdmin";
 import { getStripe, toPence, siteUrl } from "@/lib/stripe";
-import { sendConfirmationEmail, sendAdjustmentEmail, sendPaymentLinkEmail, sendCleanerAssignedEmail, sendCardSetupEmail } from "@/lib/email";
+import {
+  sendConfirmationEmail,
+  sendAdjustmentEmail,
+  sendPaymentLinkEmail,
+  sendCleanerAssignedEmail,
+  sendCardSetupEmail,
+  sendBookingCancelledEmail,
+  sendBookingChangedEmail,
+  sendCleanerJobChangedEmail,
+  sendCleanCompletedEmail,
+} from "@/lib/email";
+import { raiseBookingPaymentLink } from "@/lib/paymentLink";
 import { invalidatePricingCache, loadPricingConfig } from "@/lib/pricingServer";
 import { quotePrice, type Frequency } from "@/lib/pricing";
 import { newReference, spawnNextOccurrence, ensureSeriesHorizon } from "@/lib/recurring";
@@ -65,6 +76,21 @@ export async function setBookingStatus(formData: FormData) {
       console.error("[admin] series top-up failed:", e)
     );
   }
+  // The clean is off: the customer used to find out when nobody turned up,
+  // and an assigned cleaner used to find out by travelling there.
+  if (updated && to === "cancelled") {
+    await sendBookingCancelledEmail(updated).catch((e) =>
+      console.error("[admin] cancellation email failed:", e)
+    );
+    if (updated.cleaner_id) {
+      const cleaner = (await listCleaners()).find((c) => c.id === updated.cleaner_id);
+      if (cleaner) {
+        await sendCleanerJobChangedEmail(cleaner, updated, "cancelled").catch((e) =>
+          console.error("[admin] cleaner cancellation email failed:", e)
+        );
+      }
+    }
+  }
   // Completing a recurring clean books the next one automatically.
   if (updated && to === "completed") {
     await spawnNextOccurrence(updated).catch((e) =>
@@ -87,7 +113,19 @@ export async function assignCleaner(formData: FormData) {
   const id = String(formData.get("id") ?? "");
   const cleanerId = String(formData.get("cleaner_id") ?? "");
   if (!id) return;
+  const before = await getBooking(id);
   const updated = await updateBooking(id, { cleaner_id: cleanerId || null });
+
+  // Reassignment: the cleaner who just lost the job used to find out by
+  // opening their link and noticing it gone — or worse, by both turning up.
+  if (updated && before?.cleaner_id && before.cleaner_id !== (cleanerId || null)) {
+    const old = (await listCleaners()).find((c) => c.id === before.cleaner_id);
+    if (old) {
+      await sendCleanerJobChangedEmail(old, updated, "reassigned").catch((e) =>
+        console.error("[admin] cleaner reassignment email failed:", e)
+      );
+    }
+  }
 
   // Tell them. Until this existed a cleaner found out they had a job only by
   // opening their link and noticing something new sitting there.
@@ -219,7 +257,7 @@ export async function editBooking(formData: FormData) {
     }
   }
 
-  await updateBooking(id, {
+  const updated = await updateBooking(id, {
     ...(/^\d{4}-\d{2}-\d{2}$/.test(date) ? { preferred_date: date } : {}),
     ...(Number.isFinite(hours) && hours > 0 ? { hours } : {}),
     ...(Number.isFinite(price) && price >= 0 ? { quoted_price: price } : {}),
@@ -227,6 +265,43 @@ export async function editBooking(formData: FormData) {
     start_time: startMinutes === null ? null : toHHMM(startMinutes),
     notes: notes || null,
   } as Parameters<typeof updateBooking>[1]);
+
+  // The written record of what moved. Usually agreed on the phone first —
+  // this is what kills "you said Thursday" before it exists. Only material
+  // changes count: contact fixes and note edits are not news to the customer.
+  if (updated) {
+    const moved =
+      updated.preferred_date !== before.preferred_date ||
+      updated.start_time !== before.start_time;
+    const resized = Number(updated.hours) !== Number(before.hours);
+    const repriced = Number(updated.quoted_price) !== Number(before.quoted_price);
+
+    if (moved || resized || repriced) {
+      const was: [string, string][] = [];
+      if (moved)
+        was.push([
+          "Was",
+          before.start_time
+            ? `${before.preferred_date}, ${toHHMM(toMinutes(before.start_time) ?? 0)}`
+            : before.preferred_date,
+        ]);
+      if (repriced) was.push(["Was priced", `£${before.quoted_price}`]);
+      await sendBookingChangedEmail(updated, was).catch((e) =>
+        console.error("[admin] booking-changed email failed:", e)
+      );
+
+      // A cleaner planning their day around the old slot needs the new one.
+      if (moved && updated.cleaner_id && updated.status === "confirmed") {
+        const cleaner = (await listCleaners()).find((c) => c.id === updated.cleaner_id);
+        if (cleaner) {
+          await sendCleanerJobChangedEmail(cleaner, updated, "moved").catch((e) =>
+            console.error("[admin] cleaner moved email failed:", e)
+          );
+        }
+      }
+    }
+  }
+
   revalidatePath("/admin");
   revalidatePath("/admin/calendar");
   revalidatePath(`/admin/booking/${id}`);
@@ -475,6 +550,26 @@ async function settle(booking: BookingRow) {
       ? `[admin] ${booking.reference} settled on the card on file`
       : `[admin] ${booking.reference} not auto-charged — ${result.reason}`
   );
+
+  // No card to charge: the payment link goes out by itself, closing the gap
+  // where a completed job sat unbilled until somebody pressed the button.
+  // Failures stay silent — the admin's manual send button still exists.
+  if (!result.ok) {
+    try {
+      const fresh = await getBooking(booking.id);
+      if (fresh && fresh.status === "completed" && fresh.price_status !== "pending") {
+        const amount = amountDueFor(fresh);
+        const url = amount > 0 ? await raiseBookingPaymentLink(fresh) : null;
+        if (url) {
+          await sendCleanCompletedEmail(fresh, amount, url);
+          await markPaymentLinkSent(fresh.id).catch(() => {});
+        }
+      }
+    } catch (e) {
+      console.error(`[admin] auto-invoice for ${booking.reference} failed:`, e);
+    }
+  }
+
   revalidatePath(`/admin/booking/${booking.id}`);
 }
 

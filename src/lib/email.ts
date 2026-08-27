@@ -553,3 +553,173 @@ export async function sendCardSetupEmail(
     reference: booking.reference,
   });
 }
+
+/**
+ * The clean is off. The status existed and the admin used it, but the customer
+ * used to find out when nobody turned up — the exact failure this email layer
+ * exists to prevent.
+ */
+export async function sendBookingCancelledEmail(booking: BookingRow): Promise<void> {
+  await send({
+    to: booking.customer_email,
+    subject: `Your clean on ${booking.preferred_date} is cancelled (${booking.reference})`,
+    greeting: first(booking.customer_name),
+    heading: "Your clean has been cancelled",
+    rows: [
+      ["Was booked for", whenLine(booking)],
+      ["Where", `${booking.address_line}, ${booking.postcode}`],
+    ],
+    outro: [
+      "Nothing further is charged for this visit.",
+      "If this wasn't what you expected, or you'd like to rebook, just reply to this email or give us a call.",
+    ],
+    reference: booking.reference,
+  }).catch(() => {});
+}
+
+/**
+ * The booking moved under them. Usually agreed on the phone first — this is the
+ * written record that kills "you said Thursday" before it exists.
+ */
+export async function sendBookingChangedEmail(
+  booking: BookingRow,
+  changes: Row[],
+): Promise<void> {
+  await send({
+    to: booking.customer_email,
+    subject: `Your clean has changed — now ${booking.preferred_date} (${booking.reference})`,
+    greeting: first(booking.customer_name),
+    heading: "Your booking has been updated",
+    intro: ["As agreed, here are your new details:"],
+    rows: [
+      ["Now", whenLine(booking)],
+      ["Where", `${booking.address_line}, ${booking.postcode}`],
+      ["Duration", `${booking.hours} hours`],
+      ["Price", `£${amountDue(booking)}`],
+      ...changes,
+    ],
+    outro: ["If any of this doesn't match what we agreed, reply to this email and we'll sort it."],
+    reference: booking.reference,
+  }).catch(() => {});
+}
+
+/** quoted unless an adjusted figure has been agreed — mirror of amountDueFor
+ *  without importing the admin module into every email bundle. */
+function amountDue(b: BookingRow): number {
+  return b.price_status === "agreed" && b.final_price != null ? b.final_price : b.quoted_price;
+}
+
+/**
+ * A cleaner's job moved, was cancelled, or went to someone else. The
+ * assignment email told them a job existed; nothing told them it stopped
+ * existing — and a cleaner at a cancelled address is a wasted journey the
+ * office caused.
+ */
+export async function sendCleanerJobChangedEmail(
+  cleaner: { name: string; email: string | null; token: string },
+  booking: BookingRow,
+  kind: "moved" | "cancelled" | "reassigned",
+): Promise<void> {
+  if (!cleaner.email) return;
+  const base = process.env.NEXT_PUBLIC_SITE_URL ?? site.url;
+  const headline = {
+    moved: "One of your jobs has moved",
+    cancelled: "One of your jobs is cancelled",
+    reassigned: "You've been taken off a job",
+  }[kind];
+  await send({
+    to: cleaner.email,
+    subject: `${headline} — ${booking.preferred_date}`,
+    greeting: first(cleaner.name),
+    heading: headline,
+    rows: [
+      [kind === "moved" ? "Now" : "Was", whenLine(booking)],
+      ["Where", `${booking.address_line}, ${booking.postcode}`],
+    ],
+    intro:
+      kind === "cancelled"
+        ? ["Don't travel for this one — it's off."]
+        : kind === "reassigned"
+          ? ["No action needed — it's been covered by someone else."]
+          : undefined,
+    cta: { label: "Check your jobs page", url: `${base}/c/${cleaner.token}` },
+  }).catch(() => {});
+}
+
+/**
+ * The clean is done and there is no card on file to settle it, so the payment
+ * link goes out by itself — closing the gap where a completed job sat unbilled
+ * until somebody remembered to press the button.
+ */
+export async function sendCleanCompletedEmail(
+  booking: BookingRow,
+  amount: number,
+  payUrl: string,
+): Promise<void> {
+  await send({
+    to: booking.customer_email,
+    subject: `Your clean is done — £${amount} to settle (${booking.reference})`,
+    greeting: first(booking.customer_name),
+    heading: "Your clean is done — thanks for having us",
+    rows: [
+      ["Clean", whenLine(booking)],
+      ["To pay", `£${amount}`],
+    ],
+    cta: { label: "Pay for your clean", url: payUrl },
+    outro: [
+      "The link stays valid, so pay whenever suits you.",
+      "Anything not right with the clean? Reply to this email — we'd rather fix it than not know.",
+    ],
+    reference: booking.reference,
+  }).catch(() => {});
+}
+
+/**
+ * The office alert on a new booking — the eleventh email, previously living in
+ * the bookings route as raw text on its own send path.
+ */
+export async function sendNewBookingAlertEmail(opts: {
+  name: string;
+  phone: string;
+  email: string;
+  addressLine: string;
+  postcode: string;
+  preferredDate: string;
+  startTime: string | null;
+  hours: number;
+  serviceType: "standard" | "deep";
+  cleanersNeeded: number;
+  frequency: string;
+  quotedPrice: number;
+  addonLabels: string[];
+  notes: string;
+  reference: string;
+}): Promise<void> {
+  await send({
+    to: officeAddress(),
+    subject: `New booking request — ${opts.name}, ${opts.preferredDate} (£${opts.quotedPrice})`,
+    heading: `New booking — ${opts.name}`,
+    rows: [
+      ["Phone", opts.phone],
+      ["Email", opts.email],
+      ["Address", `${opts.addressLine}, ${opts.postcode}`],
+      [
+        "Date",
+        opts.startTime
+          ? `${opts.preferredDate}, ${formatTimeRange(opts.startTime, opts.hours)}`
+          : `${opts.preferredDate} — NO TIME SET, agree one on the call`,
+      ],
+      [
+        "Service",
+        opts.serviceType === "deep"
+          ? `Deep clean — ${opts.cleanersNeeded} cleaners, ${opts.hours}h on site`
+          : `Standard, ${opts.hours}h`,
+      ],
+      ["Frequency", opts.frequency.replace(/_/g, " ")],
+      ["Price", `£${opts.quotedPrice}`],
+      opts.addonLabels.length ? ["Extras", opts.addonLabels.join(", ")] : null,
+      opts.notes ? ["Notes", opts.notes] : null,
+    ],
+    reference: opts.reference,
+  }).catch(() => {});
+}

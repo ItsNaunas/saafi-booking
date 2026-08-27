@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { secret } from "@/lib/env";
 import { appendFile, mkdir } from "fs/promises";
 import path from "path";
 import {
@@ -9,12 +8,11 @@ import {
   quotePrice,
   clampHours,
   addonsHours,
-  FREQUENCY_LABEL,
   type RoomCounts,
   type Frequency,
 } from "@/lib/pricing";
 import { loadPricingAndAddons } from "@/lib/pricingServer";
-import { isSlotBookable, toMinutes, toHHMM, formatTimeRange } from "@/lib/scheduling";
+import { isSlotBookable, toMinutes, toHHMM } from "@/lib/scheduling";
 import {
   deepPrice,
   deepMinutes,
@@ -25,7 +23,7 @@ import {
 } from "@/lib/deepClean";
 import { listSchedulableCleaners, busyBlocksForDate, getBookingByReference } from "@/lib/supabaseAdmin";
 import { raiseBookingPaymentLink } from "@/lib/paymentLink";
-import { sendBookingReceivedEmail } from "@/lib/email";
+import { sendBookingReceivedEmail, sendNewBookingAlertEmail } from "@/lib/email";
 import type { BookingRecord, BookingRequest } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -216,7 +214,23 @@ export async function POST(req: NextRequest) {
     console.error("[bookings] pay-at-booking link failed:", e);
   }
 
-  await sendAlertEmail(record).catch((e) => console.error("[bookings] alert email failed:", e));
+  await sendNewBookingAlertEmail({
+    name: record.name,
+    phone: record.phone,
+    email: record.email,
+    addressLine: record.addressLine,
+    postcode: record.postcode,
+    preferredDate: record.preferredDate,
+    startTime: record.startTime ?? null,
+    hours: record.hours + record.addonsHours,
+    serviceType: record.serviceType,
+    cleanersNeeded: record.cleanersNeeded,
+    frequency: record.frequency,
+    quotedPrice: record.quotedPrice,
+    addonLabels: record.addons.map((a) => a.label),
+    notes: record.notes ?? "",
+    reference: stored.reference,
+  }).catch((e) => console.error("[bookings] alert email failed:", e));
 
   // And tell the customer. Until this existed they saw a reference on screen and
   // then heard nothing at all until somebody rang them.
@@ -323,54 +337,3 @@ async function storeBooking(
 }
 
 /** Instant alert to the business — Resend when configured, no-op otherwise. */
-async function sendAlertEmail(record: BookingRecord) {
-  const key = secret("RESEND_API_KEY");
-  const to = process.env.ALERT_EMAIL_TO; // e.g. info@saaficleaningservice.com
-  if (!key || !to) return;
-
-  const from = process.env.ALERT_EMAIL_FROM ?? "bookings@saaficleaningservice.com";
-  const r = record.rooms;
-  const res = await fetch("https://api.resend.com/emails", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      from: `SAAFI Bookings <${from}>`,
-      to: [to],
-      subject: `New booking request — ${record.name}, ${record.preferredDate} (£${record.quotedPrice})`,
-      text: [
-        `New booking request`,
-        ``,
-        `Name:    ${record.name}`,
-        `Phone:   ${record.phone}`,
-        `Email:   ${record.email}`,
-        `Address: ${record.addressLine}, ${record.postcode}`,
-        `Date:    ${record.preferredDate}${
-          record.startTime
-            ? ` at ${formatTimeRange(record.startTime, record.hours + record.addonsHours)}`
-            : ` (NO TIME SET — agree one when you call)`
-        }`,
-        `Rooms:   ${r.bedrooms} bed / ${r.bathrooms} bath / ${r.diningRooms} dining / ${r.livingRooms} living`,
-        `Hours:   ${record.hours + record.addonsHours}${
-          record.addonsHours > 0 ? ` (${record.hours}h clean + ${record.addonsHours}h extras)` : ""
-        }`,
-        `Products: ${record.customerProvidesProducts ? "customer provides" : "we bring ours"}`,
-        `Frequency: ${FREQUENCY_LABEL[record.frequency]}`,
-        record.addons.length
-          ? `Extras:  ${record.addons.map((a) => `${a.label} (£${a.price})`).join(", ")}`
-          : ``,
-        `Quoted:  £${record.quotedPrice}${record.frequency !== "one_off" ? " per clean" : ""}`,
-        record.notes ? `Notes:   ${record.notes}` : ``,
-        ``,
-        `Confirm by phone, then mark it confirmed in the admin.`,
-      ].join("\n"),
-    }),
-  });
-
-  // A rejected send used to look identical to a successful one: the fetch resolves,
-  // nothing throws, and the booking returns 200 either way. That is how a BOM in
-  // RESEND_API_KEY went unnoticed for days. Make both outcomes visible in the logs.
-  if (!res.ok) {
-    throw new Error(`Resend rejected the alert: ${res.status} ${await res.text()}`);
-  }
-  console.log(`[bookings] alert email sent to the office for ${record.name}`);
-}
