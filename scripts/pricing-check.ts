@@ -14,6 +14,12 @@ import {
   isChargeable,
   elapsedHours,
 } from "../src/lib/adjustments";
+import {
+  deepPrice,
+  deepMinutes,
+  deepCleaners,
+  deepElapsedHours,
+} from "../src/lib/deepClean";
 
 let failed = 0;
 function check(label: string, actual: unknown, expected: unknown) {
@@ -141,3 +147,21 @@ if (failed) {
   process.exit(1);
 }
 console.log("\nAll pricing checks passed.");
+
+/* ---------- deep clean (costing sheet, Pricing tab) ---------- */
+
+const sheetExample = { bedrooms: 3, bathrooms: 1, livingRooms: 0, diningRooms: 0, additionalRooms: 0 };
+// The sheet's own worked example: 3 bed £68 + bath £58 + corridor £58 +
+// kitchen £58 + windows £58 + laundry £58 = £358.
+check("deep: sheet worked example = £358", deepPrice(sheetExample, ["windows", "laundry"]), 358);
+check("deep: 1 bed 1 bath baseline = £232", deepPrice({ bedrooms: 1, bathrooms: 1, livingRooms: 0, diningRooms: 0, additionalRooms: 0 }), 232);
+check("deep: additional room of a type is +£5", deepPrice({ bedrooms: 2, bathrooms: 1, livingRooms: 0, diningRooms: 0, additionalRooms: 0 }) - deepPrice({ bedrooms: 1, bathrooms: 1, livingRooms: 0, diningRooms: 0, additionalRooms: 0 }), 5);
+check("deep: living room prices here (unlike standard)", deepPrice({ bedrooms: 1, bathrooms: 1, livingRooms: 1, diningRooms: 0, additionalRooms: 0 }), 290);
+
+const m = deepMinutes(sheetExample, ["windows", "laundry"]);
+check("deep: sheet example = 480 man-minutes", m, 480);
+check("deep: pair stays 4h -> 2 cleaners", deepCleaners(m), 2);
+check("deep: elapsed 4h for the pair", deepElapsedHours(m), 4);
+// 13 rooms = 780 man-mins; a pair would be there 6.5h, over the 6h ceiling.
+check("deep: 6-bed house tips to 3 cleaners", deepCleaners(780), 3);
+check("deep: 3 cleaners bring elapsed back to 4.5h", deepElapsedHours(780), 4.5);

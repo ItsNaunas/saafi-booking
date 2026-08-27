@@ -224,6 +224,11 @@ function BookingCard({
             <span>
               {b.preferred_date} · {b.hours}h · {b.postcode}
             </span>
+            {b.service_type === "deep" && (
+              <span className="rounded-full bg-indigo-100 px-1.5 py-0.5 text-[10px] font-semibold text-indigo-800">
+                DEEP · {b.cleaners_needed ?? 2} cleaners
+              </span>
+            )}
             {isRecurring && (
               <span
                 className={`rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${

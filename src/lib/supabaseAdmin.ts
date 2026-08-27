@@ -35,6 +35,9 @@ export type BookingRow = {
   living_rooms: number;
   hours: number;
   customer_provides_products: boolean;
+  /** 'standard' | 'deep' — optional so the app runs before the migration lands. */
+  service_type?: "standard" | "deep";
+  cleaners_needed?: number;
   addons: { key: string; label: string; price: number }[];
   addons_total: number;
   frequency: Frequency;

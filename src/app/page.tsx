@@ -32,6 +32,7 @@ import Icon from "@/components/Icon";
 import { contact, site, address } from "@/lib/business";
 import { loadPricingAndAddons } from "@/lib/pricingServer";
 import { formatGBP, quotePrice, recommendedHours } from "@/lib/pricing";
+import { deepPrice } from "@/lib/deepClean";
 
 export const metadata: Metadata = {
   title: "SAAFI Cleaning Service — home cleaning with an honest hourly price",
@@ -153,6 +154,9 @@ export default async function Home() {
     cfg,
   );
   const oneOffVisit = quotePrice(exampleHours, true, cfg, "one_off");
+  // The same 2-bed example home, deep: 2 beds £63 + bath £58 + kitchen £58 +
+  // corridor £58 = £237.
+  const deepVisit = deepPrice({ bedrooms: 2, bathrooms: 1, livingRooms: 0, diningRooms: 0, additionalRooms: 0 });
   const typicalVisit = quotePrice(
     recommendedHours({ bedrooms: 2, bathrooms: 1, diningRooms: 0, livingRooms: 0 }, cfg),
     true,
@@ -349,13 +353,15 @@ export default async function Home() {
             className="lg:order-3"
             icon={<Icon glyph={Sparkles} className="size-[30px]" />}
             title="Deep clean"
-            price="Call for a price"
-            text="For when a regular clean isn't enough. We'll agree exactly what's covered with you first, then price it for your property."
+            price={formatGBP(deepVisit)}
+            unit=" a visit"
+            text="Two cleaners, top to bottom — priced per room, with the kitchen, oven and hallways always in. For when a regular clean isn't enough."
             points={[
-              "Scope agreed upfront",
-              "Priced on a quick call",
-              "Book around your dates",
+              "Two cleaners as standard",
+              "Priced per room, not by the hour",
+              "Living and dining rooms included",
             ]}
+            href="/quote?service=deep"
           />
         </div>
       </section>
@@ -898,6 +904,7 @@ function PlanCard({
   points,
   featured,
   revealDelay = 0,
+  href = "/quote",
   className = "",
 }: {
   icon: React.ReactNode;
@@ -909,6 +916,8 @@ function PlanCard({
   points: string[];
   featured?: boolean;
   revealDelay?: number;
+  /** Where the card's CTA lands — the deep card opens the quote on its tab. */
+  href?: string;
   className?: string;
 }) {
   return (
@@ -964,7 +973,7 @@ function PlanCard({
       </ul>
 
       <Link
-        href="/quote"
+        href={href}
         className={`mt-auto block w-full rounded-full px-4 py-3 text-center text-sm font-semibold transition ${
           featured
             ? "bg-brand-600 text-white hover:bg-brand-700"

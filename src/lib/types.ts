@@ -2,6 +2,8 @@ import type { RoomCounts, Frequency, Addon } from "./pricing";
 
 export type BookingRequest = {
   postcode: string;
+  /** "standard" (hourly) or "deep" (flat per-room). Absent = standard. */
+  serviceType?: "standard" | "deep";
   rooms: RoomCounts;
   hours: number;
   customerProvidesProducts: boolean;
@@ -23,6 +25,9 @@ export type BookingRecord = Omit<BookingRequest, "addons"> & {
   addons: Addon[]; // resolved with labels + prices at booking time
   addonsTotal: number;
   addonsHours: number;
+  serviceType: "standard" | "deep";
+  /** 1 for standard; 2 or 3 for deep, from the elapsed-hours rule. */
+  cleanersNeeded: number;
   quotedPrice: number;
   status: "requested";
   createdAt: string;

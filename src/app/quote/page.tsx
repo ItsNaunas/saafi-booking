@@ -20,6 +20,7 @@ export default async function QuotePage({
     bathrooms?: string;
     frequency?: string;
     addons?: string;
+    service?: string;
   }>;
 }) {
   const [{ cfg, addons }, params] = await Promise.all([
@@ -64,6 +65,7 @@ export default async function QuotePage({
         initialRooms={initialRooms}
         initialFrequency={initialFrequency}
         initialAddons={initialAddons}
+        initialService={params.service === "deep" ? "deep" : "standard"}
       />
     </main>
   );

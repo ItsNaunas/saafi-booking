@@ -275,6 +275,12 @@ export default async function BookingDetailPage({
 
       <div className="mb-4 bg-white p-5 text-sm shadow-sm ring-1 ring-slate-200">
         <Row k="Contact" v={`${b.customer_phone} · ${b.customer_email}`} />
+        {b.service_type === "deep" && (
+          <Row
+            k="Service"
+            v={`Deep clean — ${b.cleaners_needed ?? 2} cleaners, priced per room`}
+          />
+        )}
         <Row k="Address" v={`${b.address_line}, ${b.postcode}`} />
         <Row
           k="When"

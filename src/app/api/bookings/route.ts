@@ -15,6 +15,14 @@ import {
 } from "@/lib/pricing";
 import { loadPricingAndAddons } from "@/lib/pricingServer";
 import { isSlotBookable, toMinutes, toHHMM, formatTimeRange } from "@/lib/scheduling";
+import {
+  deepPrice,
+  deepMinutes,
+  deepCleaners,
+  deepElapsedHours,
+  DEEP_EXTRAS,
+  type DeepExtraKey,
+} from "@/lib/deepClean";
 import { listSchedulableCleaners, busyBlocksForDate } from "@/lib/supabaseAdmin";
 import { sendBookingReceivedEmail } from "@/lib/email";
 import type { BookingRecord, BookingRequest } from "@/lib/types";
@@ -55,21 +63,58 @@ export async function POST(req: NextRequest) {
     return bad("Room counts must be whole numbers");
   const rooms: RoomCounts = { bedrooms, bathrooms, diningRooms, livingRooms };
 
-  const hours = clampHours(Number(body.hours) || cfg.minHours, cfg);
+  const serviceType = body.serviceType === "deep" ? "deep" : "standard";
   const customerProvidesProducts = Boolean(body.customerProvidesProducts);
 
+  // Deep cleans are one-off: the 10% repeat discount SAAFI want is a
+  // quarterly/biannual option, which is a frequency the schema doesn't have
+  // yet — forcing one_off here keeps a weekly deep clean from being minted at
+  // a discount that was never priced.
   const frequency = (
-    ["one_off", "weekly", "fortnightly", "four_weekly"].includes(String(body.frequency))
-      ? String(body.frequency)
-      : "one_off"
+    serviceType === "deep"
+      ? "one_off"
+      : ["one_off", "weekly", "fortnightly", "four_weekly"].includes(String(body.frequency))
+        ? String(body.frequency)
+        : "one_off"
   ) as Frequency;
 
-  // Add-ons: only keys that exist in the DB count, priced from the DB — never the client.
-  // Their price is flat (covers their own labour); their hours extend the job duration.
   const requestedKeys = Array.isArray(body.addons) ? body.addons.map(String) : [];
-  const addons = availableAddons.filter((a) => requestedKeys.includes(a.key));
-  const addonsTotal = addons.reduce((s, a) => s + a.price, 0);
-  const extrasHours = addonsHours(addons);
+
+  // Standard add-ons: only keys that exist in the DB count, priced from the DB
+  // — never the client. Flat price, hours extend the job. Deep extras are a
+  // different product: fixed £58 each from lib/deepClean, one hour of work.
+  const deepExtraKeys =
+    serviceType === "deep"
+      ? DEEP_EXTRAS.filter((e) => requestedKeys.includes(e.key)).map((e) => e.key as DeepExtraKey)
+      : [];
+  const addons =
+    serviceType === "deep"
+      ? DEEP_EXTRAS.filter((e) => deepExtraKeys.includes(e.key)).map((e) => ({
+          key: e.key,
+          label: `${e.label} (deep)`,
+          price: 58,
+          hours: 1,
+        }))
+      : availableAddons.filter((a) => requestedKeys.includes(a.key));
+  const addonsTotal = serviceType === "deep" ? 0 : addons.reduce((s, a) => s + a.price, 0);
+  const extrasHours = serviceType === "deep" ? 0 : addonsHours(addons);
+
+  // Deep geometry: man-minutes -> crew size -> hours on site. The elapsed
+  // figure is what the diary blocks out and what the customer is told.
+  const deepRooms = {
+    bedrooms,
+    bathrooms,
+    livingRooms,
+    diningRooms,
+    additionalRooms: 0,
+  };
+  const deepMans = serviceType === "deep" ? deepMinutes(deepRooms, deepExtraKeys) : 0;
+  const cleanersNeeded = serviceType === "deep" ? deepCleaners(deepMans) : 1;
+
+  const hours =
+    serviceType === "deep"
+      ? deepElapsedHours(deepMans)
+      : clampHours(Number(body.hours) || cfg.minHours, cfg);
 
   const name = String(body.name ?? "").trim();
   const email = String(body.email ?? "").trim();
@@ -123,14 +168,12 @@ export async function POST(req: NextRequest) {
   }
 
   // Never trust the client's price — recompute server-side from live config.
-  // Extras are billed as time, so the quote runs on clean + extras hours.
-  const quotedPrice = quotePrice(
-    jobHours,
-    customerProvidesProducts,
-    cfg,
-    frequency,
-    addonsTotal
-  );
+  // Standard bills time (clean + extras hours); deep bills flat per room and
+  // per extra, products and frequency changing nothing.
+  const quotedPrice =
+    serviceType === "deep"
+      ? deepPrice(deepRooms, deepExtraKeys)
+      : quotePrice(jobHours, customerProvidesProducts, cfg, frequency, addonsTotal);
 
   const record: BookingRecord = {
     postcode,
@@ -140,6 +183,8 @@ export async function POST(req: NextRequest) {
     addons,
     addonsTotal,
     addonsHours: extrasHours,
+    serviceType,
+    cleanersNeeded,
     frequency,
     name,
     email,
@@ -211,6 +256,12 @@ async function storeBooking(
         customer_provides_products: record.customerProvidesProducts,
         addons: record.addons,
         addons_total: record.addonsTotal,
+        // Only sent for deep jobs: PostgREST rejects unknown columns, so
+        // standard bookings stay insertable even before
+        // supabase/2026-08-27-deep-clean.sql has run. Deep bookings need it.
+        ...(record.serviceType === "deep"
+          ? { service_type: "deep", cleaners_needed: record.cleanersNeeded }
+          : {}),
         frequency: record.frequency,
         customer_name: record.name,
         customer_email: record.email,

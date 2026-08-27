@@ -19,6 +19,14 @@ import {
   type Addon,
 } from "@/lib/pricing";
 import { formatTime, formatTimeRange, type Slot } from "@/lib/scheduling";
+import {
+  deepPrice,
+  deepMinutes,
+  deepCleaners,
+  deepElapsedHours,
+  DEEP_EXTRAS,
+  deepConfig,
+} from "@/lib/deepClean";
 
 /** Which field a validation message belongs to, so it can be shown in place. */
 type FieldKey = "postcode" | "products" | "date" | "time" | "name" | "email" | "phone" | "address";
@@ -40,6 +48,7 @@ export default function QuoteWizard({
   initialRooms,
   initialFrequency,
   initialAddons,
+  initialService,
 }: {
   cfg?: PricingConfig;
   addons?: Addon[];
@@ -50,11 +59,15 @@ export default function QuoteWizard({
   initialFrequency?: Frequency;
   /** Add-on keys already chosen on the landing page builder. */
   initialAddons?: string[];
+  /** "deep" opens the form on the deep clean tab (from /quote?service=deep). */
+  initialService?: "standard" | "deep";
 }) {
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [errors, setErrors] = useState<Partial<Record<FieldKey, string>>>({});
 
+  const [service, setService] = useState<"standard" | "deep">(initialService ?? "standard");
+  const isDeep = service === "deep";
   const [postcode, setPostcode] = useState(initialPostcode);
   const [postcodeState, setPostcodeState] = useState<"idle" | "checking" | "ok" | "unknown">("idle");
   const [rooms, setRooms] = useState<RoomCounts>({
@@ -98,10 +111,36 @@ export default function QuoteWizard({
   const addonsTotal = useMemo(() => chosenAddons.reduce((s, a) => s + a.price, 0), [chosenAddons]);
   // Extras add time to the visit, and that time is what gets billed.
   const extrasHours = useMemo(() => addonsHours(chosenAddons), [chosenAddons]);
-  const totalHours = chosenHours + extrasHours;
+
+  // Deep clean geometry: flat per-room pricing, staffed in pairs, hours on
+  // site derived rather than chosen. selectedAddons doubles as the deep extras
+  // list — the keys overlap on purpose so switching tabs keeps the selection.
+  const deepRooms = useMemo(
+    () => ({
+      bedrooms: rooms.bedrooms,
+      bathrooms: rooms.bathrooms,
+      livingRooms: rooms.livingRooms,
+      diningRooms: rooms.diningRooms,
+      additionalRooms: 0,
+    }),
+    [rooms]
+  );
+  const deepExtras = useMemo(
+    () => DEEP_EXTRAS.filter((e) => selectedAddons.includes(e.key)).map((e) => e.key),
+    [selectedAddons]
+  );
+  const deepMans = useMemo(() => deepMinutes(deepRooms, deepExtras), [deepRooms, deepExtras]);
+  const crew = deepCleaners(deepMans);
+  const deepElapsed = deepElapsedHours(deepMans);
+
+  // Availability, the diary and the confirmation all speak elapsed hours.
+  const totalHours = isDeep ? deepElapsed : chosenHours + extrasHours;
   const price = useMemo(
-    () => quotePrice(totalHours, customerProvidesProducts ?? true, cfg, frequency, addonsTotal),
-    [totalHours, customerProvidesProducts, cfg, frequency, addonsTotal]
+    () =>
+      isDeep
+        ? deepPrice(deepRooms, deepExtras)
+        : quotePrice(chosenHours + extrasHours, customerProvidesProducts ?? true, cfg, frequency, addonsTotal),
+    [isDeep, deepRooms, deepExtras, chosenHours, extrasHours, customerProvidesProducts, cfg, frequency, addonsTotal]
   );
 
   /* ---------- postcode ---------- */
@@ -192,7 +231,7 @@ export default function QuoteWizard({
     else if (closedReason) found.time = closedReason;
     else if (anySlotFree && !startTime) found.time = "Pick a start time.";
 
-    if (customerProvidesProducts === null)
+    if (!isDeep && customerProvidesProducts === null)
       found.products = "Choose who brings the cleaning products.";
 
     if (name.trim().length < 2) found.name = "Please tell us your name.";
@@ -225,11 +264,14 @@ export default function QuoteWizard({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           postcode,
+          serviceType: service,
           rooms,
           hours: chosenHours,
-          customerProvidesProducts,
-          addons: selectedAddons,
-          frequency,
+          // A deep clean is two cleaners arriving fully kitted — the products
+          // question is a standard-clean concern and never shown on this tab.
+          customerProvidesProducts: isDeep ? false : customerProvidesProducts,
+          addons: isDeep ? deepExtras : selectedAddons,
+          frequency: isDeep ? "one_off" : frequency,
           name,
           email,
           phone,
@@ -293,7 +335,7 @@ export default function QuoteWizard({
       <aside className="order-first lg:order-last lg:sticky lg:top-6">
         <PricePanel
           price={price}
-          frequency={frequency}
+          frequency={isDeep ? "one_off" : frequency}
           cfg={cfg}
           totalHours={totalHours}
           chosenHours={chosenHours}
@@ -302,12 +344,51 @@ export default function QuoteWizard({
           customerProvidesProducts={customerProvidesProducts ?? true}
           preferredDate={preferredDate}
           startTime={startTime}
+          deep={isDeep ? { crew, extras: deepExtras.length } : null}
         />
       </aside>
 
       <form ref={formRef} onSubmit={submit} noValidate className="space-y-5">
+        {/* ---------- service ----------
+             Two different products, priced two different ways: standard is
+             hourly, deep is flat per room with a two-cleaner crew. */}
+        <div className="grid grid-cols-2 gap-2" role="tablist" aria-label="Type of clean">
+          {(
+            [
+              { key: "standard", title: "Standard clean", sub: "Hourly — keep on top of your home" },
+              { key: "deep", title: "Deep clean", sub: "Per room — two cleaners, top to bottom" },
+            ] as const
+          ).map((t) => {
+            const on = service === t.key;
+            return (
+              <button
+                key={t.key}
+                type="button"
+                role="tab"
+                aria-selected={on}
+                onClick={() => setService(t.key)}
+                className={`border-2 px-3 py-3 text-left transition ${
+                  on ? "border-brand-500 bg-brand-50" : "border-slate-200 bg-white hover:border-slate-300"
+                }`}
+              >
+                <span className={`block font-semibold ${on ? "text-brand-800" : "text-slate-800"}`}>
+                  {t.title}
+                </span>
+                <span className="block text-xs text-slate-500">{t.sub}</span>
+              </button>
+            );
+          })}
+        </div>
+
         {/* ---------- home + length ---------- */}
-        <Section title="Your home" sub="Kitchen, hallways and landings are always included.">
+        <Section
+          title="Your home"
+          sub={
+            isDeep
+              ? "Kitchen (with the oven), hallways and landings are always included."
+              : "Kitchen, hallways and landings are always included."
+          }
+        >
           <Field label="Postcode" error={errors.postcode}>
             <div className="relative">
               <input
@@ -347,12 +428,45 @@ export default function QuoteWizard({
             />
           </div>
 
-          {/* Living and dining rooms used to be a folded-away counter here.
-              They are gone from the standard flow because they now price at
-              zero: the costing sheet only itemises them under deep clean, so
-              asking would be a control that changes nothing. They come back
-              with the deep clean tab. */}
+          {/* Living and dining rooms price only on a deep clean, so only the
+              deep tab asks. On standard they'd be a control that does nothing. */}
+          {isDeep && (
+            <div className="mt-3 grid gap-x-6 gap-y-3 sm:grid-cols-2">
+              <Counter
+                label="Living rooms"
+                value={rooms.livingRooms}
+                max={4}
+                onChange={(v) => setRooms({ ...rooms, livingRooms: v })}
+              />
+              <Counter
+                label="Dining rooms"
+                value={rooms.diningRooms}
+                max={4}
+                onChange={(v) => setRooms({ ...rooms, diningRooms: v })}
+              />
+            </div>
+          )}
 
+          {/* Deep cleans derive their own time: rooms -> man-minutes -> crew
+              -> hours on site. There is nothing for the customer to choose, so
+              the whole hours apparatus gives way to a statement of what
+              arrives. */}
+          {isDeep && (
+            <div className="mt-4 border-t border-slate-100 pt-4">
+              <div className="flex items-center justify-between gap-3 bg-brand-50 px-3 py-2.5">
+                <p className="text-sm text-slate-700">
+                  <span className="font-semibold text-brand-800">{crew} cleaners</span>, about{" "}
+                  <span className="tnum font-semibold text-brand-800">{deepElapsed}h</span> in your
+                  home
+                </p>
+                {crew > deepConfig.baseCleaners && (
+                  <span className="text-xs text-slate-500">bigger homes get a third cleaner</span>
+                )}
+              </div>
+            </div>
+          )}
+
+          {!isDeep && (<>
           {/* Hours follow the rooms. The recommendation is the loudest thing
               in the block (2026-08-25 review: "add a prominent recommended
               hours display") — it updates live as rooms change, and the
@@ -448,8 +562,52 @@ export default function QuoteWizard({
               <p className="mt-1.5 text-sm text-red-600">{errors.products}</p>
             )}
           </div>
+          </>)}
 
-          {addons.length > 0 && (
+          {isDeep && (
+            <Disclosure
+              summary={
+                deepExtras.length > 0
+                  ? `Extras — ${DEEP_EXTRAS.filter((e) => deepExtras.includes(e.key))
+                      .map((e) => e.label)
+                      .join(", ")}`
+                  : `Add extras (${DEEP_EXTRAS.length} available)`
+              }
+              open={deepExtras.length > 0}
+            >
+              <div className="grid gap-2 sm:grid-cols-2">
+                {DEEP_EXTRAS.map((e) => {
+                  const on = selectedAddons.includes(e.key);
+                  return (
+                    <button
+                      key={e.key}
+                      type="button"
+                      aria-pressed={on}
+                      onClick={() =>
+                        setSelectedAddons(
+                          on
+                            ? selectedAddons.filter((k) => k !== e.key)
+                            : [...selectedAddons, e.key]
+                        )
+                      }
+                      className={`flex items-center justify-between border-2 px-3 py-2 text-left text-sm transition ${
+                        on
+                          ? "border-brand-500 bg-brand-50"
+                          : "border-slate-200 hover:border-slate-300"
+                      }`}
+                    >
+                      <span className="font-medium text-slate-800">{e.label}</span>
+                      <span className={on ? "font-semibold text-brand-700" : "text-slate-500"}>
+                        +{formatGBP(deepConfig.extraPrice)}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </Disclosure>
+          )}
+
+          {!isDeep && addons.length > 0 && (
             <Disclosure
               summary={
                 chosenAddons.length > 0
@@ -492,7 +650,18 @@ export default function QuoteWizard({
         </Section>
 
         {/* ---------- when ---------- */}
-        <Section title="When?" sub="How often, then the day and time.">
+        <Section
+          title="When?"
+          sub={isDeep ? "Deep cleans are one-off visits — pick your day." : "How often, then the day and time."}
+        >
+          {isDeep && (
+            <p className="bg-slate-50 px-3 py-2 text-sm text-slate-600">
+              Booked as a single visit. If you&apos;d like a repeat deep clean —
+              say every few months — mention it in the notes and we&apos;ll sort
+              it on the confirmation call.
+            </p>
+          )}
+          {!isDeep && (
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
             {(Object.keys(FREQUENCY_LABEL) as Frequency[]).map((f) => {
               const pct = cfg.discounts[f] ?? 0;
@@ -523,10 +692,11 @@ export default function QuoteWizard({
               );
             })}
           </div>
+          )}
 
           <div className="mt-4">
             <Field
-              label={frequency === "one_off" ? "Preferred date" : "Date of the first clean"}
+              label={isDeep || frequency === "one_off" ? "Preferred date" : "Date of the first clean"}
               error={errors.date}
             >
               <input
@@ -681,6 +851,7 @@ function PricePanel({
   customerProvidesProducts,
   preferredDate,
   startTime,
+  deep = null,
 }: {
   price: number;
   frequency: Frequency;
@@ -692,8 +863,10 @@ function PricePanel({
   customerProvidesProducts: boolean;
   preferredDate: string;
   startTime: string | null;
+  /** Set on the deep tab: the crew size and how many £58 extras are on. */
+  deep?: { crew: number; extras: number } | null;
 }) {
-  const discount = cfg.discounts[frequency] ?? 0;
+  const discount = deep ? 0 : cfg.discounts[frequency] ?? 0;
   return (
     <div className="bg-brand-50 p-5 ring-1 ring-brand-100">
       <div className="text-sm font-medium text-brand-800">
@@ -702,6 +875,20 @@ function PricePanel({
       <div className="tnum text-4xl font-bold text-brand-700">{formatGBP(price)}</div>
 
       <dl className="mt-4 space-y-1.5 border-t border-brand-100 pt-3 text-sm">
+        {deep ? (
+          <>
+            <PanelRow k="Priced" v="per room, not by the hour" />
+            <PanelRow k="Team" v={`${deep.crew} cleaners, ~${totalHours}h`} />
+            {deep.extras > 0 && (
+              <PanelRow
+                k="Extras"
+                v={`${deep.extras} × ${formatGBP(deepConfig.extraPrice)}`}
+              />
+            )}
+            <PanelRow k="Products" v="everything included" />
+          </>
+        ) : (
+          <>
         <PanelRow k="Rate" v={`${formatGBP(cfg.hourlyRate)}/h`} />
         <PanelRow
           k="Duration"
@@ -714,6 +901,8 @@ function PricePanel({
         {addonsTotal > 0 && <PanelRow k="Extras" v={`+${formatGBP(addonsTotal)}`} />}
         {!customerProvidesProducts && cfg.productSurcharge > 0 && (
           <PanelRow k="Products" v={`+${formatGBP(cfg.productSurcharge)}`} />
+        )}
+          </>
         )}
         {discount > 0 && <PanelRow k={FREQUENCY_LABEL[frequency]} v={`−${discount}%`} highlight />}
         <PanelRow
