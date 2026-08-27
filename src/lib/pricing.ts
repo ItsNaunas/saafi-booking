@@ -12,17 +12,44 @@ export const pricingConfig = {
   currency: "GBP",
   /** £ per hour, one-off (costing sheet 2026-08-18) */
   hourlyRate: 24,
-  /** Both sheet prices are quoted "+ included necessities", so products are free. */
-  productSurcharge: 0,
+  /**
+   * Charged when SAAFI supply the cleaning products.
+   *
+   * £5 per the 2026-08-25 review. Note this was contested on that call: the
+   * operational worry is a cleaner arriving to no products, which the
+   * compulsory choice on the quote form solves on its own. £5 on a £43.50
+   * fortnightly clean is 11.5% sitting at the last step before booking, for
+   * what is likely £1-2 of consumables.
+   *
+   * Set to 0 to keep the compulsory question and drop the charge — nothing
+   * else has to change.
+   */
+  productSurcharge: 5,
   /** kitchen (30m) + corridor/landing/stairs (30m) — always included */
   baseHours: 1,
-  /** Sheet: 30 mins each. Dining/living are only itemised for deep cleans (60m),
-   *  so standard assumes half, matching every other room's deep-to-standard ratio. */
+  /**
+   * Sheet: 30 mins each.
+   *
+   * Living and dining rooms are DELIBERATELY absent. The costing sheet only
+   * itemises them under deep clean, and Abdullah confirmed it on the 2026-08-25
+   * call: "living rooms and dining rooms, this is only for deep clean, for this
+   * standard clean the living rooms and dining rooms doesn't need to be."
+   *
+   * A standard clean is bedrooms + bathrooms on top of the kitchen and common
+   * areas in `baseHours`. Adding a living room here would quietly re-price
+   * every standard quote.
+   */
   hoursPerRoom: {
     bedroom: 0.5,
     bathroom: 0.5,
-    diningRoom: 0.5,
-    livingRoom: 0.5,
+    /**
+     * Zero, not removed. The keys stay because RoomCounts, the bookings API and
+     * the dining_rooms/living_rooms columns all still carry them, and a deep
+     * clean WILL price them (60m each). Zeroing is the pricing change; ripping
+     * the fields out would be a schema migration for no gain.
+     */
+    diningRoom: 0,
+    livingRoom: 0,
   },
   minHours: 2,
   maxHours: 8,

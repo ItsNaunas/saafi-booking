@@ -79,7 +79,9 @@ export default function PriceSteps({
   const [frequency, setFrequency] = useState<Frequency>("fortnightly");
   const [extras, setExtras] = useState<string[]>([]);
 
-  const rooms: RoomCounts = { bedrooms, bathrooms, diningRooms: 0, livingRooms: 1 };
+  // Standard clean: kitchen and common areas are in baseHours, and living
+  // and dining rooms are deep-clean only, so they are zero here.
+  const rooms: RoomCounts = { bedrooms, bathrooms, diningRooms: 0, livingRooms: 0 };
   const recommended = recommendedHours(rooms, cfg);
   const chosenHours = hours ?? recommended;
 
@@ -111,7 +113,7 @@ export default function PriceSteps({
     {
       n: "03",
       title: "You pick how often",
-      sub: `Regular visits save ${formatGBP(hourlySaving)} an hour.`,
+      sub: `Regular visits save ${formatGBP(hourlySaving)} an hour on the clean.`,
     },
   ];
 

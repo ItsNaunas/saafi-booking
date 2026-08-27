@@ -66,8 +66,8 @@ const ON_THE_DAY: Beat[] = [
   },
   {
     icon: CreditCard,
-    title: "You settle up afterwards",
-    text: "Nothing to pay upfront, no card held, and nothing taken automatically.",
+    title: "You already know the total",
+    text: "The price was agreed when you booked. If the job turned out bigger, you approved that before we carried on — so there is nothing to settle up and nothing taken without asking.",
   },
 ];
 

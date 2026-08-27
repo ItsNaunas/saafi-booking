@@ -31,9 +31,7 @@ import {
 import Icon from "@/components/Icon";
 import { contact, site, address } from "@/lib/business";
 import { loadPricingAndAddons } from "@/lib/pricingServer";
-import {
-  formatGBP,
-} from "@/lib/pricing";
+import { formatGBP, quotePrice, recommendedHours } from "@/lib/pricing";
 
 export const metadata: Metadata = {
   title: "SAAFI Cleaning Service — home cleaning with an honest hourly price",
@@ -78,8 +76,8 @@ const ROOMS: {
   },
   {
     n: "03",
-    title: "Living spaces",
-    copy: "Dusting, vacuuming and surfaces wiped down throughout your main living areas.",
+    title: "Hallways & landings",
+    copy: "The common areas most cleaners skip — floors, bannisters and surfaces on the way through.",
     image: heroCleaner,
     // cropped low and left so it reads as a different frame to the hero above
     imagePos: "center 72%",
@@ -97,22 +95,22 @@ const ROOMS: {
 
 const HERO_POINTS: { icon: LucideIcon; text: string }[] = [
   { icon: House, text: "Family-run, local team" },
-  { icon: SprayCan, text: "Cleaning products included" },
-  { icon: CreditCard, text: "Nothing to pay upfront" },
+  { icon: SprayCan, text: "We bring the products, or use your own" },
+  { icon: CreditCard, text: "One price, agreed before we start" },
 ];
 
 const FAQS: { q: string; a: string }[] = [
   {
     q: "How do you work out the price?",
-    a: "It's an hourly rate — we suggest how long your home is likely to need based on the rooms you tell us about, and you can adjust it up or down before you book. Nothing is hidden and nothing is added afterwards.",
+    a: "By the time your home needs. We suggest a length based on the rooms you tell us about, you can adjust it up or down, and the price follows. Nothing is hidden and nothing is added afterwards without asking you first.",
   },
   {
-    q: "Do I have to pay online?",
-    a: "No. The quote form doesn't take a card. You'll get your price, we'll ring you to confirm the date, and you settle up with us directly.",
+    q: "When do I pay?",
+    a: "You pay for the clean when you book it, and we ring you to confirm the date and time. If anything about the job changes on the day we agree it with you first and send a separate link for the difference — we never take more without asking.",
   },
   {
     q: "Who brings the cleaning products?",
-    a: "We do — they're included in the hourly rate, so there's nothing extra to pay. If you'd rather we used your own products, just tell us on the confirmation call and we'll bring the equipment only.",
+    a: "Whichever you prefer, and you choose when you book. We can bring everything for £5 a visit, or use the products you already have at no extra cost — plenty of people would rather we used their own, whether that's a fabric they know or simply no bleach in the house.",
   },
   {
     q: "How long will you stay?",
@@ -143,11 +141,24 @@ const FAQS: { q: string; a: string }[] = [
 export default async function Home() {
   const { cfg, addons } = await loadPricingAndAddons();
 
-  const recurringRate =
-    Math.round(
-      cfg.hourlyRate * (1 - (cfg.discounts.fortnightly ?? 0) / 100) * 100,
-    ) / 100;
   const areas = cfg.serviceAreaPrefixes;
+
+  // The headline example: 2 bedrooms, 1 bathroom, fortnightly, own products.
+  // Computed rather than written down so it tracks the live rates.
+  // Same 2-bed example across the plan cards, so the three prices are
+  // comparable to each other and to the hero. Hourly rates are gone from the
+  // page: they were read as the cost of a whole clean.
+  const exampleHours = recommendedHours(
+    { bedrooms: 2, bathrooms: 1, diningRooms: 0, livingRooms: 0 },
+    cfg,
+  );
+  const oneOffVisit = quotePrice(exampleHours, true, cfg, "one_off");
+  const typicalVisit = quotePrice(
+    recommendedHours({ bedrooms: 2, bathrooms: 1, diningRooms: 0, livingRooms: 0 }, cfg),
+    true,
+    cfg,
+    "fortnightly",
+  );
 
   return (
     // pb on mobile only: StickyQuoteBar is fixed to the bottom of the viewport,
@@ -263,12 +274,18 @@ export default async function Home() {
 
             <div className="shrink-0 text-center sm:text-right">
               <p className="text-xs font-semibold uppercase tracking-[0.14em] text-white">
-                Regular cleans from
+                2-bed home, fortnightly
               </p>
+              {/* An hourly rate answers a question nobody asked. £21.75/hr was
+                  read as "that's what my clean costs" — a whole-visit price for
+                  a named house size can't be. Priced live from the same config
+                  as the quote form, so it can never drift from what we charge. */}
               <p className="tnum mt-2 text-4xl font-bold leading-none text-white sm:text-[2.75rem]">
-                <AnimatedPrice value={recurringRate} />
+                <span className="text-lg font-medium text-white/85">from </span>
+                <AnimatedPrice value={typicalVisit} />
                 <span className="ml-0.5 text-lg font-medium text-white/85">
-                  /hr
+                  {" "}
+                  a visit
                 </span>
               </p>
               <span
@@ -290,7 +307,7 @@ export default async function Home() {
         <Reveal>
           <SectionHead
             title="Find the right clean for your home"
-            sub="Simple pricing. The same high standard, however often you need us."
+            sub={`Prices shown for a 2-bed home with 1 bathroom. Your own quote follows your rooms and the hours you choose.`}
           />
         </Reveal>
 
@@ -303,9 +320,9 @@ export default async function Home() {
             featured
             icon={<Icon glyph={House} className="size-[30px]" />}
             title="Regular clean"
-            price={formatGBP(recurringRate)}
-            unit="/hr"
-            note={`Save ${formatGBP(cfg.hourlyRate - recurringRate)}/hr`}
+            price={formatGBP(typicalVisit)}
+            unit=" a visit"
+            note={`Save ${formatGBP(oneOffVisit - typicalVisit)} every visit`}
             text="Weekly or fortnightly visits — the easiest and best-value way to keep on top of your home."
             points={[
               "Best value",
@@ -318,8 +335,8 @@ export default async function Home() {
             className="lg:order-1"
             icon={<Icon glyph={CalendarDays} className="size-[30px]" />}
             title="One-off clean"
-            price={formatGBP(cfg.hourlyRate)}
-            unit="/hr"
+            price={formatGBP(oneOffVisit)}
+            unit=" a visit"
             text="A single visit, whenever you need it — before guests arrive, after a party, or just to reset the house."
             points={[
               "No commitment",
@@ -572,9 +589,9 @@ export default async function Home() {
               build: the quote form takes no card, and confirmation is a call
               we make, not one you wait for. */}
           <p className="mt-6 text-sm text-white/70">
-            No payment upfront <span className="text-white/40">·</span> No card
-            details <span className="text-white/40">·</span> No callback to wait
-            for
+            One agreed price <span className="text-white/40">·</span> Nothing
+            added without asking <span className="text-white/40">·</span> No
+            callback to wait for
           </p>
         </Reveal>
       </section>
@@ -682,7 +699,7 @@ export default async function Home() {
       </footer>
 
       {/* Mobile only — the desktop nav is always in view. */}
-      <StickyQuoteBar rate={recurringRate} />
+      <StickyQuoteBar rate={typicalVisit} />
 
       {/* Desktop counterpart: the hero nav scrolls away, so it comes back
           condensed once you are past it. */}
@@ -717,24 +734,25 @@ export default async function Home() {
             })),
             priceRange: "££",
             makesOffer: [
+              // Priced per visit for the page's example home, matching what a
+              // visitor actually sees. An hourly unitCode would put a rate in
+              // search results that the page deliberately no longer shows.
               {
                 "@type": "Offer",
-                name: "Regular home cleaning",
+                name: "Regular home cleaning (2-bed, fortnightly)",
                 priceSpecification: {
-                  "@type": "UnitPriceSpecification",
-                  price: recurringRate,
+                  "@type": "PriceSpecification",
+                  price: typicalVisit,
                   priceCurrency: "GBP",
-                  unitCode: "HUR",
                 },
               },
               {
                 "@type": "Offer",
-                name: "One-off home cleaning",
+                name: "One-off home cleaning (2-bed)",
                 priceSpecification: {
-                  "@type": "UnitPriceSpecification",
-                  price: cfg.hourlyRate,
+                  "@type": "PriceSpecification",
+                  price: oneOffVisit,
                   priceCurrency: "GBP",
-                  unitCode: "HUR",
                 },
               },
             ],

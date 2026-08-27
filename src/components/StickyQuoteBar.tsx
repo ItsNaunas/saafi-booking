@@ -17,6 +17,7 @@ import Icon from "./Icon";
 import { contact } from "@/lib/business";
 import { formatGBP } from "@/lib/pricing";
 
+/** `rate` is a whole-visit price for the page's example home, not an hourly rate. */
 export default function StickyQuoteBar({ rate }: { rate: number }) {
   const [shown, setShown] = useState(false);
 
@@ -42,11 +43,11 @@ export default function StickyQuoteBar({ rate }: { rate: number }) {
       <div className="flex items-center gap-3 px-4 py-3">
         <div className="min-w-0 flex-1">
           <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
-            Regular cleans from
+            2-bed, fortnightly
           </p>
           <p className="tnum text-lg font-bold leading-tight text-slate-900">
+            <span className="text-sm font-medium text-slate-500">from </span>
             {formatGBP(rate)}
-            <span className="text-sm font-medium text-slate-500">/hr</span>
           </p>
         </div>
 

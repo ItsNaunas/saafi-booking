@@ -61,7 +61,7 @@ export default function QuoteWizard({
     bedrooms: 2,
     bathrooms: 1,
     diningRooms: 0,
-    livingRooms: 1,
+    livingRooms: 0,
     ...initialRooms,
   });
   const [hours, setHours] = useState<number | null>(null); // null = follow the recommendation
@@ -340,26 +340,11 @@ export default function QuoteWizard({
             />
           </div>
 
-          {/* Almost every home is 1 living / 0 dining, so these are folded away
-              rather than made compulsory. They still price when opened. */}
-          <Disclosure
-            summary={`Living and dining rooms (${rooms.livingRooms} + ${rooms.diningRooms})`}
-          >
-            <div className="grid gap-x-6 gap-y-3 sm:grid-cols-2">
-              <Counter
-                label="Living rooms"
-                value={rooms.livingRooms}
-                max={4}
-                onChange={(v) => setRooms({ ...rooms, livingRooms: v })}
-              />
-              <Counter
-                label="Dining rooms"
-                value={rooms.diningRooms}
-                max={4}
-                onChange={(v) => setRooms({ ...rooms, diningRooms: v })}
-              />
-            </div>
-          </Disclosure>
+          {/* Living and dining rooms used to be a folded-away counter here.
+              They are gone from the standard flow because they now price at
+              zero: the costing sheet only itemises them under deep clean, so
+              asking would be a control that changes nothing. They come back
+              with the deep clean tab. */}
 
           {/* Hours follow the rooms — a nudge, not a question. */}
           <div className="mt-4 flex items-center justify-between gap-4 border-t border-slate-100 pt-4">

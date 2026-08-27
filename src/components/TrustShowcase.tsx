@@ -49,11 +49,11 @@ type Point = {
 const POINTS: Point[] = [
   {
     n: "01",
-    title: "Products included",
-    lead: "Everything we clean with comes with us.",
+    title: "Your products or ours",
+    lead: "You choose when you book, not on the doorstep.",
     detail:
-      "Nothing to buy and nothing to leave out for us. It is already in the hourly rate, not added on at the end.",
-    kicker: "What's in the rate",
+      "We can bring everything for £5 a visit, or work with what you already have at no extra cost. Plenty of people would rather we used their own — a finish they know, or simply no bleach in the house.",
+    kicker: "Before we arrive",
     image: trustProducts,
     pos: "center 62%",
   },

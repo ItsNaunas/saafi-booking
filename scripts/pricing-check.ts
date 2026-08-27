@@ -22,11 +22,18 @@ function check(label: string, actual: unknown, expected: unknown) {
   console.log(`${ok ? "PASS" : "FAIL"}  ${label}: got ${actual}, expected ${expected}`);
 }
 
-check("rec 3bed/2bath/1din/1liv", recommendedHours({ bedrooms: 3, bathrooms: 2, diningRooms: 1, livingRooms: 1 }), 4.5);
+// Living and dining rooms price at zero on a standard clean (costing sheet
+// itemises them under deep clean only), so the same house is 3.5h, not 4.5h.
+check("rec 3bed/2bath: base 1h + 1.5 + 1", recommendedHours({ bedrooms: 3, bathrooms: 2, diningRooms: 0, livingRooms: 0 }), 3.5);
+check("living/dining add nothing to a standard clean", recommendedHours({ bedrooms: 3, bathrooms: 2, diningRooms: 1, livingRooms: 1 }), 3.5);
 check("rec studio clamps up", recommendedHours({ bedrooms: 0, bathrooms: 0, diningRooms: 0, livingRooms: 0 }), 2);
 check("rec mansion clamps down", recommendedHours({ bedrooms: 10, bathrooms: 5, diningRooms: 2, livingRooms: 3 }), 8);
 check("price 2h own products", quotePrice(2, true), 48);
-check("price 8h our products (no surcharge)", quotePrice(8, false), 192);
+// SAAFI supplying products is +£5 (2026-08-25 review). quotePrice's second arg
+// is customerProvidesProducts, so `false` means we bring them.
+check("price 8h, we bring products (+£5)", quotePrice(8, false), 197);
+check("price 8h, customer's own products", quotePrice(8, true), 192);
+check("product surcharge is flat, not per hour", quotePrice(2, false) - quotePrice(2, true), 5);
 check("long jobs bill their real time, no 8h cap", quotePrice(10, true), 240);
 
 // === SAAFI costing sheet 2026-08-18: the two worked examples are the ground truth ===
