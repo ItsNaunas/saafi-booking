@@ -1,156 +1,163 @@
 // Customer-facing emails via Resend. No-ops silently until RESEND_API_KEY is set.
+//
+// Every email is built from ONE template: dark header with the wordmark, a
+// white card with the message, a key/value table for the details, one button
+// when there is something to click, and a footer that carries the contact
+// details and reference. Content is structured (heading / intro / rows / cta /
+// outro) and rendered twice — once as HTML, once as the plain-text part — so
+// the two can never say different things.
+//
+// Email HTML is written for email clients, not browsers: tables, inline
+// styles, system fonts, no external assets. Square corners, per the site.
 
 import type { BookingRow } from "./supabaseAdmin";
 import { secret } from "./env";
 import { formatTimeRange } from "@/lib/scheduling";
 import { chargeableJourney, outcomeLabel, type OutcomeReason } from "./outcomes";
+import { site, contact } from "./business";
 
-export async function sendConfirmationEmail(booking: BookingRow): Promise<void> {
-  const key = secret("RESEND_API_KEY");
-  if (!key) return;
-  const from = process.env.ALERT_EMAIL_FROM ?? "bookings@saaficleaningservice.com";
+/* ------------------------------------------------------------------ *
+ *  The template
+ * ------------------------------------------------------------------ */
 
-  await fetch("https://api.resend.com/emails", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      from: `SAAFI Cleaning Service <${from}>`,
-      to: [booking.customer_email],
-      subject: `Your clean is confirmed — ${booking.preferred_date} (${booking.reference})`,
-      text: [
-        `Hi ${booking.customer_name.split(" ")[0]},`,
-        ``,
-        `Good news — your clean is confirmed!`,
-        ``,
-        `Date:     ${booking.preferred_date}`,
-        booking.start_time
-          ? `Time:     ${formatTimeRange(booking.start_time, Number(booking.hours))}`
-          : `Time:     we'll agree this with you`,
-        `Duration: ${booking.hours} hours`,
-        `Address:  ${booking.address_line}, ${booking.postcode}`,
-        `Price:    £${booking.quoted_price}`,
-        `Products: ${booking.customer_provides_products ? "you provide" : "we bring ours"}`,
-        `Reference: ${booking.reference}`,
-        ``,
-        `Need to change anything? Just reply to this email or give us a call.`,
-        ``,
-        `SAAFI Cleaning Service`,
-        `saaficleaningservice.com`,
-      ].join("\n"),
-    }),
-  });
+type Row = [label: string, value: string];
+
+type Mail = {
+  to: string;
+  subject: string;
+  /** First name or full greeting line; omitted for office mail. */
+  greeting?: string;
+  /** The one-line headline inside the card. */
+  heading: string;
+  /** Paragraphs before the details. Falsy entries drop out. */
+  intro?: (string | false | null | undefined)[];
+  /** The details table. Falsy entries drop out. */
+  rows?: (Row | false | null | undefined)[];
+  /** The single action, when there is one. */
+  cta?: { label: string; url: string } | null;
+  /** Paragraphs after the details. Falsy entries drop out. */
+  outro?: (string | false | null | undefined)[];
+  reference?: string;
+  replyTo?: string;
+};
+
+const BRAND = {
+  ink: "#052e2c", // brand-950 — header
+  teal: "#14807b", // brand-600 — button, accents
+  tint: "#effdfb", // brand-50 — details table ground
+  text: "#0f172a", // slate-900
+  muted: "#64748b", // slate-500
+  faint: "#94a3b8", // slate-400
+  page: "#f1f5f9", // slate-100 — page ground
+};
+
+function esc(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 }
 
-/**
- * Tell the customer their price changed, and why. Sent only after the owner has
- * approved the adjustment — nothing reaches a customer automatically.
- */
-export async function sendAdjustmentEmail(
-  booking: BookingRow,
-  adj: { from_hours: number; to_hours: number; from_price: number; to_price: number; reason_code: string; note: string | null }
-): Promise<void> {
-  const key = secret("RESEND_API_KEY");
-  if (!key) return;
-  const from = process.env.ALERT_EMAIL_FROM ?? "bookings@saaficleaningservice.com";
-  const replyTo = process.env.ALERT_EMAIL_TO ?? "info@saaficleaningservice.com";
+const compact = <T,>(xs: (T | false | null | undefined)[] | undefined): T[] =>
+  (xs ?? []).filter(Boolean) as T[];
 
-  const { reasonLabel } = await import("./adjustments");
-  const extra = Math.round((Number(adj.to_hours) - Number(adj.from_hours)) * 100) / 100;
-  const diff = Math.round((Number(adj.to_price) - Number(adj.from_price)) * 100) / 100;
-  const longer = extra > 0;
+function renderHtml(m: Mail): string {
+  const intro = compact(m.intro);
+  const rows = compact(m.rows);
+  const outro = compact(m.outro);
+  const font =
+    "font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;";
 
-  await fetch("https://api.resend.com/emails", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      from: `SAAFI Cleaning Service <${from}>`,
-      reply_to: replyTo,
-      to: [booking.customer_email],
-      subject: `Your clean on ${booking.preferred_date} — updated total £${adj.to_price}`,
-      text: [
-        `Hi ${booking.customer_name.split(" ")[0]},`,
-        ``,
-        longer
-          ? `Your clean took a bit longer than booked, so your total has changed.`
-          : `Your clean finished sooner than booked, so we've reduced your total.`,
-        ``,
-        `Booked:  ${adj.from_hours} hours — £${adj.from_price}`,
-        `Actual:  ${adj.to_hours} hours — £${adj.to_price}`,
-        `Reason:  ${reasonLabel(adj.reason_code as never)}`,
-        adj.note ? `Note:    ${adj.note}` : ``,
-        ``,
-        longer
-          ? `That's ${extra} extra hour${extra === 1 ? "" : "s"}, so £${Math.abs(diff)} more than quoted.`
-          : `That's £${Math.abs(diff)} less than quoted.`,
-        ``,
-        `Reference: ${booking.reference}`,
-        ``,
-        `Any questions, just reply to this email or give us a call.`,
-        ``,
-        `SAAFI Cleaning Service`,
-        `saaficleaningservice.com`,
-      ]
-        .filter(Boolean)
-        .join("\n"),
-    }),
-  });
+  const para = (t: string, color = BRAND.text) =>
+    `<p style="margin:0 0 14px;${font}font-size:15px;line-height:1.6;color:${color};">${esc(t)}</p>`;
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<body style="margin:0;padding:0;background:${BRAND.page};">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:${BRAND.page};">
+    <tr><td align="center" style="padding:28px 12px;">
+      <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="width:100%;max-width:560px;">
+
+        <!-- header -->
+        <tr><td style="background:${BRAND.ink};padding:22px 28px;">
+          <span style="${font}font-size:20px;font-weight:700;letter-spacing:0.16em;color:#ffffff;">SAAFI</span>
+          <span style="${font}font-size:11px;font-weight:600;letter-spacing:0.18em;color:#6fe2da;"> &nbsp;CLEANING SERVICE</span>
+        </td></tr>
+
+        <!-- card -->
+        <tr><td style="background:#ffffff;padding:28px;">
+          ${m.greeting ? para(`Hi ${m.greeting},`, BRAND.muted) : ""}
+          <p style="margin:0 0 16px;${font}font-size:19px;line-height:1.35;font-weight:700;color:${BRAND.text};">${esc(m.heading)}</p>
+          ${intro.map((t) => para(t)).join("")}
+
+          ${
+            rows.length
+              ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:${BRAND.tint};margin:6px 0 18px;">
+                  ${rows
+                    .map(
+                      ([k, v], i) => `<tr>
+                        <td style="padding:9px 14px ${i === rows.length - 1 ? "12px" : "0"};${font}font-size:13px;color:${BRAND.muted};white-space:nowrap;vertical-align:top;${i === 0 ? "padding-top:12px;" : ""}">${esc(k)}</td>
+                        <td align="right" style="padding:9px 14px ${i === rows.length - 1 ? "12px" : "0"};${font}font-size:14px;font-weight:600;color:${BRAND.text};${i === 0 ? "padding-top:12px;" : ""}">${esc(v)}</td>
+                      </tr>`,
+                    )
+                    .join("")}
+                </table>`
+              : ""
+          }
+
+          ${
+            m.cta
+              ? `<table role="presentation" cellpadding="0" cellspacing="0" style="margin:4px 0 18px;">
+                  <tr><td style="background:${BRAND.teal};">
+                    <a href="${esc(m.cta.url)}" style="display:inline-block;padding:13px 26px;${font}font-size:15px;font-weight:600;color:#ffffff;text-decoration:none;">${esc(m.cta.label)}</a>
+                  </td></tr>
+                </table>
+                <p style="margin:-8px 0 16px;${font}font-size:12px;color:${BRAND.faint};">Button not working? ${esc(m.cta.url)}</p>`
+              : ""
+          }
+
+          ${outro.map((t) => para(t, BRAND.muted)).join("")}
+        </td></tr>
+
+        <!-- footer -->
+        <tr><td style="padding:18px 28px;">
+          <p style="margin:0 0 4px;${font}font-size:12px;line-height:1.6;color:${BRAND.faint};">
+            ${esc(site.name)} &nbsp;·&nbsp; <a href="tel:${esc(contact.phoneHref)}" style="color:${BRAND.teal};text-decoration:none;">${esc(contact.phoneDisplay)}</a> &nbsp;·&nbsp; <a href="mailto:${esc(contact.email)}" style="color:${BRAND.teal};text-decoration:none;">${esc(contact.email)}</a>
+          </p>
+          <p style="margin:0;${font}font-size:12px;color:${BRAND.faint};">
+            ${m.reference ? `Reference ${esc(m.reference)} &nbsp;·&nbsp; ` : ""}${esc(site.url.replace("https://", ""))}
+          </p>
+        </td></tr>
+
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`;
 }
 
-/**
- * Send the customer their payment link.
- *
- * Never sent automatically when the link is raised — the owner triggers it, so
- * they get a chance to check the amount before it reaches a customer, and can
- * still send it over WhatsApp instead if that suits that customer better.
- */
-export async function sendPaymentLinkEmail(
-  booking: BookingRow,
-  amount: number
-): Promise<{ ok: boolean; reason?: string }> {
-  const key = secret("RESEND_API_KEY");
-  if (!key) return { ok: false, reason: "email isn't configured" };
-  if (!booking.stripe_payment_link_url) return { ok: false, reason: "no payment link yet" };
-  if (!looksLikeARealAddress(booking.customer_email)) {
-    return { ok: false, reason: "that booking has no real email address" };
-  }
-
-  const from = process.env.ALERT_EMAIL_FROM ?? "bookings@saaficleaningservice.com";
-  const res = await fetch("https://api.resend.com/emails", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      from: `SAAFI Cleaning Service <${from}>`,
-      to: [booking.customer_email],
-      subject: `Your clean on ${booking.preferred_date} — £${amount} (${booking.reference})`,
-      text: [
-        `Hi ${booking.customer_name.split(" ")[0]},`,
-        ``,
-        `Here's the link to pay for your clean.`,
-        ``,
-        `Date:     ${booking.preferred_date}`,
-        booking.start_time
-          ? `Time:     ${formatTimeRange(booking.start_time, Number(booking.hours))}`
-          : `Time:     to be agreed`,
-        `Address:  ${booking.address_line}, ${booking.postcode}`,
-        `Total:    £${amount}`,
-        `Reference: ${booking.reference}`,
-        ``,
-        booking.stripe_payment_link_url,
-        ``,
-        `The link stays valid, so there's no rush — pay whenever suits you.`,
-        `Anything look wrong? Just reply to this email.`,
-        ``,
-        `SAAFI Cleaning Service`,
-        `saaficleaningservice.com`,
-      ].join("\n"),
-    }),
-  });
-
-  if (!res.ok) {
-    console.error("[email] payment link send failed:", res.status, await res.text());
-    return { ok: false, reason: "the email provider rejected it" };
-  }
-  return { ok: true };
+/** The same content as readable plain text — the multipart fallback. */
+function renderText(m: Mail): string {
+  const rows = compact(m.rows);
+  const pad = Math.max(0, ...rows.map(([k]) => k.length));
+  return [
+    m.greeting ? `Hi ${m.greeting},` : null,
+    m.greeting ? "" : null,
+    m.heading,
+    "",
+    ...compact(m.intro).flatMap((t) => [t, ""]),
+    ...rows.map(([k, v]) => `${(k + ":").padEnd(pad + 2)}${v}`),
+    rows.length ? "" : null,
+    m.cta ? `${m.cta.label}: ${m.cta.url}` : null,
+    m.cta ? "" : null,
+    ...compact(m.outro).flatMap((t) => [t, ""]),
+    site.name,
+    m.reference ? `Reference: ${m.reference}` : null,
+    site.url.replace("https://", ""),
+  ]
+    .filter((l): l is string => l !== null)
+    .join("\n");
 }
 
 /**
@@ -162,21 +169,6 @@ function looksLikeARealAddress(email: string): boolean {
   if (email.endsWith("@phone.saafi")) return false;
   return /^\S+@\S+\.\S+$/.test(email);
 }
-
-/* ------------------------------------------------------------------ *
- *  The moments that used to pass in silence.
- *
- *  Every one of these is best-effort: the caller wraps it, and a mail
- *  provider having a bad afternoon must never stop a booking, a payment
- *  or a cleaner finishing their day.
- * ------------------------------------------------------------------ */
-
-type Mail = {
-  to: string;
-  subject: string;
-  /** Falsy lines are dropped, so a line can be conditional inline. */
-  lines: (string | false | null | undefined)[];
-};
 
 async function send(mail: Mail): Promise<{ ok: boolean; reason?: string }> {
   const key = secret("RESEND_API_KEY");
@@ -190,8 +182,10 @@ async function send(mail: Mail): Promise<{ ok: boolean; reason?: string }> {
     body: JSON.stringify({
       from: `SAAFI Cleaning Service <${from}>`,
       to: [mail.to],
+      ...(mail.replyTo ? { reply_to: mail.replyTo } : {}),
       subject: mail.subject,
-      text: mail.lines.filter(Boolean).join("\n"),
+      html: renderHtml(mail),
+      text: renderText(mail),
     }),
   });
 
@@ -203,6 +197,9 @@ async function send(mail: Mail): Promise<{ ok: boolean; reason?: string }> {
 }
 
 const officeAddress = () => process.env.ALERT_EMAIL_TO ?? "";
+const first = (name: string) => name.split(" ")[0];
+const adminUrl = (id: string) =>
+  `${process.env.NEXT_PUBLIC_SITE_URL ?? site.url}/admin/booking/${id}`;
 
 /** The visit window, or an honest admission that there isn't one yet. */
 function whenLine(booking: {
@@ -213,6 +210,100 @@ function whenLine(booking: {
   return booking.start_time
     ? `${booking.preferred_date}, ${formatTimeRange(booking.start_time, Number(booking.hours))}`
     : `${booking.preferred_date}, time still to be agreed`;
+}
+
+/* ------------------------------------------------------------------ *
+ *  The emails. Same signatures as before — only the rendering changed.
+ *  Every one is best-effort: a mail provider having a bad afternoon
+ *  must never stop a booking, a payment or a cleaner's day.
+ * ------------------------------------------------------------------ */
+
+export async function sendConfirmationEmail(booking: BookingRow): Promise<void> {
+  await send({
+    to: booking.customer_email,
+    subject: `Your clean is confirmed — ${booking.preferred_date} (${booking.reference})`,
+    greeting: first(booking.customer_name),
+    heading: "Your clean is confirmed",
+    rows: [
+      ["When", whenLine(booking)],
+      ["Where", `${booking.address_line}, ${booking.postcode}`],
+      ["Duration", `${booking.hours} hours`],
+      ["Price", `£${booking.quoted_price}`],
+      ["Products", booking.customer_provides_products ? "you provide" : "we bring ours"],
+    ],
+    outro: ["Need to change anything? Just reply to this email or give us a call."],
+    reference: booking.reference,
+  }).catch(() => {});
+}
+
+/**
+ * Tell the customer their price changed, and why. Sent only after the owner has
+ * approved the adjustment — nothing reaches a customer automatically.
+ */
+export async function sendAdjustmentEmail(
+  booking: BookingRow,
+  adj: {
+    from_hours: number;
+    to_hours: number;
+    from_price: number;
+    to_price: number;
+    reason_code: string;
+    note: string | null;
+  },
+): Promise<void> {
+  const { reasonLabel } = await import("./adjustments");
+  const extra = Math.round((Number(adj.to_hours) - Number(adj.from_hours)) * 100) / 100;
+  const diff = Math.round((Number(adj.to_price) - Number(adj.from_price)) * 100) / 100;
+  const longer = extra > 0;
+
+  await send({
+    to: booking.customer_email,
+    subject: `Your clean on ${booking.preferred_date} — updated total £${adj.to_price}`,
+    replyTo: process.env.ALERT_EMAIL_TO ?? contact.email,
+    greeting: first(booking.customer_name),
+    heading: longer ? "Your total has changed" : "We've reduced your total",
+    intro: [
+      longer
+        ? "Your clean took a bit longer than booked, so your total has changed."
+        : "Your clean finished sooner than booked, so we've reduced your total.",
+    ],
+    rows: [
+      ["Booked", `${adj.from_hours} hours — £${adj.from_price}`],
+      ["Actual", `${adj.to_hours} hours — £${adj.to_price}`],
+      ["Reason", reasonLabel(adj.reason_code as never)],
+      adj.note ? ["Note", adj.note] : null,
+      [
+        "Difference",
+        longer ? `£${Math.abs(diff)} more than quoted` : `£${Math.abs(diff)} less than quoted`,
+      ],
+    ],
+    outro: ["Any questions, just reply to this email or give us a call."],
+    reference: booking.reference,
+  }).catch(() => {});
+}
+
+export async function sendPaymentLinkEmail(
+  booking: BookingRow,
+  amount: number,
+): Promise<{ ok: boolean; reason?: string }> {
+  if (!booking.stripe_payment_link_url) return { ok: false, reason: "no payment link yet" };
+  return send({
+    to: booking.customer_email,
+    subject: `Your clean on ${booking.preferred_date} — £${amount} (${booking.reference})`,
+    greeting: first(booking.customer_name),
+    heading: "Here's the link to pay for your clean",
+    rows: [
+      ["When", whenLine(booking)],
+      ["Where", `${booking.address_line}, ${booking.postcode}`],
+      ["Total", `£${amount}`],
+    ],
+    cta: { label: "Pay for your clean", url: booking.stripe_payment_link_url },
+    outro: [
+      "The link stays valid, so there's no rush — pay whenever suits you.",
+      "Anything look wrong? Just reply to this email.",
+    ],
+    reference: booking.reference,
+  });
 }
 
 /**
@@ -239,30 +330,30 @@ export async function sendBookingReceivedEmail(opts: {
   return send({
     to: opts.email,
     subject: `We've got your booking — ${opts.preferredDate} (${opts.reference})`,
-    lines: [
-      `Hi ${opts.name.split(" ")[0]},`,
-      ``,
+    greeting: first(opts.name),
+    heading: "We've got your booking",
+    intro: [
       opts.payUrl
-        ? `Thanks — we've got your request. Pay below to lock it in, and we'll call to confirm your slot.`
-        : `Thanks — we've got your request and we'll call shortly to confirm it.`,
-      ``,
-      `When:      ${
+        ? "Thanks — we've got your request. Pay below to lock it in, and we'll call to confirm your slot."
+        : "Thanks — we've got your request and we'll call shortly to confirm it.",
+    ],
+    rows: [
+      [
+        "When",
         opts.startTime
           ? `${opts.preferredDate}, ${formatTimeRange(opts.startTime, opts.hours)}`
-          : `${opts.preferredDate}, time still to be agreed`
-      }`,
-      `Where:     ${opts.addressLine}, ${opts.postcode}`,
-      `How long:  ${opts.hours} hours`,
-      `Price:     £${opts.price}${opts.recurring ? " per clean" : ""}`,
-      `Reference: ${opts.reference}`,
-      ...(opts.payUrl ? [``, `Pay for your clean: ${opts.payUrl}`] : []),
-      ``,
-      `Nothing is charged yet, and nothing is booked in stone until we've spoken.`,
-      `If anything above looks wrong, just reply to this email.`,
-      ``,
-      `SAAFI Cleaning Service`,
-      `saaficleaningservice.com`,
+          : `${opts.preferredDate}, time still to be agreed`,
+      ],
+      ["Where", `${opts.addressLine}, ${opts.postcode}`],
+      ["How long", `${opts.hours} hours`],
+      ["Price", `£${opts.price}${opts.recurring ? " per clean" : ""}`],
     ],
+    cta: opts.payUrl ? { label: "Pay for your clean", url: opts.payUrl } : null,
+    outro: [
+      "Nothing is booked in stone until we've spoken.",
+      "If anything above looks wrong, just reply to this email.",
+    ],
+    reference: opts.reference,
   });
 }
 
@@ -273,31 +364,35 @@ export async function sendBookingReceivedEmail(opts: {
  */
 export async function sendAdjustmentPendingEmail(
   booking: BookingRow,
-  adj: { from_hours: number; to_hours: number; from_price: number; to_price: number; reason_code: string; note: string | null },
-  cleanerName: string
+  adj: {
+    from_hours: number;
+    to_hours: number;
+    from_price: number;
+    to_price: number;
+    reason_code: string;
+    note: string | null;
+  },
+  cleanerName: string,
 ): Promise<{ ok: boolean; reason?: string }> {
   const extra = Math.round((Number(adj.to_hours) - Number(adj.from_hours)) * 100) / 100;
   return send({
     to: officeAddress(),
     subject: `Approve? ${cleanerName} ran ${extra}h over at ${booking.customer_name} — £${adj.to_price}`,
-    lines: [
-      `${cleanerName} has finished a job that ran longer than booked.`,
-      `Nothing has been charged — it needs your decision.`,
-      ``,
-      `Customer: ${booking.customer_name}`,
-      `Where:    ${booking.address_line}, ${booking.postcode}`,
-      `When:     ${whenLine(booking)}`,
-      ``,
-      `Booked:   ${adj.from_hours}h — £${adj.from_price}`,
-      `Actual:   ${adj.to_hours}h — £${adj.to_price}`,
-      `Reason:   ${adj.reason_code.replace(/_/g, " ")}`,
-      adj.note && `Note:     ${adj.note}`,
-      ``,
-      `Approve or reject it here:`,
-      `${process.env.NEXT_PUBLIC_SITE_URL ?? "https://saaficleaningservice.com"}/admin/booking/${booking.id}`,
-      ``,
-      `Reference: ${booking.reference}`,
+    heading: `${cleanerName} ran over — your decision needed`,
+    intro: [
+      `${cleanerName} has finished a job that ran longer than booked. Nothing has been charged — it needs your decision.`,
     ],
+    rows: [
+      ["Customer", booking.customer_name],
+      ["Where", `${booking.address_line}, ${booking.postcode}`],
+      ["When", whenLine(booking)],
+      ["Booked", `${adj.from_hours}h — £${adj.from_price}`],
+      ["Actual", `${adj.to_hours}h — £${adj.to_price}`],
+      ["Reason", adj.reason_code.replace(/_/g, " ")],
+      adj.note ? ["Note", adj.note] : null,
+    ],
+    cta: { label: "Approve or reject it", url: adminUrl(booking.id) },
+    reference: booking.reference,
   });
 }
 
@@ -307,38 +402,34 @@ export async function sendAdjustmentPendingEmail(
  */
 export async function sendPaymentReceivedEmails(
   booking: BookingRow,
-  amount: number
+  amount: number,
 ): Promise<void> {
   await send({
     to: booking.customer_email,
     subject: `Thanks — that's paid (${booking.reference})`,
-    lines: [
-      `Hi ${booking.customer_name.split(" ")[0]},`,
-      ``,
-      `That's your payment received, thank you.`,
-      ``,
-      `Clean:  ${whenLine(booking)}`,
-      `Paid:   £${amount}`,
-      `Reference: ${booking.reference}`,
-      ``,
-      `Your card receipt comes separately from Stripe.`,
-      booking.frequency !== "one_off" &&
-        `We'll see you again next time — your next visit is already booked in.`,
-      ``,
-      `SAAFI Cleaning Service`,
+    greeting: first(booking.customer_name),
+    heading: "That's your payment received — thank you",
+    rows: [
+      ["Clean", whenLine(booking)],
+      ["Paid", `£${amount}`],
     ],
+    outro: [
+      "Your card receipt comes separately from Stripe.",
+      booking.frequency !== "one_off" &&
+        "We'll see you again next time — your next visit is already booked in.",
+    ],
+    reference: booking.reference,
   }).catch(() => {});
 
   await send({
     to: officeAddress(),
     subject: `Paid — ${booking.customer_name}, £${amount} (${booking.reference})`,
-    lines: [
-      `${booking.customer_name} has paid £${amount}.`,
-      ``,
-      `Clean: ${whenLine(booking)}`,
-      `Where: ${booking.address_line}, ${booking.postcode}`,
-      `Reference: ${booking.reference}`,
+    heading: `${booking.customer_name} has paid £${amount}`,
+    rows: [
+      ["Clean", whenLine(booking)],
+      ["Where", `${booking.address_line}, ${booking.postcode}`],
     ],
+    reference: booking.reference,
   }).catch(() => {});
 }
 
@@ -348,28 +439,22 @@ export async function sendPaymentReceivedEmails(
  */
 export async function sendCleanerAssignedEmail(
   cleaner: { name: string; email: string | null; token: string },
-  booking: BookingRow
+  booking: BookingRow,
 ): Promise<{ ok: boolean; reason?: string }> {
   if (!cleaner.email) return { ok: false, reason: "that cleaner has no email address" };
-  const base = process.env.NEXT_PUBLIC_SITE_URL ?? "https://saaficleaningservice.com";
+  const base = process.env.NEXT_PUBLIC_SITE_URL ?? site.url;
   return send({
     to: cleaner.email,
     subject: `New job — ${whenLine(booking)}`,
-    lines: [
-      `Hi ${cleaner.name.split(" ")[0]},`,
-      ``,
-      `You've been put on a clean.`,
-      ``,
-      `When:  ${whenLine(booking)}`,
-      `Where: ${booking.address_line}, ${booking.postcode}`,
-      `Job:   ${booking.hours} hours`,
-      booking.notes && `Note:  ${booking.notes}`,
-      ``,
-      `It's on your jobs page along with everything else:`,
-      `${base}/c/${cleaner.token}`,
-      ``,
-      `SAAFI`,
+    greeting: first(cleaner.name),
+    heading: "You've been put on a clean",
+    rows: [
+      ["When", whenLine(booking)],
+      ["Where", `${booking.address_line}, ${booking.postcode}`],
+      ["Job", `${booking.hours} hours`],
+      booking.notes ? ["Note", booking.notes] : null,
     ],
+    cta: { label: "Open your jobs page", url: `${base}/c/${cleaner.token}` },
   });
 }
 
@@ -384,31 +469,28 @@ export async function sendVisitFailedEmail(
   booking: BookingRow,
   reason: OutcomeReason,
   note: string | null,
-  cleanerName: string
+  cleanerName: string,
 ): Promise<{ ok: boolean; reason?: string }> {
   const chargeable = chargeableJourney(reason);
   return send({
     to: officeAddress(),
     subject: `Wasted journey — ${booking.customer_name}, ${outcomeLabel(reason).toLowerCase()}`,
-    lines: [
-      `${cleanerName} could not do a clean and is there now.`,
-      ``,
-      `Customer: ${booking.customer_name}`,
-      `Phone:    ${booking.customer_phone}`,
-      `Where:    ${booking.address_line}, ${booking.postcode}`,
-      `When:     ${whenLine(booking)}`,
-      ``,
-      `Reason:   ${outcomeLabel(reason)}`,
-      note && `They said: ${note}`,
-      ``,
-      chargeable
-        ? `Nothing has been charged. This one is arguably the customer's to pay for —`
-        : `Nothing has been charged, and this one is not the customer's fault —`,
-      `you decide from the booking page whether it is cancelled or charged:`,
-      `${process.env.NEXT_PUBLIC_SITE_URL ?? "https://saaficleaningservice.com"}/admin/booking/${booking.id}`,
-      ``,
-      `Reference: ${booking.reference}`,
+    heading: `${cleanerName} could not do a clean and is there now`,
+    rows: [
+      ["Customer", booking.customer_name],
+      ["Phone", booking.customer_phone],
+      ["Where", `${booking.address_line}, ${booking.postcode}`],
+      ["When", whenLine(booking)],
+      ["Reason", outcomeLabel(reason)],
+      note ? ["They said", note] : null,
     ],
+    intro: [
+      chargeable
+        ? "Nothing has been charged. This one is arguably the customer's to pay for — you decide from the booking page whether it is cancelled or charged."
+        : "Nothing has been charged, and this one is not the customer's fault — you decide from the booking page whether it is cancelled or charged.",
+    ],
+    cta: { label: "Open the booking", url: adminUrl(booking.id) },
+    reference: booking.reference,
   });
 }
 
@@ -420,35 +502,28 @@ export async function sendVisitFailedEmail(
  * to ignore you.
  */
 export async function sendSeriesBookedEmail(
-  bookings: BookingRow[]
+  bookings: BookingRow[],
 ): Promise<{ ok: boolean; reason?: string }> {
-  const first = bookings[0];
-  if (!first) return { ok: false, reason: "nothing to tell them about" };
+  const firstBooking = bookings[0];
+  if (!firstBooking) return { ok: false, reason: "nothing to tell them about" };
   const many = bookings.length > 1;
 
   return send({
-    to: first.customer_email,
+    to: firstBooking.customer_email,
     subject: many
       ? `Your next ${bookings.length} cleans are booked`
-      : `Your next clean — ${first.preferred_date}`,
-    lines: [
-      `Hi ${first.customer_name.split(" ")[0]},`,
-      ``,
-      many
-        ? `Your regular cleans are booked in. Here they are:`
-        : `Your next clean is booked in.`,
-      ``,
-      ...bookings.map((b) => `  ${whenLine(b)}`),
-      ``,
-      `Where: ${first.address_line}, ${first.postcode}`,
-      `Price: £${first.quoted_price} per clean`,
-      ``,
-      `Same slot each time. If one of those doesn't suit, give us a ring or reply`,
-      `to this email and we'll move it — no need to change the rest.`,
-      ``,
-      `SAAFI Cleaning Service`,
-      `saaficleaningservice.com`,
+      : `Your next clean — ${firstBooking.preferred_date}`,
+    greeting: first(firstBooking.customer_name),
+    heading: many ? "Your regular cleans are booked in" : "Your next clean is booked in",
+    rows: [
+      ...bookings.map((b, i): Row => [many ? `Visit ${i + 1}` : "When", whenLine(b)]),
+      ["Where", `${firstBooking.address_line}, ${firstBooking.postcode}`],
+      ["Price", `£${firstBooking.quoted_price} per clean`],
     ],
+    outro: [
+      "Same slot each time. If one of those doesn't suit, give us a ring or reply to this email and we'll move it — no need to change the rest.",
+    ],
+    reference: firstBooking.reference,
   });
 }
 
@@ -461,26 +536,20 @@ export async function sendSeriesBookedEmail(
  */
 export async function sendCardSetupEmail(
   booking: BookingRow,
-  url: string
+  url: string,
 ): Promise<{ ok: boolean; reason?: string }> {
   return send({
     to: booking.customer_email,
     subject: `Save a card for your cleans — ${booking.reference}`,
-    lines: [
-      `Hi ${booking.customer_name.split(" ")[0]},`,
-      ``,
-      `If you'd rather not deal with a payment link after every clean, you can save`,
-      `a card once and we'll charge it when the job's done — for whatever the visit`,
-      `actually came to, never more.`,
-      ``,
-      url,
-      ``,
-      `Nothing is charged now. The page is Stripe's own, so we never see your card`,
-      `details, and you can stop at any time by telling us.`,
-      ``,
-      `Reference: ${booking.reference}`,
-      ``,
-      `SAAFI Cleaning Service`,
+    greeting: first(booking.customer_name),
+    heading: "Save a card once, skip the payment links",
+    intro: [
+      "If you'd rather not deal with a payment link after every clean, you can save a card once and we'll charge it when the job's done — for whatever the visit actually came to, never more.",
     ],
+    cta: { label: "Save a card", url },
+    outro: [
+      "Nothing is charged now. The page is Stripe's own, so we never see your card details, and you can stop at any time by telling us.",
+    ],
+    reference: booking.reference,
   });
 }
