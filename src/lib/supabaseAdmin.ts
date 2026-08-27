@@ -71,6 +71,12 @@ export type BookingRow = {
   paid_at: string | null;
   /** When the link was emailed. Null = never emailed (may still have gone by hand). */
   payment_link_sent_at: string | null;
+  /** Pounds the current payment link was raised for — stale-link detection.
+   *  Optional so the app runs before supabase/2026-08-28-upgrades.sql lands. */
+  payment_link_amount?: number | null;
+  /** Money returned to the customer. Optional pre-migration. */
+  refunded_at?: string | null;
+  refund_amount?: number | null;
   /** Daily-notify sent-markers — see supabase/2026-08-28-daily-notify.sql. */
   reminder_sent_at?: string | null;
   payment_chased_at?: string | null;
@@ -421,25 +427,77 @@ export async function setAdjustmentStatus(
 
 /* ---------- Stripe ---------- */
 
-/** What we should actually charge: the agreed final price if there is one, else the quote. */
-export function amountDueFor(b: BookingRow): number {
-  return b.price_status === "agreed" && b.final_price != null ? b.final_price : b.quoted_price;
-}
+// What a booking owes lives in lib/money.ts — one source of truth shared with
+// the email layer, so the figure in an email can never drift from the charge.
+export { amountDueFor, isPaidInFull, isPartPaid, paidSoFar } from "./money";
 
 export async function saveBookingPaymentLink(
   id: string,
   linkId: string,
-  url: string
+  url: string,
+  amount: number
 ): Promise<void> {
-  await rest(`bookings?id=eq.${encodeURIComponent(id)}`, {
-    method: "PATCH",
-    body: JSON.stringify({ stripe_payment_link_id: linkId, stripe_payment_link_url: url }),
-  });
+  const base = { stripe_payment_link_id: linkId, stripe_payment_link_url: url };
+  try {
+    await rest(`bookings?id=eq.${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      body: JSON.stringify({ ...base, payment_link_amount: amount }),
+    });
+  } catch {
+    // payment_link_amount not migrated yet — the link still has to be saved,
+    // stale-detection just can't work until the column exists.
+    await rest(`bookings?id=eq.${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      body: JSON.stringify(base),
+    });
+  }
+}
+
+/** Forget the current link (it has been deactivated or superseded on Stripe). */
+export async function clearBookingPaymentLink(id: string): Promise<void> {
+  const base = { stripe_payment_link_id: null, stripe_payment_link_url: null };
+  try {
+    await rest(`bookings?id=eq.${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      body: JSON.stringify({ ...base, payment_link_amount: null }),
+    });
+  } catch {
+    await rest(`bookings?id=eq.${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      body: JSON.stringify(base),
+    });
+  }
 }
 
 export async function getBookingByReference(reference: string): Promise<BookingRow | null> {
   const rows = await rest<BookingRow[]>(
-    `bookings?reference=eq.${encodeURIComponent(reference)}&select=*`
+    `bookings?reference=eq.${encodeURIComponent(reference)}&select=*&limit=1`
+  );
+  return rows?.[0] ?? null;
+}
+
+/**
+ * The same person booking the same visit within minutes is a retry, not a new
+ * job — a network blip on the success response used to invite a duplicate
+ * booking, a duplicate Stripe link and a duplicate pair of emails.
+ */
+export async function findRecentDuplicateBooking(
+  email: string,
+  preferredDate: string,
+  minutes = 10
+): Promise<BookingRow | null> {
+  const since = new Date(Date.now() - minutes * 60_000).toISOString();
+  const rows = await rest<BookingRow[]>(
+    `bookings?customer_email=eq.${encodeURIComponent(email)}` +
+      `&preferred_date=eq.${encodeURIComponent(preferredDate)}` +
+      `&created_at=gt.${encodeURIComponent(since)}&status=eq.requested&select=*&limit=1`
+  );
+  return rows?.[0] ?? null;
+}
+
+export async function getBookingByPaymentIntent(paymentIntent: string): Promise<BookingRow | null> {
+  const rows = await rest<BookingRow[]>(
+    `bookings?stripe_payment_intent=eq.${encodeURIComponent(paymentIntent)}&select=*&limit=1`
   );
   return rows?.[0] ?? null;
 }
@@ -452,8 +510,9 @@ export async function getBookingByPaymentLink(linkId: string): Promise<BookingRo
 }
 
 /**
- * Records a settled payment. Only moves the booking to `paid` — never backwards —
- * and is safe to run twice, because Stripe retries webhooks.
+ * Records a settled payment on a FINISHED job. Moves the booking to `paid` —
+ * the terminal "work done, money in" state — and is safe to run twice, because
+ * Stripe retries webhooks. `amountPaid` is the running total, not this charge.
  */
 export async function markBookingPaid(
   id: string,
@@ -471,7 +530,61 @@ export async function markBookingPaid(
   });
 }
 
-/** Stamp the moment the payment link was emailed to the customer. */
+/**
+ * Records money arriving on a job that is NOT finished — pay-at-booking, mostly.
+ * Deliberately leaves `status` alone: a prepaid request still needs confirming,
+ * a prepaid confirmed job still needs cleaning. The money fact lives in
+ * `amount_paid`/`paid_at`; lib/money.ts reads it from there.
+ */
+export async function recordBookingPayment(
+  id: string,
+  paymentIntent: string,
+  amountPaid: number
+): Promise<void> {
+  await rest(`bookings?id=eq.${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: JSON.stringify({
+      stripe_payment_intent: paymentIntent,
+      amount_paid: amountPaid,
+      paid_at: new Date().toISOString(),
+    }),
+  });
+}
+
+/** A completed job whose money has fully arrived graduates to `paid`. */
+export async function finaliseBookingPaid(id: string): Promise<void> {
+  await rest(`bookings?id=eq.${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: JSON.stringify({ status: "paid" }),
+  });
+}
+
+/** Money went back. Best-effort on the columns (they land with the upgrades migration). */
+export async function recordBookingRefund(id: string, amount: number): Promise<void> {
+  await rest(`bookings?id=eq.${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: JSON.stringify({ refunded_at: new Date().toISOString(), refund_amount: amount }),
+  });
+}
+
+/**
+ * Webhook replay guard. True = first sighting, process it; false = seen before.
+ * Errs on the side of processing: if the table is missing (pre-migration) or
+ * unreachable, the handlers' own idempotency still holds.
+ */
+export async function recordStripeEvent(id: string, type: string): Promise<boolean> {
+  try {
+    const rows = await rest<{ id: string }[]>("stripe_events?on_conflict=id", {
+      method: "POST",
+      headers: { Prefer: "resolution=ignore-duplicates,return=representation" },
+      body: JSON.stringify({ id, type }),
+    });
+    return Array.isArray(rows) && rows.length > 0;
+  } catch {
+    return true;
+  }
+}
+
 /* ---------- the daily notify cron's queries ---------- */
 
 /** Confirmed cleans on `date` that have not had their day-before reminder. */
@@ -492,7 +605,10 @@ export async function listBookingsNeedingChase(days: number): Promise<BookingRow
   return (
     (await rest<BookingRow[]>(
       `bookings?status=eq.completed&stripe_payment_link_url=not.is.null` +
-        `&payment_link_sent_at=lt.${encodeURIComponent(cutoff)}&payment_chased_at=is.null&select=*`
+        `&payment_link_sent_at=lt.${encodeURIComponent(cutoff)}&payment_chased_at=is.null` +
+        // Belt and braces: money may have arrived without the status moving
+        // (a webhook hiccup) — never chase a customer whose payment landed.
+        `&paid_at=is.null&select=*`
     )) ?? []
   );
 }
@@ -567,6 +683,27 @@ export async function saveCustomerCard(
   await rest(`customers?id=eq.${encodeURIComponent(id)}`, {
     method: "PATCH",
     body: JSON.stringify({ ...fields, card_saved_at: new Date().toISOString() }),
+  });
+}
+
+/** Which customer holds this saved card — for Stripe's "card removed" webhook. */
+export async function getCustomerByPaymentMethod(pmId: string): Promise<CustomerRow | null> {
+  const rows = await rest<CustomerRow[]>(
+    `customers?stripe_payment_method_id=eq.${encodeURIComponent(pmId)}&select=*&limit=1`
+  );
+  return rows[0] ?? null;
+}
+
+/** The card is gone on Stripe's side — a stale handle here would decline forever. */
+export async function clearCustomerCard(id: string): Promise<void> {
+  await rest(`customers?id=eq.${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: JSON.stringify({
+      stripe_payment_method_id: null,
+      card_brand: null,
+      card_last4: null,
+      card_saved_at: null,
+    }),
   });
 }
 

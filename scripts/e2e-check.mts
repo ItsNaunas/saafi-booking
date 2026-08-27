@@ -186,7 +186,7 @@ try {
   check("Stripe payment link created", Boolean(link.url), link.url);
   check("link amount matches the quote", price.unit_amount === 7200, `${price.unit_amount}p`);
 
-  await saveBookingPaymentLink(row.id, link.id, link.url);
+  await saveBookingPaymentLink(row.id, link.id, link.url, 72);
   const [withLink] = await db(`bookings?id=eq.${row.id}&select=stripe_payment_link_id`);
   check("link id saved against the booking", withLink.stripe_payment_link_id === link.id);
 

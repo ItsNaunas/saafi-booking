@@ -12,7 +12,8 @@ import {
   type Frequency,
 } from "@/lib/pricing";
 import { loadPricingAndAddons } from "@/lib/pricingServer";
-import { isSlotBookable, toMinutes, toHHMM } from "@/lib/scheduling";
+import { isSlotBookable, isValidDate, londonWallClock, toMinutes, toHHMM } from "@/lib/scheduling";
+import { newReference } from "@/lib/reference";
 import {
   deepPrice,
   deepMinutes,
@@ -21,7 +22,12 @@ import {
   DEEP_EXTRAS,
   type DeepExtraKey,
 } from "@/lib/deepClean";
-import { listSchedulableCleaners, busyBlocksForDate, getBookingByReference } from "@/lib/supabaseAdmin";
+import {
+  listSchedulableCleaners,
+  busyBlocksForDate,
+  getBookingByReference,
+  findRecentDuplicateBooking,
+} from "@/lib/supabaseAdmin";
 import { raiseBookingPaymentLink } from "@/lib/paymentLink";
 import { sendBookingReceivedEmail, sendNewBookingAlertEmail } from "@/lib/email";
 import type { BookingRecord, BookingRequest } from "@/lib/types";
@@ -122,10 +128,31 @@ export async function POST(req: NextRequest) {
   const preferredDate = String(body.preferredDate ?? "").trim();
   const notes = String(body.notes ?? "").trim();
 
-  if (name.length < 2) return bad("Please tell us your name");
-  if (!/^\S+@\S+\.\S+$/.test(email)) return bad("Please enter a valid email");
-  if (phone.replace(/\D/g, "").length < 10) return bad("Please enter a valid phone number");
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(preferredDate)) return bad("Please pick a preferred date");
+  // Honeypot: a field no human ever sees. Bots that fill everything get a
+  // quiet success and cost us nothing — no row, no Stripe objects, no email.
+  if (String((body as Record<string, unknown>).website ?? "").trim() !== "") {
+    return NextResponse.json({ ok: true, reference: newReference(), payUrl: null });
+  }
+
+  if (name.length < 2 || name.length > 120) return bad("Please tell us your name");
+  if (!/^\S+@\S+\.\S+$/.test(email) || email.length > 200) return bad("Please enter a valid email");
+  if (phone.replace(/\D/g, "").length < 10 || phone.length > 30)
+    return bad("Please enter a valid phone number");
+  if (addressLine.length > 240) return bad("That address looks too long — just the first line is fine");
+  if (notes.length > 2000) return bad("Those notes are a bit long — keep it under 2000 characters");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(preferredDate) || !isValidDate(preferredDate))
+    return bad("Please pick a preferred date");
+
+  // Past and far-future dates used to sail through when no time was picked —
+  // the regex was the only server-side check on the untimed path.
+  {
+    const { date: today } = londonWallClock(new Date());
+    if (preferredDate < today) return bad("That date has already been — please pick a new one");
+    const horizon = new Date(`${today}T12:00:00Z`);
+    horizon.setUTCDate(horizon.getUTCDate() + cfg.scheduling.maxDaysAhead);
+    if (preferredDate > horizon.toISOString().slice(0, 10))
+      return bad(`We only take bookings up to ${cfg.scheduling.maxDaysAhead} days ahead`);
+  }
 
   // The booking's real length: the clean plus whatever the extras add.
   const jobHours = hours + extrasHours;
@@ -135,6 +162,10 @@ export async function POST(req: NextRequest) {
   // unscheduled and SAAFI slot it by phone, exactly as they did before.
   const rawTime = String(body.startTime ?? "").trim();
   let startTime: string | null = null;
+  // True when the customer picked a time we could not honour (the availability
+  // re-check failed) — the success screen says so instead of silently
+  // vanishing the time they chose.
+  let timeDropped = false;
   if (rawTime) {
     const mins = toMinutes(rawTime);
     if (mins === null) return bad("That start time doesn't look right");
@@ -163,6 +194,7 @@ export async function POST(req: NextRequest) {
       // Availability is a nicety; losing the booking is not. Take it unscheduled.
       console.error("[bookings] slot re-check failed, accepting as unscheduled:", e);
       startTime = null;
+      timeDropped = true;
     }
   }
 
@@ -196,6 +228,23 @@ export async function POST(req: NextRequest) {
     status: "requested",
     createdAt: new Date().toISOString(),
   };
+
+  // A retry of a submit that actually landed (network blip on the response)
+  // must return the booking that exists, not mint a twin.
+  try {
+    const dupe = await findRecentDuplicateBooking(email, preferredDate);
+    if (dupe && Number(dupe.hours) === record.hours + record.addonsHours) {
+      return NextResponse.json({
+        ok: true,
+        quotedPrice: Number(dupe.quoted_price),
+        reference: dupe.reference,
+        payUrl: dupe.stripe_payment_link_url ?? null,
+        duplicate: true,
+      });
+    }
+  } catch {
+    // Dedupe is a nicety; the booking still goes through without it.
+  }
 
   const stored = await storeBooking(record);
   if (!stored.ok) return bad("Something went wrong saving your booking — please call us instead", 500);
@@ -248,7 +297,13 @@ export async function POST(req: NextRequest) {
     payUrl,
   }).catch((e) => console.error("[bookings] customer receipt failed:", e));
 
-  return NextResponse.json({ ok: true, quotedPrice, reference: stored.reference, payUrl });
+  return NextResponse.json({
+    ok: true,
+    quotedPrice,
+    reference: stored.reference,
+    payUrl,
+    timeDropped,
+  });
 }
 
 /** Supabase (PostgREST) when configured; local JSONL fallback for dev. */
@@ -258,8 +313,11 @@ async function storeBooking(
   const url = process.env.SUPABASE_URL;
   // Prefer the service key; fall back to the publishable key, which can ONLY
   // insert bookings via the insert-only RLS policy (no reads) — fine for Phase 1.
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_PUBLISHABLE_KEY;
-  const reference = `SAAFI-${Date.now().toString(36).toUpperCase()}`;
+  const key =
+    process.env.SUPABASE_SECRET_KEY ||
+    process.env.SUPABASE_SERVICE_ROLE_KEY ||
+    process.env.SUPABASE_PUBLISHABLE_KEY;
+  const reference = newReference();
 
   if (url && key) {
     try {
@@ -306,20 +364,19 @@ async function storeBooking(
       });
       if (res.ok) return { ok: true, reference };
       console.error("[bookings] supabase insert failed:", res.status, await res.text());
-      // A deep booking that Supabase rejected (most likely: the 2026-08-27
-      // migration hasn't run, so service_type is an unknown column) must NOT
-      // drop to the local file — on serverless that file is ephemeral, which
-      // is a success screen for a booking nobody will ever see. Standard
-      // bookings keep the fallback they have always had.
-      if (record.serviceType === "deep") return { ok: false, reference };
+      // On serverless the local file is ephemeral: falling back there returns
+      // a success screen, a reference and a confirmation email for a booking
+      // nobody will ever see. Every service type fails loudly in production —
+      // "please call us" is honest, a vanished booking is not.
+      if (inProduction()) return { ok: false, reference };
     } catch (e) {
-      // Network down / DNS dead — fall through to the local file so the booking isn't lost.
-      console.error("[bookings] supabase unreachable, using local fallback:", e);
-      if (record.serviceType === "deep") return { ok: false, reference };
+      console.error("[bookings] supabase unreachable:", e);
+      if (inProduction()) return { ok: false, reference };
     }
   }
 
-  // Fallback: append to .data/bookings.local.jsonl (Supabase unset OR unreachable).
+  // Dev-only fallback: append to .data/bookings.local.jsonl so local hacking
+  // works without a database. Never reached in production (see above).
   try {
     const dir = path.join(process.cwd(), ".data");
     await mkdir(dir, { recursive: true });
@@ -336,4 +393,7 @@ async function storeBooking(
   }
 }
 
-/** Instant alert to the business — Resend when configured, no-op otherwise. */
+/** Vercel or any NODE_ENV=production build — where the JSONL fallback lies. */
+function inProduction(): boolean {
+  return Boolean(process.env.VERCEL) || process.env.NODE_ENV === "production";
+}

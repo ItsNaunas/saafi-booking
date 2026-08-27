@@ -3,6 +3,8 @@ import {
   getBooking,
   listAdjustmentsForBooking,
   amountDueFor,
+  isPaidInFull,
+  paidSoFar,
   busyBlocksForDate,
   getCustomer,
   type AdjustmentRow,
@@ -17,6 +19,7 @@ import {
   setBookingStatus,
   sendCardSetupLink,
   chargeCardNow,
+  refundBooking,
 } from "@/app/admin/actions";
 import { stripeConfigured, stripeIsTestMode } from "@/lib/stripe";
 import { FREQUENCY_LABEL, formatGBP } from "@/lib/pricing";
@@ -31,7 +34,14 @@ export default async function BookingDetailPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ sent?: string; why?: string; card?: string; url?: string; saved?: string }>;
+  searchParams: Promise<{
+    sent?: string;
+    why?: string;
+    card?: string;
+    url?: string;
+    saved?: string;
+    refund?: string;
+  }>;
 }) {
   const [{ id }, sendResult] = await Promise.all([params, searchParams]);
   const cardResult = sendResult;
@@ -64,7 +74,40 @@ export default async function BookingDetailPage({
       <p className="mb-4 text-sm text-slate-500">
         {b.reference} · status <b>{b.status}</b> · {FREQUENCY_LABEL[b.frequency]}
         {b.frequency !== "one_off" && !b.recurring_active && " (recurring stopped)"}
+        {b.status !== "paid" && isPaidInFull(b) && (
+          <span className="ml-2 bg-brand-100 px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide text-brand-800">
+            paid up front
+          </span>
+        )}
+        {b.refunded_at && (
+          <span className="ml-2 bg-slate-200 px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide text-slate-700">
+            refunded
+          </span>
+        )}
       </p>
+
+      {sendResult.refund === "needed" && (
+        <div className="mb-4 bg-amber-50 p-4 text-sm ring-1 ring-amber-300">
+          <p className="font-semibold text-amber-900">
+            This booking is paid — cancelling it means giving the money back.
+          </p>
+          <p className="mt-1 text-amber-800">
+            Use the refund button in the payment section below: it refunds{" "}
+            {formatGBP(paidSoFar(b))} to their card, cancels the visit, and tells the customer
+            what happened, in one go.
+          </p>
+        </div>
+      )}
+      {sendResult.refund === "done" && (
+        <div className="mb-4 bg-brand-50 p-4 text-sm font-medium text-brand-800 ring-1 ring-brand-200">
+          Refund issued — the money is on its way back to their card.
+        </div>
+      )}
+      {sendResult.refund === "fail" && (
+        <div className="mb-4 bg-red-50 p-4 text-sm font-medium text-red-700 ring-1 ring-red-200">
+          Refund didn&apos;t go through — {sendResult.why || "unknown problem"}.
+        </div>
+      )}
 
       {b.status === "no_access" && b.outcome_reason && (
         <div className="mb-4 bg-rose-50 p-5 text-sm ring-1 ring-rose-200">
@@ -195,16 +238,40 @@ export default async function BookingDetailPage({
           )}
         </div>
 
-        {b.status === "paid" ? (
-          <p className="bg-brand-50 px-3 py-2 text-brand-800 ring-1 ring-brand-200">
-            <b>Paid{b.amount_paid != null && ` — ${formatGBP(b.amount_paid)}`}</b>
-            {b.paid_at && (
-              <span className="text-brand-700">
-                {" "}
-                on {new Date(b.paid_at).toLocaleDateString("en-GB")}
-              </span>
+        {b.status === "paid" || isPaidInFull(b) ? (
+          <>
+            <p className="bg-brand-50 px-3 py-2 text-brand-800 ring-1 ring-brand-200">
+              <b>Paid{b.amount_paid != null && ` — ${formatGBP(b.amount_paid)}`}</b>
+              {b.paid_at && (
+                <span className="text-brand-700">
+                  {" "}
+                  on {new Date(b.paid_at).toLocaleDateString("en-GB")}
+                </span>
+              )}
+              {b.status !== "paid" && (
+                <span className="text-brand-700"> — before the clean; the visit still runs.</span>
+              )}
+            </p>
+            {b.refunded_at ? (
+              <p className="mt-2 text-xs text-slate-500">
+                Refunded{b.refund_amount != null && ` ${formatGBP(b.refund_amount)}`} on{" "}
+                {new Date(b.refunded_at).toLocaleDateString("en-GB")}.
+              </p>
+            ) : (
+              b.stripe_payment_intent &&
+              stripeConfigured() && (
+                <form action={refundBooking} className="mt-3">
+                  <input type="hidden" name="id" value={b.id} />
+                  <button className="border border-red-300 bg-white px-4 py-2 text-xs font-semibold text-red-700 transition hover:bg-red-50">
+                    Refund {formatGBP(paidSoFar(b))}
+                    {["requested", "confirmed", "no_access"].includes(b.status)
+                      ? " and cancel the visit"
+                      : ""}
+                  </button>
+                </form>
+              )
             )}
-          </p>
+          </>
         ) : !stripeConfigured() ? (
           <p className="text-slate-500">
             Stripe isn&apos;t configured on this environment, so payment links can&apos;t be

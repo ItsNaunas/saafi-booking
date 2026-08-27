@@ -21,12 +21,14 @@ import {
   getAdjustment,
   setAdjustmentStatus,
   amountDueFor,
-  saveBookingPaymentLink,
+  isPaidInFull,
+  paidSoFar,
+  recordBookingRefund,
   markPaymentLinkSent,
   type BookingStatus,
   type BookingRow,
 } from "@/lib/supabaseAdmin";
-import { getStripe, toPence, siteUrl } from "@/lib/stripe";
+import { getStripe } from "@/lib/stripe";
 import {
   sendConfirmationEmail,
   sendAdjustmentEmail,
@@ -36,9 +38,12 @@ import {
   sendBookingCancelledEmail,
   sendBookingChangedEmail,
   sendCleanerJobChangedEmail,
-  sendCleanCompletedEmail,
 } from "@/lib/email";
-import { raiseBookingPaymentLink } from "@/lib/paymentLink";
+import {
+  raiseBookingPaymentLink,
+  deactivatePaymentLink,
+  autoInvoiceIfUnpaid,
+} from "@/lib/paymentLink";
 import { invalidatePricingCache, loadPricingConfig } from "@/lib/pricingServer";
 import { quotePrice, type Frequency } from "@/lib/pricing";
 import { newReference, spawnNextOccurrence, ensureSeriesHorizon } from "@/lib/recurring";
@@ -49,7 +54,10 @@ const ALLOWED: Record<BookingStatus, BookingStatus[]> = {
   requested: ["confirmed", "cancelled"],
   confirmed: ["completed", "cancelled", "no_access"],
   completed: ["paid"],
-  paid: [],
+  // Escape hatch for a booking that reached `paid` while the work was still
+  // outstanding (the pre-2026-08-28 webhook did this to every prepaid
+  // booking): push it back into the flow. Its money survives in amount_paid.
+  paid: ["confirmed"],
   cancelled: ["requested"], // allow re-opening a cancelled request
   // A wasted journey is unresolved, not finished. The office decides which it
   // becomes: cancelled and nobody pays, or completed and something is charged.
@@ -61,6 +69,17 @@ export async function setBookingStatus(formData: FormData) {
   const from = String(formData.get("from") ?? "") as BookingStatus;
   const to = String(formData.get("to") ?? "") as BookingStatus;
   if (!id || !ALLOWED[from]?.includes(to)) return;
+
+  // Cancelling a booking whose money is already in is a refund decision, not a
+  // status change. The cancellation email used to promise "nothing further is
+  // charged" to someone we were keeping £70 of — route through the refund
+  // button instead, which does both honestly.
+  if (to === "cancelled") {
+    const current = await getBooking(id);
+    if (current && isPaidInFull(current) && !current.refunded_at) {
+      redirect(`/admin/booking/${id}?refund=needed`);
+    }
+  }
 
   const updated = await updateBookingStatus(id, to);
 
@@ -82,6 +101,8 @@ export async function setBookingStatus(formData: FormData) {
     await sendBookingCancelledEmail(updated).catch((e) =>
       console.error("[admin] cancellation email failed:", e)
     );
+    // A live payable link for a clean that won't happen stays payable forever.
+    await deactivatePaymentLink(updated).catch(() => {});
     if (updated.cleaner_id) {
       const cleaner = (await listCleaners()).find((c) => c.id === updated.cleaner_id);
       if (cleaner) {
@@ -441,49 +462,86 @@ export async function rejectAdjustment(formData: FormData) {
 
 /**
  * Raises a Stripe Payment Link for a booking so the admin can send it to the
- * customer. Reuses an existing link rather than creating a second one for the
- * same job — two live links for one clean is how you get paid twice.
+ * customer. One shared implementation with the pay-at-booking flow and the
+ * auto-invoice (lib/paymentLink): it reuses a live link while the amount still
+ * matches, and replaces a stale one — the two copies of this logic used to
+ * have different failure behaviour on exactly the money path.
  */
 export async function createPaymentLink(formData: FormData) {
   const id = String(formData.get("id") ?? "");
   if (!id) return;
 
   const booking = await getBooking(id);
+  if (!booking || booking.status === "paid") return;
+
+  await raiseBookingPaymentLink(booking);
+  revalidatePath(`/admin/booking/${booking.id}`);
+  revalidatePath("/admin");
+}
+
+/**
+ * Give the money back, and cancel the visit if it hasn't happened yet.
+ *
+ * Refunds the full amount taken via Stripe. The `charge.refunded` webhook and
+ * the direct write below both record it — whichever lands first wins, the
+ * other is idempotent noise.
+ */
+export async function refundBooking(formData: FormData) {
+  const id = String(formData.get("id") ?? "");
+  if (!id) return;
+
+  const booking = await getBooking(id);
   if (!booking) return;
 
-  // Already has one, or already settled — nothing to do.
-  if (booking.stripe_payment_link_url || booking.status === "paid") return;
+  const paid = paidSoFar(booking);
+  if (!booking.stripe_payment_intent || paid <= 0 || booking.refunded_at) {
+    redirect(`/admin/booking/${id}?refund=fail&why=${encodeURIComponent("nothing to refund")}`);
+  }
 
   const stripe = getStripe();
   if (!stripe) {
-    console.error("[stripe] createPaymentLink called but STRIPE_SECRET_KEY is missing");
-    return;
+    redirect(`/admin/booking/${id}?refund=fail&why=${encodeURIComponent("Stripe isn't configured")}`);
   }
 
-  const amount = amountDueFor(booking);
-  if (!(amount > 0)) {
-    console.error(`[stripe] refusing to raise a link for ${booking.reference}: amount is ${amount}`);
-    return;
+  let failure: string | null = null;
+  try {
+    await stripe!.refunds.create(
+      { payment_intent: booking.stripe_payment_intent! },
+      // A double-click must not refund twice.
+      { idempotencyKey: `saafi-refund-${booking.id}` }
+    );
+  } catch (e) {
+    failure = (e as Error).message ?? "the refund could not be created";
+  }
+  if (failure) {
+    redirect(`/admin/booking/${id}?refund=fail&why=${encodeURIComponent(failure)}`);
   }
 
-  const price = await stripe.prices.create({
-    currency: "gbp",
-    unit_amount: toPence(amount),
-    product_data: { name: `Clean on ${booking.preferred_date} — ${booking.reference}` },
-  });
+  await recordBookingRefund(booking.id, paid).catch((e) =>
+    // The charge.refunded webhook records it as well; this is just the fast path.
+    console.error("[admin] refund made but not recorded locally:", e)
+  );
 
-  const link = await stripe.paymentLinks.create({
-    line_items: [{ price: price.id, quantity: 1 }],
-    metadata: { booking_id: booking.id, reference: booking.reference },
-    after_completion: {
-      type: "redirect",
-      redirect: { url: `${siteUrl()}/paid?ref=${encodeURIComponent(booking.reference)}` },
-    },
-  });
+  // A refunded future visit is a cancelled visit. A refunded finished job
+  // keeps its status — the money story is told by refunded_at.
+  if (["requested", "confirmed", "no_access"].includes(booking.status)) {
+    const updated = await updateBookingStatus(id, "cancelled");
+    const b = updated ?? booking;
+    await deactivatePaymentLink(b).catch(() => {});
+    await sendBookingCancelledEmail(b, { refundedAmount: paid }).catch((e) =>
+      console.error("[admin] refund cancellation email failed:", e)
+    );
+    if (b.cleaner_id) {
+      const cleaner = (await listCleaners()).find((c) => c.id === b.cleaner_id);
+      if (cleaner) {
+        await sendCleanerJobChangedEmail(cleaner, b, "cancelled").catch(() => {});
+      }
+    }
+  }
 
-  await saveBookingPaymentLink(booking.id, link.id, link.url);
-  revalidatePath(`/admin/booking/${booking.id}`);
   revalidatePath("/admin");
+  revalidatePath(`/admin/booking/${id}`);
+  redirect(`/admin/booking/${id}?refund=done`);
 }
 
 /* ---------- scheduling ---------- */
@@ -523,7 +581,12 @@ export async function emailPaymentLink(formData: FormData) {
   if (!booking) return;
   if (booking.status === "paid") redirect(`/admin/booking/${id}?sent=already-paid`);
 
-  const result = await sendPaymentLinkEmail(booking, amountDueFor(booking));
+  // Make sure what goes out matches what Stripe will charge: a repriced job
+  // gets its stale link replaced here rather than emailed as-is.
+  await raiseBookingPaymentLink(booking).catch(() => null);
+  const fresh = (await getBooking(id)) ?? booking;
+
+  const result = await sendPaymentLinkEmail(fresh, amountDueFor(fresh));
   if (!result.ok) {
     redirect(`/admin/booking/${id}?sent=fail&why=${encodeURIComponent(result.reason ?? "")}`);
   }
@@ -555,19 +618,7 @@ async function settle(booking: BookingRow) {
   // where a completed job sat unbilled until somebody pressed the button.
   // Failures stay silent — the admin's manual send button still exists.
   if (!result.ok) {
-    try {
-      const fresh = await getBooking(booking.id);
-      if (fresh && fresh.status === "completed" && fresh.price_status !== "pending") {
-        const amount = amountDueFor(fresh);
-        const url = amount > 0 ? await raiseBookingPaymentLink(fresh) : null;
-        if (url) {
-          await sendCleanCompletedEmail(fresh, amount, url);
-          await markPaymentLinkSent(fresh.id).catch(() => {});
-        }
-      }
-    } catch (e) {
-      console.error(`[admin] auto-invoice for ${booking.reference} failed:`, e);
-    }
+    await autoInvoiceIfUnpaid(booking.id);
   }
 
   revalidatePath(`/admin/booking/${booking.id}`);

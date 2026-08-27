@@ -23,9 +23,12 @@ import type Stripe from "stripe";
 import { getStripe, toPence, siteUrl } from "./stripe";
 import {
   amountDueFor,
+  isPaidInFull,
+  paidSoFar,
   getCustomer,
   getCustomerByEmail,
   markBookingPaid,
+  finaliseBookingPaid,
   recordChargeAttempt,
   type BookingRow,
   type CustomerRow,
@@ -169,6 +172,16 @@ export async function settleBookingWithSavedCard(
   if (booking.price_status === "pending") {
     return { ok: false, reason: "waiting on the owner to agree the price" };
   }
+  // Prepaid (pay-at-booking) jobs owe nothing by the time the cleaner finishes.
+  // That is not a failure to route to a payment link — it is the job graduating.
+  if (amountDueFor(booking) <= 0) {
+    if (booking.status === "completed" && isPaidInFull(booking)) {
+      await finaliseBookingPaid(booking.id).catch((e) =>
+        console.error("[card] could not finalise a prepaid booking as paid:", e)
+      );
+    }
+    return { ok: false, reason: "nothing left to charge" };
+  }
 
   const customer = booking.customer_id
     ? await getCustomer(booking.customer_id).catch(() => null)
@@ -180,11 +193,25 @@ export async function settleBookingWithSavedCard(
   const result = await chargeSavedCard(booking, card);
 
   if (result.ok) {
-    await markBookingPaid(booking.id, result.paymentIntentId, result.amount).catch((e) =>
-      // The money is taken. Failing to record that is bad, but it is a
-      // reconciliation problem, not a reason to pretend the charge failed.
-      console.error("[card] charged but could not mark paid:", e)
-    );
+    // amount_paid stores the running total: a prepaid deposit plus a charged
+    // remainder must add up, not overwrite each other.
+    const total = Math.round((paidSoFar(booking) + result.amount) * 100) / 100;
+    await markBookingPaid(booking.id, result.paymentIntentId, total).catch(async (e) => {
+      // The money is taken and the database doesn't know. This is the most
+      // expensive silent failure in the system — the customer would be chased
+      // for money already paid — so the office hears about it immediately.
+      console.error("[card] charged but could not mark paid:", e);
+      const { sendOpsAlertEmail } = await import("./email");
+      await sendOpsAlertEmail({
+        subject: `⚠ Charged but not recorded — ${booking.reference}`,
+        heading: "A card charge went through but the booking could not be marked paid",
+        lines: [
+          `${booking.customer_name}'s card was charged £${result.amount} for ${booking.reference}, but writing that to the booking failed.`,
+          "Do not chase this customer for payment. Mark the booking paid by hand, or the reconciliation sweep will repair it overnight.",
+          `Stripe payment: ${result.paymentIntentId}`,
+        ],
+      }).catch(() => {});
+    });
     await recordChargeAttempt(booking.id, null).catch(() => {});
   } else {
     await recordChargeAttempt(booking.id, result.reason).catch(() => {});

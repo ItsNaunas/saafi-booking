@@ -19,16 +19,15 @@
 
 import { FREQUENCY_DAYS, type Frequency } from "./pricing";
 import { insertBooking, listSeriesBookings, type BookingRow } from "./supabaseAdmin";
+import { newReference } from "./reference";
+
+export { newReference };
 
 /** How far ahead a series is kept booked. */
 export const HORIZON_DAYS = 56;
 
 /** Never create more than this in one go, whatever the arithmetic says. */
 const MAX_PER_RUN = 12;
-
-export function newReference(): string {
-  return `SAAFI-${Date.now().toString(36).toUpperCase()}`;
-}
 
 function addDays(date: string, days: number): string {
   const d = new Date(`${date}T00:00:00Z`);

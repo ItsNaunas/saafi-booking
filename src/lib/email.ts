@@ -11,6 +11,7 @@
 // styles, system fonts, no external assets. Square corners, per the site.
 
 import type { BookingRow } from "./supabaseAdmin";
+import { agreedPriceFor, paidSoFar } from "./money";
 import { secret } from "./env";
 import { formatTimeRange } from "@/lib/scheduling";
 import { chargeableJourney, outcomeLabel, type OutcomeReason } from "./outcomes";
@@ -559,7 +560,11 @@ export async function sendCardSetupEmail(
  * used to find out when nobody turned up — the exact failure this email layer
  * exists to prevent.
  */
-export async function sendBookingCancelledEmail(booking: BookingRow): Promise<void> {
+export async function sendBookingCancelledEmail(
+  booking: BookingRow,
+  opts?: { refundedAmount?: number },
+): Promise<void> {
+  const paid = paidSoFar(booking);
   await send({
     to: booking.customer_email,
     subject: `Your clean on ${booking.preferred_date} is cancelled (${booking.reference})`,
@@ -568,9 +573,16 @@ export async function sendBookingCancelledEmail(booking: BookingRow): Promise<vo
     rows: [
       ["Was booked for", whenLine(booking)],
       ["Where", `${booking.address_line}, ${booking.postcode}`],
+      opts?.refundedAmount != null && ["Refunded", `£${opts.refundedAmount}`],
     ],
     outro: [
-      "Nothing further is charged for this visit.",
+      // The old fixed line here said "nothing further is charged" to customers
+      // who had already paid — which read as a lie. Say what is actually true.
+      opts?.refundedAmount != null
+        ? "Your payment has been refunded to the card you paid with — it usually appears within 5 to 10 working days."
+        : paid > 0
+          ? `You've paid £${paid} for this visit — we'll be in touch about your refund.`
+          : "Nothing further is charged for this visit.",
       "If this wasn't what you expected, or you'd like to rebook, just reply to this email or give us a call.",
     ],
     reference: booking.reference,
@@ -595,7 +607,8 @@ export async function sendBookingChangedEmail(
       ["Now", whenLine(booking)],
       ["Where", `${booking.address_line}, ${booking.postcode}`],
       ["Duration", `${booking.hours} hours`],
-      ["Price", `£${amountDue(booking)}`],
+      ["Price", `£${agreedPriceFor(booking)}`],
+      paidSoFar(booking) > 0 && ["Already paid", `£${paidSoFar(booking)}`],
       ...changes,
     ],
     outro: ["If any of this doesn't match what we agreed, reply to this email and we'll sort it."],
@@ -603,11 +616,6 @@ export async function sendBookingChangedEmail(
   }).catch(() => {});
 }
 
-/** quoted unless an adjusted figure has been agreed — mirror of amountDueFor
- *  without importing the admin module into every email bundle. */
-function amountDue(b: BookingRow): number {
-  return b.price_status === "agreed" && b.final_price != null ? b.final_price : b.quoted_price;
-}
 
 /**
  * A cleaner's job moved, was cancelled, or went to someone else. The
@@ -810,11 +818,15 @@ export async function sendCronReportEmail(opts: {
   reminders: number;
   chases: number;
   daySheets: number;
+  /** Bookings the Stripe sweep found paid on Stripe but not marked here. */
+  reconciled?: number;
   errors: string[];
 }): Promise<void> {
+  const reconciled = opts.reconciled ?? 0;
   // Quiet days stay quiet: a daily "0/0/0 all fine" trains people to delete
   // the report unread. Send only when something happened or something broke.
-  if (opts.reminders + opts.chases + opts.daySheets === 0 && opts.errors.length === 0) return;
+  if (opts.reminders + opts.chases + opts.daySheets + reconciled === 0 && opts.errors.length === 0)
+    return;
   await send({
     to: officeAddress(),
     subject: opts.errors.length
@@ -825,7 +837,28 @@ export async function sendCronReportEmail(opts: {
       ["Day-before reminders", String(opts.reminders)],
       ["Payment nudges", String(opts.chases)],
       ["Cleaner day-sheets", String(opts.daySheets)],
+      reconciled > 0 && ["Payments repaired", String(reconciled)],
       ...opts.errors.map((e, i): Row => [`Problem ${i + 1}`, e]),
     ],
+  }).catch(() => {});
+}
+
+/**
+ * Something on the money path needs a human. Unlike every other email in this
+ * file these are never decorative — they only fire when acting on them matters
+ * (a charge that couldn't be recorded, a chargeback, a card that vanished).
+ */
+export async function sendOpsAlertEmail(opts: {
+  subject: string;
+  heading: string;
+  lines: string[];
+  rows?: Row[];
+}): Promise<void> {
+  await send({
+    to: officeAddress(),
+    subject: opts.subject,
+    heading: opts.heading,
+    intro: opts.lines,
+    rows: opts.rows,
   }).catch(() => {});
 }
