@@ -292,9 +292,16 @@ async function storeBooking(
       });
       if (res.ok) return { ok: true, reference };
       console.error("[bookings] supabase insert failed:", res.status, await res.text());
+      // A deep booking that Supabase rejected (most likely: the 2026-08-27
+      // migration hasn't run, so service_type is an unknown column) must NOT
+      // drop to the local file — on serverless that file is ephemeral, which
+      // is a success screen for a booking nobody will ever see. Standard
+      // bookings keep the fallback they have always had.
+      if (record.serviceType === "deep") return { ok: false, reference };
     } catch (e) {
       // Network down / DNS dead — fall through to the local file so the booking isn't lost.
       console.error("[bookings] supabase unreachable, using local fallback:", e);
+      if (record.serviceType === "deep") return { ok: false, reference };
     }
   }
 
