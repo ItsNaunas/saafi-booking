@@ -1,8 +1,19 @@
 # PROGRESS — SAAFI Booking CRM
 
-*Updated: 2026-08-24 (scheduling: bookings now have a time; landing page content audit; repriced)*
+*Updated: 2026-08-28 (full functionality audit + fixes: money path, self-serve, hardening)*
 
-**State: Phases 1 + 2 + Tier A LIVE at https://saafi-booking.vercel.app.**
+**State: LIVE at https://saaficleaningservice.com.**
+
+**2026-08-28 — the audit sweep: every "broken today" finding fixed in one day.** (commits f9f0ca2, 3e646f2, d70c4b2)
+- **Money and workflow decoupled** (`src/lib/money.ts` is the single source of what a booking owes). Pay-at-booking no longer freezes a booking at a terminal `paid` — money rides in `amount_paid`/`paid_at`, the booking keeps flowing, and a completed job graduates to `paid` when the money covers it. `ALLOWED.paid → confirmed` is the escape hatch for old stuck rows.
+- **Stale payment links die**: the raiser records the amount each link was priced at, deactivates and re-raises on any change; links are also killed on cancel and after payment. `createPaymentLink`/auto-invoice/cleaner-finish all share one implementation now.
+- **Refunds exist**: admin button (full refund → cancel future visits → honest email), `charge.refunded`/`charge.dispute.created`/`payment_method.detached` webhook branches, `stripe_events` replay log, part-payment alerts. Cancelling a paid booking routes through the refund.
+- **Nightly Stripe reconciliation** in the daily cron repairs any booking paid on Stripe but unmarked here; cron has `maxDuration 300` and reports from a `finally`.
+- **Bookings API hardened**: production failures are loud (JSONL fallback is dev-only now), random reference tails, server-side London-clock date validation, 10-minute dedupe on retries, honeypot, length caps.
+- **Customer self-serve at `/b/[reference]`** (signed HMAC links in every booking email): view, pay what's due, .ics download, reschedule request, self-serve cancel when >1 day out and unpaid.
+- **Visibility**: no_access banner on the pipeline + calendar legend + cleaner receipt; cleaner "Still open" section for past-date confirmed jobs; reports revenue = `amount_paid` net of refunds; manual bookings send confirmation + spawn series + support deep/rooms; PAID chip on prepaid cards.
+- **Migration to paste: `supabase/2026-08-28-upgrades.sql`** (supersedes `2026-08-28-daily-notify.sql`; includes its columns). Until pasted, the cron's reminders/chases sections 42703 every morning and stale-link detection is inert.
+- Still deliberately open (features, not fixes): multi-cleaner crews for deep cleans, cleaner time-off, day/week dispatch view, pipeline filters, audit trail, customer detail page, photo evidence, Sentry, email outbox/retry.
 
 **2026-08-24 — scheduling: a booking is now a time, not just a date.** (branch `feat/scheduling`)
 - `bookings.preferred_date` was a bare date, so nothing knew *when* a clean started. No arrival time for the customer, no order to a cleaner's day, and nothing stopping two jobs landing on one person at the same hour. The quote form was a request form wearing a booking system's clothes.
