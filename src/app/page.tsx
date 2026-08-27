@@ -37,7 +37,7 @@ import { deepPrice } from "@/lib/deepClean";
 export const metadata: Metadata = {
   title: "SAAFI Cleaning Service — home cleaning with an honest hourly price",
   description:
-    "Family-run home cleaning. See your price online in under a minute — clear hourly rates, no hidden extras, nothing to pay upfront.",
+    "Family-run home cleaning. See your price online in under a minute — clear hourly rates, no hidden extras, and pay securely online when you book.",
 };
 
 export const dynamic = "force-dynamic";

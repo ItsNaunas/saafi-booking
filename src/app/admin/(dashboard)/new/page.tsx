@@ -23,6 +23,18 @@ export default async function NewBookingPage({
           <Field label="Email" name="email" type="email" hint="optional" />
           <Field label="Postcode" name="postcode" />
           <Field label="Address line" name="address_line" className="sm:col-span-2" />
+          <Field label="Bedrooms" name="bedrooms" type="number" hint="optional" />
+          <Field label="Bathrooms" name="bathrooms" type="number" hint="optional" />
+          <label className="block">
+            <span className="mb-1 block text-sm font-medium text-slate-700">Service</span>
+            <select
+              name="service_type"
+              className="w-full border border-slate-300 px-3 py-2 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-200"
+            >
+              <option value="standard">Standard clean</option>
+              <option value="deep">Deep clean</option>
+            </select>
+          </label>
           <Field label="Date *" name="preferred_date" type="date" />
           <Field label="Start time" name="start_time" type="time" step="900" hint="optional" />
           {/* Hours, frequency and price live in one client component so the

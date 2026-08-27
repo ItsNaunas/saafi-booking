@@ -121,6 +121,9 @@ export async function setBookingStatus(formData: FormData) {
   }
   revalidatePath("/admin");
   revalidatePath("/admin/calendar");
+  // The no_access resolve buttons live on the booking page itself — leaving it
+  // stale made a successful click look like nothing happened.
+  revalidatePath(`/admin/booking/${id}`);
 }
 
 export async function stopRecurring(formData: FormData) {
@@ -128,6 +131,8 @@ export async function stopRecurring(formData: FormData) {
   if (!id) return;
   await updateBooking(id, { recurring_active: false });
   revalidatePath("/admin");
+  revalidatePath("/admin/calendar");
+  revalidatePath(`/admin/booking/${id}`);
 }
 
 export async function assignCleaner(formData: FormData) {
@@ -161,6 +166,7 @@ export async function assignCleaner(formData: FormData) {
 
   revalidatePath("/admin");
   revalidatePath("/admin/calendar");
+  revalidatePath(`/admin/booking/${id}`);
 }
 
 export async function addCleaner(formData: FormData) {
@@ -207,19 +213,28 @@ export async function createManualBooking(formData: FormData) {
     price = quotePrice(hours, true, cfg, frequency);
   }
 
-  await insertBooking({
+  const rooms = (k: string) => {
+    const v = Number(get(k));
+    return Number.isInteger(v) && v >= 0 && v <= 20 ? v : 0;
+  };
+  const serviceType = get("service_type") === "deep" ? ("deep" as const) : ("standard" as const);
+
+  const row = await insertBooking({
     reference: newReference(),
     customer_name: name,
+    // No email on a phone booking gets the @phone.saafi sentinel: the send()
+    // gate refuses it and the customers trigger skips it, so it costs nothing.
     customer_email: get("email") || `${phone.replace(/\D/g, "")}@phone.saafi`,
     customer_phone: phone,
     address_line: get("address_line") || "—",
     postcode: get("postcode").toUpperCase().replace(/\s+/g, "") || "—",
-    bedrooms: 0,
-    bathrooms: 0,
+    bedrooms: rooms("bedrooms"),
+    bathrooms: rooms("bathrooms"),
     dining_rooms: 0,
     living_rooms: 0,
     hours,
     customer_provides_products: true,
+    ...(serviceType === "deep" ? { service_type: serviceType } : {}),
     frequency,
     quoted_price: price,
     preferred_date: preferredDate,
@@ -227,6 +242,19 @@ export async function createManualBooking(formData: FormData) {
     notes: get("notes") || null,
     status: "confirmed", // phone bookings arrive pre-agreed
   });
+
+  // A phone booking is still a booking: the same confirmation email (a no-op
+  // when there's no real address) and the same series top-up as the public
+  // path. Before this, a manual weekly booking existed as exactly one visit
+  // and the customer heard nothing in writing.
+  if (row) {
+    await sendConfirmationEmail(row).catch((e) =>
+      console.error("[admin] manual booking confirmation failed:", e)
+    );
+    await ensureSeriesHorizon(row).catch((e) =>
+      console.error("[admin] manual booking series top-up failed:", e)
+    );
+  }
   redirect("/admin");
 }
 
@@ -345,6 +373,9 @@ export async function savePricing(formData: FormData) {
     "discount_weekly_pct",
     "discount_fortnightly_pct",
     "discount_four_weekly_pct",
+    "slot_minutes",
+    "lead_time_hours",
+    "max_days_ahead",
   ];
   for (const key of keys) {
     const raw = formData.get(key);
@@ -369,15 +400,13 @@ export async function saveAddon(formData: FormData) {
     ...(Number.isFinite(price) && price >= 0 ? { price } : {}),
     active: formData.get("active") === "on",
   };
-  try {
-    await updateAddon(key, {
-      ...fields,
-      ...(Number.isFinite(hours) && hours >= 0 ? { hours } : {}),
-    });
-  } catch {
-    // `hours` column not migrated yet — save the rest rather than erroring
-    await updateAddon(key, fields);
-  }
+  // The hours column landed with 2026-07-29-addon-hours.sql; the old
+  // pre-migration fallback here was swallowing every genuine failure as
+  // success, which is worse than an error page.
+  await updateAddon(key, {
+    ...fields,
+    ...(Number.isFinite(hours) && hours >= 0 ? { hours } : {}),
+  });
   invalidatePricingCache();
   revalidatePath("/admin/pricing");
   revalidatePath("/quote");

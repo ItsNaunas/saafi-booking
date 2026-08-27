@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { formatTimeRange } from "@/lib/scheduling";
+import { formatTimeRange, londonWallClock } from "@/lib/scheduling";
 import { getCleanerByToken, listBookingsForCleaner, type BookingRow } from "@/lib/supabaseAdmin";
 import { cleanerStartJob, cleanerFinishJob, cleanerCannotDoJob } from "./actions";
 import JobClock from "./JobClock";
@@ -19,9 +19,16 @@ export default async function CleanerJobsPage({
   if (!cleaner) notFound();
 
   const jobs = await listBookingsForCleaner(cleaner.id);
-  const today = new Date().toISOString().slice(0, 10);
+  // London wall clock, not UTC: during BST the first hour after midnight used
+  // to show the cleaner yesterday as "today".
+  const { date: today } = londonWallClock(new Date());
   const todaysJobs = jobs.filter((j) => j.status === "confirmed" && j.preferred_date === today);
   const upcoming = jobs.filter((j) => j.status === "confirmed" && j.preferred_date > today);
+  // A confirmed job whose date has passed used to render in no section at all
+  // — a forgotten Finish tap made the job unreachable and only the office
+  // could complete it. It stays live here until it's closed out.
+  const overdue = jobs.filter((j) => j.status === "confirmed" && j.preferred_date < today);
+  const reported = jobs.filter((j) => j.status === "no_access").slice(-3).reverse();
   const recent = jobs.filter((j) => j.status === "completed").slice(-5).reverse();
 
   return (
@@ -31,6 +38,18 @@ export default async function CleanerJobsPage({
           Hi {cleaner.name.split(" ")[0]} 👋
         </h1>
         <p className="mb-6 text-sm text-slate-500">Your SAAFI jobs</p>
+
+        {overdue.length > 0 && (
+          <Section title={`Still open (${overdue.length})`}>
+            <p className="mb-2 text-xs text-amber-700">
+              These jobs are past their date but never finished — tap finish if the clean
+              happened, or ring the office if it didn&apos;t.
+            </p>
+            {overdue.map((j) => (
+              <JobCard key={j.id} j={j} token={token} live />
+            ))}
+          </Section>
+        )}
 
         <Section title={`Today (${todaysJobs.length})`}>
           {todaysJobs.length === 0 && <Empty text="No jobs today." />}
@@ -45,6 +64,25 @@ export default async function CleanerJobsPage({
             <JobCard key={j.id} j={j} token={token} live={false} />
           ))}
         </Section>
+
+        {reported.length > 0 && (
+          <Section title="Reported — with the office">
+            {reported.map((j) => (
+              <div
+                key={j.id}
+                className="border border-slate-200 bg-white p-4 text-sm text-slate-500"
+              >
+                <p className="font-semibold text-slate-700">
+                  {j.preferred_date} · {j.postcode}
+                </p>
+                <p className="mt-1">
+                  Recorded as a visit that couldn&apos;t happen — the office has it and will sort
+                  out what happens next. Nothing more needed from you.
+                </p>
+              </div>
+            ))}
+          </Section>
+        )}
 
         {recent.length > 0 && (
           <Section title="Recently completed">
@@ -99,7 +137,7 @@ function JobCard({
           {j.start_time ? ` · ${formatTimeRange(j.start_time, booked)}` : ""} · {booked}h booked
         </span>
       </div>
-      <a href={mapsUrl} target="_blank" className="mt-1 block text-sm text-brand-700 hover:underline">
+      <a href={mapsUrl} target="_blank" rel="noreferrer" className="mt-1 block text-sm text-brand-700 hover:underline">
         📍 {j.address_line}, {j.postcode}
       </a>
       <div className="mt-1 text-sm text-slate-500">

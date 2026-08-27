@@ -268,8 +268,10 @@ export async function getCleanerByToken(token: string): Promise<CleanerRow | nul
 }
 
 export async function listBookingsForCleaner(cleanerId: string): Promise<BookingRow[]> {
+  // no_access included so a reported wasted journey doesn't just vanish from
+  // the cleaner's portal — they get a receipt that the office has it.
   return rest<BookingRow[]>(
-    `bookings?cleaner_id=eq.${encodeURIComponent(cleanerId)}&status=in.(confirmed,completed)&select=*&order=preferred_date.asc,start_time.asc.nullslast`
+    `bookings?cleaner_id=eq.${encodeURIComponent(cleanerId)}&status=in.(confirmed,completed,no_access)&select=*&order=preferred_date.asc,start_time.asc.nullslast`
   );
 }
 

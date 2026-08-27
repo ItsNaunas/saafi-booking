@@ -2,7 +2,7 @@ import Link from "next/link";
 import { headers } from "next/headers";
 import { listBookings, listCleaners, type BookingRow } from "@/lib/supabaseAdmin";
 import { formatGBP } from "@/lib/pricing";
-import { formatTimeRange } from "@/lib/scheduling";
+import { formatTimeRange, londonWallClock } from "@/lib/scheduling";
 import { calendarFeedToken } from "@/lib/calendarFeed";
 
 export const dynamic = "force-dynamic";
@@ -21,7 +21,7 @@ const STATUS_CHIP: Record<string, string> = {
   completed: "bg-violet-50 text-violet-800 ring-violet-200",
   paid: "bg-brand-50 text-brand-800 ring-brand-200",
 };
-const STATUS_ORDER = ["requested", "confirmed", "completed", "paid"] as const;
+const STATUS_ORDER = ["no_access", "requested", "confirmed", "completed", "paid"] as const;
 
 const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
@@ -46,7 +46,7 @@ export default async function CalendarPage({
   const cleanerName = new Map<string, string>(cleaners.map((c) => [c.id, c.name]));
   const activeCleaners = cleaners.filter((c) => c.active);
 
-  const todayStr = new Date().toISOString().slice(0, 10);
+  const todayStr = londonWallClock(new Date()).date;
   const { m: mParam, cleaner: cParam } = await searchParams;
   const month = /^\d{4}-\d{2}$/.test(mParam ?? "") ? mParam! : todayStr.slice(0, 7);
   const [year, mon] = month.split("-").map(Number);
@@ -105,7 +105,10 @@ export default async function CalendarPage({
 
   // Month summary — cleans and value that fall inside the shown month.
   const monthRows = bookings.filter((b) => b.preferred_date.slice(0, 7) === month);
-  const monthValue = monthRows.reduce((s, b) => s + Number(b.quoted_price), 0);
+  // Wasted journeys aren't month value until the office decides to charge them.
+  const monthValue = monthRows
+    .filter((b) => b.status !== "no_access")
+    .reduce((s, b) => s + Number(b.quoted_price), 0);
   const unassigned = monthRows.filter(
     (b) => !b.cleaner_id && (b.status === "requested" || b.status === "confirmed")
   ).length;
@@ -243,7 +246,7 @@ export default async function CalendarPage({
         {STATUS_ORDER.map((s) => (
           <span key={s} className="flex items-center gap-1.5">
             <span className={`h-2.5 w-2.5 rounded-full ${STATUS_DOT[s]}`} />
-            <span className="capitalize">{s}</span>
+            <span className="capitalize">{s.replace("_", " ")}</span>
           </span>
         ))}
         <span className="flex items-center gap-1.5">

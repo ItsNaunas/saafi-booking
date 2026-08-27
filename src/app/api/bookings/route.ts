@@ -60,10 +60,11 @@ export async function POST(req: NextRequest) {
   if (!inServiceArea(postcode, cfg)) return bad("Sorry, we don't cover that postcode yet");
 
   const roomsIn = (body.rooms ?? {}) as Partial<RoomCounts>;
-  const bedrooms = int(roomsIn.bedrooms);
-  const bathrooms = int(roomsIn.bathrooms);
-  const diningRooms = int(roomsIn.diningRooms);
-  const livingRooms = int(roomsIn.livingRooms);
+  // Same ceilings the form itself enforces — the two contracts used to differ.
+  const bedrooms = int(roomsIn.bedrooms, 10);
+  const bathrooms = int(roomsIn.bathrooms, 6);
+  const diningRooms = int(roomsIn.diningRooms, 4);
+  const livingRooms = int(roomsIn.livingRooms, 4);
   if (bedrooms === null || bathrooms === null || diningRooms === null || livingRooms === null)
     return bad("Room counts must be whole numbers");
   const rooms: RoomCounts = { bedrooms, bathrooms, diningRooms, livingRooms };

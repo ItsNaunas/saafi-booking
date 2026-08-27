@@ -16,6 +16,10 @@ const FIELDS: { key: string; label: string; hint?: string; step?: string }[] = [
   { key: "discount_weekly_pct", label: "Weekly discount (%)", step: "0.5" },
   { key: "discount_fortnightly_pct", label: "Fortnightly discount (%)", step: "0.5" },
   { key: "discount_four_weekly_pct", label: "4-weekly discount (%)", step: "0.5" },
+  // Booking-window settings — same table, previously only editable in SQL.
+  { key: "slot_minutes", label: "Slot size (minutes)", hint: "gap between offered start times", step: "15" },
+  { key: "lead_time_hours", label: "Lead time (hours)", hint: "earliest a customer can book from now", step: "1" },
+  { key: "max_days_ahead", label: "Booking horizon (days)", hint: "how far ahead the calendar opens", step: "1" },
 ];
 
 export default async function PricingPage() {

@@ -1,27 +1,33 @@
-import { listBookings, listCustomers } from "@/lib/supabaseAdmin";
+import { listBookings, listCustomers, paidSoFar } from "@/lib/supabaseAdmin";
 import { formatGBP } from "@/lib/pricing";
+import { londonWallClock } from "@/lib/scheduling";
 
 export const dynamic = "force-dynamic";
 
 export default async function ReportsPage() {
   const [bookings, customers] = await Promise.all([listBookings(), listCustomers()]);
 
-  const paid = bookings.filter((b) => b.status === "paid");
+  // Revenue is what actually arrived (amount_paid, net of refunds) — the old
+  // report summed quoted_price, so every adjusted job reported the wrong money.
+  const takenFor = (b: (typeof bookings)[number]) =>
+    Math.max(0, paidSoFar(b) - Number(b.refund_amount ?? 0));
+  const paid = bookings.filter((b) => takenFor(b) > 0);
+  const { date: today } = londonWallClock(new Date());
   const upcoming = bookings.filter(
     (b) =>
       (b.status === "confirmed" || b.status === "requested") &&
-      b.preferred_date >= new Date().toISOString().slice(0, 10)
+      b.preferred_date >= today
   );
 
-  // Revenue by month (paid bookings, by preferred_date month)
+  // Revenue by month (by preferred_date month)
   const byMonth = new Map<string, number>();
   for (const b of paid) {
     const m = b.preferred_date.slice(0, 7);
-    byMonth.set(m, (byMonth.get(m) ?? 0) + Number(b.quoted_price));
+    byMonth.set(m, (byMonth.get(m) ?? 0) + takenFor(b));
   }
   const months = [...byMonth.entries()].sort((a, b) => b[0].localeCompare(a[0])).slice(0, 6);
 
-  const statusCounts = ["requested", "confirmed", "completed", "paid", "cancelled"].map((s) => ({
+  const statusCounts = ["requested", "confirmed", "completed", "paid", "no_access", "cancelled"].map((s) => ({
     s,
     n: bookings.filter((b) => b.status === s).length,
   }));
@@ -38,7 +44,7 @@ export default async function ReportsPage() {
       <h1 className="mb-4 text-2xl font-bold text-slate-900">Reports</h1>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Stat label="Revenue collected" value={formatGBP(paid.reduce((s, b) => s + Number(b.quoted_price), 0))} />
+        <Stat label="Revenue collected" value={formatGBP(paid.reduce((s, b) => s + takenFor(b), 0))} sub="money actually taken, net of refunds" />
         <Stat label="Upcoming pipeline" value={formatGBP(pipelineValue)} sub={`${upcoming.length} clean${upcoming.length === 1 ? "" : "s"} booked`} />
         <Stat label="Recurring customers" value={String(recurringActive)} sub="active repeat series" />
         <Stat label="Repeat rate" value={`${repeatRate}%`} sub={`${repeatCustomers} of ${customers.length} customers rebook`} />
@@ -72,7 +78,7 @@ export default async function ReportsPage() {
           <div className="space-y-2 text-sm">
             {statusCounts.map(({ s, n }) => (
               <div key={s} className="flex items-center justify-between border-b border-slate-100 py-1.5 last:border-0">
-                <span className="capitalize text-slate-600">{s}</span>
+                <span className="capitalize text-slate-600">{s.replace("_", " ")}</span>
                 <span className="font-semibold text-slate-900">{n}</span>
               </div>
             ))}

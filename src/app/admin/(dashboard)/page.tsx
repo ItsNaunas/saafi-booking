@@ -4,10 +4,12 @@ import {
   listBookings,
   listCleaners,
   listPendingAdjustments,
+  isPaidInFull,
   type BookingRow,
   type BookingStatus,
   type CleanerRow,
 } from "@/lib/supabaseAdmin";
+import { outcomeLabel } from "@/lib/outcomes";
 import { setBookingStatus, stopRecurring, assignCleaner } from "@/app/admin/actions";
 import {
   busyFromBooking,
@@ -105,6 +107,9 @@ export default async function PipelinePage({
       )
     : allBookings;
   const cancelled = bookings.filter((b) => b.status === "cancelled");
+  // Wasted journeys waiting on a decision. They match no pipeline column, so
+  // without this banner they were simply invisible on this page.
+  const noAccess = bookings.filter((b) => b.status === "no_access");
 
   return (
     <div>
@@ -145,6 +150,30 @@ export default async function PipelinePage({
                 </Link>{" "}
                 — {a.from_hours}h booked, {a.to_hours}h worked ·{" "}
                 {formatGBP(Number(a.from_price))} → {formatGBP(Number(a.to_price))}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {noAccess.length > 0 && (
+        <div className="mb-4 bg-rose-50 p-4 ring-1 ring-rose-300">
+          <h2 className="font-semibold text-rose-900">
+            {noAccess.length} visit{noAccess.length === 1 ? "" : "s"} didn&apos;t happen — your
+            decision needed
+          </h2>
+          <ul className="mt-2 space-y-1 text-sm">
+            {noAccess.map((b) => (
+              <li key={b.id}>
+                <Link
+                  href={`/admin/booking/${b.id}`}
+                  className="font-medium text-rose-900 underline hover:no-underline"
+                >
+                  {b.customer_name}
+                </Link>{" "}
+                — {b.preferred_date}
+                {b.outcome_reason && ` · ${outcomeLabel(b.outcome_reason).toLowerCase()}`} · write
+                it off, charge for the journey, or rebook
               </li>
             ))}
           </ul>
@@ -227,6 +256,11 @@ function BookingCard({
             {b.service_type === "deep" && (
               <span className="rounded-full bg-indigo-100 px-1.5 py-0.5 text-[10px] font-semibold text-indigo-800">
                 DEEP · {b.cleaners_needed ?? 2} cleaners
+              </span>
+            )}
+            {b.status !== "paid" && isPaidInFull(b) && (
+              <span className="rounded-full bg-brand-100 px-1.5 py-0.5 text-[10px] font-semibold text-brand-800">
+                PAID
               </span>
             )}
             {isRecurring && (

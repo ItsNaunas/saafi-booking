@@ -93,6 +93,10 @@ export default function QuoteWizard({
   const [notes, setNotes] = useState("");
   const [reference, setReference] = useState<string | null>(null);
   const [payUrl, setPayUrl] = useState<string | null>(null);
+  // The server's answer is the one Stripe charges — the client figure is only
+  // a live preview and can drift (config edits, a long-idle tab).
+  const [serverPrice, setServerPrice] = useState<number | null>(null);
+  const [timeDropped, setTimeDropped] = useState(false);
 
   // Availability is keyed by day+length: change either and the old answer — and
   // any time picked from it — stop applying, with nothing to reset by hand.
@@ -155,10 +159,13 @@ export default function QuoteWizard({
     }
     setPostcodeState("checking");
     try {
-      // postcodes.io is free + keyless; the regex check already passed either way.
-      const res = await fetch(`https://api.postcodes.io/postcodes/${norm}/validate`);
-      const data = res.ok ? ((await res.json()) as { result: boolean }) : { result: true };
-      setPostcodeState(data.result ? "ok" : "unknown");
+      // postcodes.io is free + keyless; the regex check already passed either
+      // way. Bounded: a hung DNS must not pin the field on "checking" forever.
+      const res = await fetch(`https://api.postcodes.io/postcodes/${norm}/validate`, {
+        signal: AbortSignal.timeout(2500),
+      });
+      const data = res.ok ? ((await res.json()) as { result: boolean }) : null;
+      setPostcodeState(data === null || data.result ? "ok" : "unknown");
     } catch {
       setPostcodeState("ok"); // offline: trust the regex rather than nag
     }
@@ -208,16 +215,23 @@ export default function QuoteWizard({
   const startTime = pickedSlot?.key === slotKey ? pickedSlot.time : null;
   const anySlotFree = (slots ?? []).some((s) => s.available);
 
-  const today = new Date().toISOString().slice(0, 10);
+  // London wall-clock date, whatever the visitor's device thinks: the server
+  // validates against Europe/London, so the picker must offer the same days.
+  const today = useMemo(
+    () => new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/London" }).format(new Date()),
+    []
+  );
   const maxDate = useMemo(() => {
-    const d = new Date();
-    d.setDate(d.getDate() + cfg.scheduling.maxDaysAhead);
+    const d = new Date(`${today}T12:00:00Z`);
+    d.setUTCDate(d.getUTCDate() + cfg.scheduling.maxDaysAhead);
     return d.toISOString().slice(0, 10);
-  }, [cfg.scheduling.maxDaysAhead]);
+  }, [today, cfg.scheduling.maxDaysAhead]);
 
   /* ---------- submit ---------- */
 
   const formRef = useRef<HTMLFormElement>(null);
+  // Honeypot: humans never see it, bots fill it, the server quietly discards.
+  const honeypot = useRef<HTMLInputElement>(null);
 
   /** Every problem at once — a single form should not reveal them one at a time. */
   function validate(): Partial<Record<FieldKey, string>> {
@@ -229,7 +243,11 @@ export default function QuoteWizard({
       found.postcode = "We don't cover that area yet — give us a call.";
 
     if (!preferredDate) found.date = "Pick a date.";
-    else if (closedReason) found.time = closedReason;
+    else if (closedReason) found.time = friendlyClosedReason(closedReason);
+    else if ((slots?.length ?? 0) > 0 && !anySlotFree)
+      // Telling them "we're fully booked, pick another" while accepting the
+      // submit anyway was the worst of both worlds.
+      found.time = "We're fully booked that day — please pick another date.";
     else if (anySlotFree && !startTime) found.time = "Pick a start time.";
 
     if (!isDeep && customerProvidesProducts === null)
@@ -280,6 +298,7 @@ export default function QuoteWizard({
           preferredDate,
           startTime,
           notes,
+          website: honeypot.current?.value ?? "",
         }),
       });
       const data = await res.json();
@@ -292,6 +311,8 @@ export default function QuoteWizard({
       }
       setReference(data.reference);
       setPayUrl(typeof data.payUrl === "string" ? data.payUrl : null);
+      setServerPrice(typeof data.quotedPrice === "number" ? data.quotedPrice : null);
+      setTimeDropped(Boolean(data.timeDropped));
     } catch {
       setFormError("Network problem — please try again or call us");
     } finally {
@@ -313,7 +334,7 @@ export default function QuoteWizard({
           We&apos;ll call you shortly to confirm your{" "}
           <span className="font-semibold">{totalHours}-hour clean</span> on{" "}
           <span className="font-semibold">{preferredDate}</span>
-          {startTime ? (
+          {startTime && !timeDropped ? (
             <>
               , <span className="font-semibold">{formatTimeRange(startTime, totalHours)}</span>.
             </>
@@ -321,8 +342,14 @@ export default function QuoteWizard({
             <>, and agree a time with you.</>
           )}
         </p>
+        {timeDropped && (
+          <p className="mt-3 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+            We couldn&apos;t hold the time you picked, so we&apos;ll agree one on the phone —
+            your date is in.
+          </p>
+        )}
         <p className="mt-4 text-lg font-semibold text-brand-700">
-          Estimated price: {formatGBP(price)}
+          Estimated price: {formatGBP(serverPrice ?? price)}
         </p>
         {payUrl && (
           <>
@@ -366,10 +393,23 @@ export default function QuoteWizard({
       </aside>
 
       <form ref={formRef} onSubmit={submit} noValidate className="space-y-5">
+        {/* Honeypot — off-screen, skipped by keyboard and screen readers.
+            A filled value marks the submit as a bot; the server discards it. */}
+        <input
+          ref={honeypot}
+          type="text"
+          name="website"
+          tabIndex={-1}
+          autoComplete="off"
+          aria-hidden="true"
+          className="absolute -left-[9999px] h-0 w-0 opacity-0"
+        />
         {/* ---------- service ----------
              Two different products, priced two different ways: standard is
              hourly, deep is flat per room with a two-cleaner crew. */}
-        <div className="grid grid-cols-2 gap-2" role="tablist" aria-label="Type of clean">
+        {/* Plain pressed-buttons, not ARIA tabs: announcing a tab widget with
+            no tabpanel or arrow-key support misleads screen-reader users. */}
+        <div className="grid grid-cols-2 gap-2" role="group" aria-label="Type of clean">
           {(
             [
               { key: "standard", title: "Standard clean", sub: "Hourly — keep on top of your home" },
@@ -381,8 +421,7 @@ export default function QuoteWizard({
               <button
                 key={t.key}
                 type="button"
-                role="tab"
-                aria-selected={on}
+                aria-pressed={on}
                 onClick={() => setService(t.key)}
                 className={`border-2 px-3 py-3 text-left transition ${
                   on ? "border-brand-500 bg-brand-50" : "border-slate-200 bg-white hover:border-slate-300"
@@ -738,7 +777,7 @@ export default function QuoteWizard({
 
               {!slotsBusy && closedReason && (
                 <p className="bg-slate-50 px-3 py-2 text-sm text-slate-600">
-                  {closedReason} Try another day.
+                  {friendlyClosedReason(closedReason)}
                 </p>
               )}
 
@@ -848,7 +887,8 @@ export default function QuoteWizard({
           {submitting ? "Sending…" : `Request booking · ${formatGBP(price)}`}
         </button>
         <p className="text-center text-xs text-slate-400">
-          No payment now — we&apos;ll call to confirm before anything is charged.
+          Nothing is taken now — you can pay on the next screen to lock it in, and
+          we confirm every booking with you first.
         </p>
       </form>
     </div>
@@ -1132,4 +1172,17 @@ function ChoiceCard({
       <div className="text-sm text-slate-500">{subtitle}</div>
     </button>
   );
+}
+
+/**
+ * The availability engine's day-closed reasons are written for the office
+ * ("No cleaners are set up yet."). Customers get the same fact in shop-front
+ * language, never an internal line verbatim.
+ */
+function friendlyClosedReason(reason: string): string {
+  if (reason.includes("cleaners are set up"))
+    return "We can't show live times right now — pick the day that suits you and we'll agree a time when we call to confirm.";
+  if (reason.includes("don't work that day"))
+    return "We're not out cleaning that day — could you pick another?";
+  return `${reason} Try another day.`;
 }

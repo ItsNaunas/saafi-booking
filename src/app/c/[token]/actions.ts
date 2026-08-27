@@ -215,9 +215,19 @@ export async function cleanerCannotDoJob(formData: FormData) {
       finished_at: new Date().toISOString(),
     });
   } catch (e) {
-    // Also the pre-migration case: the status constraint and the outcome columns
-    // arrive with 2026-08-25-visit-outcomes.sql.
+    // The alert email above already went, so the office knows about the visit —
+    // but they must also know the booking itself never changed, or the rota
+    // shows a job that everyone believes is closed.
     console.error("[cleaner] could not record the wasted journey:", e);
+    const { sendOpsAlertEmail } = await import("@/lib/email");
+    await sendOpsAlertEmail({
+      subject: `⚠ Wasted journey NOT saved — ${booking.reference}`,
+      heading: "A visit was reported as impossible but the booking didn't update",
+      lines: [
+        `${cleaner.name} reported ${booking.reference} as a visit that couldn't happen, but writing that to the booking failed.`,
+        "The booking still shows as confirmed — resolve it by hand from the booking page.",
+      ],
+    }).catch(() => {});
   }
 
   revalidatePath(`/c/${token}`);
