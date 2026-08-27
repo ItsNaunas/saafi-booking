@@ -21,7 +21,7 @@ import {
 import { formatTime, formatTimeRange, type Slot } from "@/lib/scheduling";
 
 /** Which field a validation message belongs to, so it can be shown in place. */
-type FieldKey = "postcode" | "date" | "time" | "name" | "email" | "phone" | "address";
+type FieldKey = "postcode" | "products" | "date" | "time" | "name" | "email" | "phone" | "address";
 
 /**
  * The whole quote on one page, kept as short as it can honestly be.
@@ -65,7 +65,11 @@ export default function QuoteWizard({
     ...initialRooms,
   });
   const [hours, setHours] = useState<number | null>(null); // null = follow the recommendation
-  const [customerProvidesProducts, setCustomerProvidesProducts] = useState(true);
+  // null until the customer answers — the 2026-08-25 review made this
+  // compulsory so a cleaner never arrives to a products stand-off. The price
+  // assumes "own products" while unanswered, so choosing ours visibly adds the
+  // £5 rather than a preselected charge quietly sitting in the total.
+  const [customerProvidesProducts, setCustomerProvidesProducts] = useState<boolean | null>(null);
   const [selectedAddons, setSelectedAddons] = useState<string[]>(initialAddons ?? []);
   const [frequency, setFrequency] = useState<Frequency>(initialFrequency ?? "one_off");
   const [preferredDate, setPreferredDate] = useState("");
@@ -96,7 +100,7 @@ export default function QuoteWizard({
   const extrasHours = useMemo(() => addonsHours(chosenAddons), [chosenAddons]);
   const totalHours = chosenHours + extrasHours;
   const price = useMemo(
-    () => quotePrice(totalHours, customerProvidesProducts, cfg, frequency, addonsTotal),
+    () => quotePrice(totalHours, customerProvidesProducts ?? true, cfg, frequency, addonsTotal),
     [totalHours, customerProvidesProducts, cfg, frequency, addonsTotal]
   );
 
@@ -187,6 +191,9 @@ export default function QuoteWizard({
     if (!preferredDate) found.date = "Pick a date.";
     else if (closedReason) found.time = closedReason;
     else if (anySlotFree && !startTime) found.time = "Pick a start time.";
+
+    if (customerProvidesProducts === null)
+      found.products = "Choose who brings the cleaning products.";
 
     if (name.trim().length < 2) found.name = "Please tell us your name.";
     if (!/^\S+@\S+\.\S+$/.test(email)) found.email = "Please enter a valid email.";
@@ -292,7 +299,7 @@ export default function QuoteWizard({
           chosenHours={chosenHours}
           extrasHours={extrasHours}
           addonsTotal={addonsTotal}
-          customerProvidesProducts={customerProvidesProducts}
+          customerProvidesProducts={customerProvidesProducts ?? true}
           preferredDate={preferredDate}
           startTime={startTime}
         />
@@ -346,22 +353,37 @@ export default function QuoteWizard({
               asking would be a control that changes nothing. They come back
               with the deep clean tab. */}
 
-          {/* Hours follow the rooms — a nudge, not a question. */}
-          <div className="mt-4 flex items-center justify-between gap-4 border-t border-slate-100 pt-4">
+          {/* Hours follow the rooms. The recommendation is the loudest thing
+              in the block (2026-08-25 review: "add a prominent recommended
+              hours display") — it updates live as rooms change, and the
+              stepper is framed as adjusting AWAY from it. */}
+          <div className="mt-4 border-t border-slate-100 pt-4">
+            <div className="flex items-center justify-between gap-3 bg-brand-50 px-3 py-2.5">
+              <p className="text-sm text-slate-700">
+                Recommended for your home:{" "}
+                <span className="tnum text-base font-bold text-brand-700">
+                  {recommended} hours
+                </span>
+              </p>
+              {chosenHours !== recommended && (
+                <button
+                  type="button"
+                  onClick={() => setHours(null)}
+                  className="shrink-0 text-sm font-medium text-brand-700 underline underline-offset-2 hover:text-brand-900"
+                >
+                  use {recommended}h
+                </button>
+              )}
+            </div>
+          </div>
+
+          <div className="mt-3 flex items-center justify-between gap-4">
             <div>
               <p className="text-sm font-medium text-slate-700">How long we&apos;ll stay</p>
               <p className="text-xs text-slate-500">
-                {chosenHours === recommended ? (
-                  "Recommended for a home this size"
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => setHours(null)}
-                    className="underline underline-offset-2 hover:text-brand-600"
-                  >
-                    reset to {recommended}h
-                  </button>
-                )}
+                {chosenHours === recommended
+                  ? "Following the recommendation"
+                  : "Adjusted by you"}
               </p>
             </div>
             <span className="flex shrink-0 items-center gap-3">
@@ -387,24 +409,45 @@ export default function QuoteWizard({
             </span>
           </div>
 
-          {/* Only worth asking while it changes the price. At a £0 surcharge it
-              was a question that did nothing. */}
-          {cfg.productSurcharge > 0 && (
-            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+          {/* Compulsory, with no preselected answer (2026-08-25 review). This
+              question exists so the cleaner knows what to bring — it is asked
+              even at a £0 surcharge, because the answer matters either way. */}
+          <div
+            className="mt-4"
+            data-invalid={errors.products ? "true" : undefined}
+            tabIndex={-1}
+          >
+            <p className="text-sm font-medium text-slate-700">
+              Who brings the cleaning products?
+            </p>
+            <div className="mt-2 grid gap-3 sm:grid-cols-2">
               <ChoiceCard
-                active={customerProvidesProducts}
+                active={customerProvidesProducts === true}
                 title="I'll provide products"
                 subtitle="Use what's already at home"
-                onClick={() => setCustomerProvidesProducts(true)}
+                onClick={() => {
+                  setCustomerProvidesProducts(true);
+                  setErrors((e) => ({ ...e, products: undefined }));
+                }}
               />
               <ChoiceCard
-                active={!customerProvidesProducts}
-                title="Bring your products"
-                subtitle={`Fully stocked (+${formatGBP(cfg.productSurcharge)})`}
-                onClick={() => setCustomerProvidesProducts(false)}
+                active={customerProvidesProducts === false}
+                title="SAAFI brings everything"
+                subtitle={
+                  cfg.productSurcharge > 0
+                    ? `Fully stocked (+${formatGBP(cfg.productSurcharge)} a visit)`
+                    : "Fully stocked, no extra charge"
+                }
+                onClick={() => {
+                  setCustomerProvidesProducts(false);
+                  setErrors((e) => ({ ...e, products: undefined }));
+                }}
               />
             </div>
-          )}
+            {errors.products && (
+              <p className="mt-1.5 text-sm text-red-600">{errors.products}</p>
+            )}
+          </div>
 
           {addons.length > 0 && (
             <Disclosure
@@ -453,7 +496,7 @@ export default function QuoteWizard({
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
             {(Object.keys(FREQUENCY_LABEL) as Frequency[]).map((f) => {
               const pct = cfg.discounts[f] ?? 0;
-              const perClean = quotePrice(totalHours, customerProvidesProducts, cfg, f, addonsTotal);
+              const perClean = quotePrice(totalHours, customerProvidesProducts ?? true, cfg, f, addonsTotal);
               const on = frequency === f;
               return (
                 <button

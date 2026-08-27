@@ -44,12 +44,6 @@ export default function HeroSearchBar() {
     router.push(`/quote?${qs.toString()}`);
   }
 
-  const counts = (max: number) =>
-    Array.from({ length: max + 1 }, (_, i) => ({
-      value: String(i),
-      label: String(i),
-    }));
-
   return (
     <div className="w-full">
       <div className="flex flex-col gap-2 bg-white p-2 shadow-2xl lg:flex-row lg:items-center lg:gap-0 lg:rounded-full">
@@ -74,15 +68,17 @@ export default function HeroSearchBar() {
 
         <Divider />
 
+        {/* Steppers, not dropdowns (2026-08-25 review): the value and both
+            ways to change it are permanently visible, nothing behind a click. */}
         <Field
           icon={<Icon glyph={BedDouble} className="size-[17px]" />}
           label="Bedrooms"
         >
-          <Dropdown
+          <Stepper
             label="Bedrooms"
-            options={counts(6)}
-            value={String(bedrooms)}
-            onChange={(v) => setBedrooms(Number(v))}
+            value={bedrooms}
+            max={6}
+            onChange={setBedrooms}
           />
         </Field>
 
@@ -92,11 +88,11 @@ export default function HeroSearchBar() {
           icon={<Icon glyph={Bath} className="size-[17px]" />}
           label="Bathrooms"
         >
-          <Dropdown
+          <Stepper
             label="Bathrooms"
-            options={counts(4)}
-            value={String(bathrooms)}
-            onChange={(v) => setBathrooms(Number(v))}
+            value={bathrooms}
+            max={4}
+            onChange={setBathrooms}
           />
         </Field>
 
@@ -162,6 +158,78 @@ function Field({
 
 function Divider() {
   return <span className="hidden w-px self-stretch bg-slate-200 lg:block" />;
+}
+
+/**
+ * The open control the review asked for: current value in the middle, both
+ * ways to change it always on screen. A spinbutton to assistive tech, and the
+ * arrow keys work on the value for parity with the old select.
+ */
+function Stepper({
+  label,
+  value,
+  max,
+  onChange,
+}: {
+  label: string;
+  value: number;
+  max: number;
+  onChange: (n: number) => void;
+}) {
+  const step = (d: number) => onChange(Math.min(max, Math.max(0, value + d)));
+  return (
+    <div
+      role="spinbutton"
+      aria-label={label}
+      aria-valuenow={value}
+      aria-valuemin={0}
+      aria-valuemax={max}
+      tabIndex={0}
+      onKeyDown={(e) => {
+        if (e.key === "ArrowUp" || e.key === "ArrowRight") { e.preventDefault(); step(1); }
+        if (e.key === "ArrowDown" || e.key === "ArrowLeft") { e.preventDefault(); step(-1); }
+      }}
+      className="flex items-center gap-2.5 outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-300"
+    >
+      <StepBtn label={`Fewer ${label.toLowerCase()}`} disabled={value <= 0} onClick={() => step(-1)}>
+        −
+      </StepBtn>
+      <span className="tnum min-w-[1.25rem] text-center text-[15px] font-semibold text-slate-900">
+        {value}
+      </span>
+      <StepBtn label={`More ${label.toLowerCase()}`} disabled={value >= max} onClick={() => step(1)}>
+        +
+      </StepBtn>
+    </div>
+  );
+}
+
+function StepBtn({
+  label,
+  disabled,
+  onClick,
+  children,
+}: {
+  label: string;
+  disabled: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      disabled={disabled}
+      // aria-hidden from the spinbutton's perspective would hide the buttons
+      // from touch AT users; tabIndex -1 keeps one tab stop (the spinbutton)
+      // while leaving the buttons clickable and tappable.
+      tabIndex={-1}
+      onClick={onClick}
+      className="flex size-6 shrink-0 items-center justify-center rounded-full border border-slate-300 text-sm font-semibold text-slate-600 transition enabled:hover:border-brand-500 enabled:hover:text-brand-700 disabled:opacity-35"
+    >
+      {children}
+    </button>
+  );
 }
 
 type Option = { value: string; label: string };
