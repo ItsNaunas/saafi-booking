@@ -434,6 +434,13 @@ export async function saveBookingPaymentLink(
   });
 }
 
+export async function getBookingByReference(reference: string): Promise<BookingRow | null> {
+  const rows = await rest<BookingRow[]>(
+    `bookings?reference=eq.${encodeURIComponent(reference)}&select=*`
+  );
+  return rows?.[0] ?? null;
+}
+
 export async function getBookingByPaymentLink(linkId: string): Promise<BookingRow | null> {
   const rows = await rest<BookingRow[]>(
     `bookings?stripe_payment_link_id=eq.${encodeURIComponent(linkId)}&select=*`

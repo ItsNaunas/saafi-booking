@@ -23,7 +23,8 @@ import {
   DEEP_EXTRAS,
   type DeepExtraKey,
 } from "@/lib/deepClean";
-import { listSchedulableCleaners, busyBlocksForDate } from "@/lib/supabaseAdmin";
+import { listSchedulableCleaners, busyBlocksForDate, getBookingByReference } from "@/lib/supabaseAdmin";
+import { raiseBookingPaymentLink } from "@/lib/paymentLink";
 import { sendBookingReceivedEmail } from "@/lib/email";
 import type { BookingRecord, BookingRequest } from "@/lib/types";
 
@@ -201,6 +202,20 @@ export async function POST(req: NextRequest) {
   const stored = await storeBooking(record);
   if (!stored.ok) return bad("Something went wrong saving your booking — please call us instead", 500);
 
+  // Pay-at-booking (2026-08-25 review): raise the Stripe link now, show it on
+  // the success screen and put it in the receipt. Every failure mode — Stripe
+  // unconfigured, insert went to the local fallback, network — collapses to
+  // "no link", which is the settle-by-phone flow this replaced. Recurring
+  // visits after the first still settle by admin-sent link; that half is an
+  // open family decision.
+  let payUrl: string | null = null;
+  try {
+    const row = await getBookingByReference(stored.reference);
+    if (row) payUrl = await raiseBookingPaymentLink(row);
+  } catch (e) {
+    console.error("[bookings] pay-at-booking link failed:", e);
+  }
+
   await sendAlertEmail(record).catch((e) => console.error("[bookings] alert email failed:", e));
 
   // And tell the customer. Until this existed they saw a reference on screen and
@@ -216,9 +231,10 @@ export async function POST(req: NextRequest) {
     addressLine: record.addressLine,
     postcode: record.postcode,
     recurring: record.frequency !== "one_off",
+    payUrl,
   }).catch((e) => console.error("[bookings] customer receipt failed:", e));
 
-  return NextResponse.json({ ok: true, quotedPrice, reference: stored.reference });
+  return NextResponse.json({ ok: true, quotedPrice, reference: stored.reference, payUrl });
 }
 
 /** Supabase (PostgREST) when configured; local JSONL fallback for dev. */

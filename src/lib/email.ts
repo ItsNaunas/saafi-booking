@@ -233,6 +233,8 @@ export async function sendBookingReceivedEmail(opts: {
   addressLine: string;
   postcode: string;
   recurring: boolean;
+  /** Pay-at-booking link; absent falls back to the settle-by-phone wording. */
+  payUrl?: string | null;
 }): Promise<{ ok: boolean; reason?: string }> {
   return send({
     to: opts.email,
@@ -240,7 +242,9 @@ export async function sendBookingReceivedEmail(opts: {
     lines: [
       `Hi ${opts.name.split(" ")[0]},`,
       ``,
-      `Thanks — we've got your request and we'll call shortly to confirm it.`,
+      opts.payUrl
+        ? `Thanks — we've got your request. Pay below to lock it in, and we'll call to confirm your slot.`
+        : `Thanks — we've got your request and we'll call shortly to confirm it.`,
       ``,
       `When:      ${
         opts.startTime
@@ -251,6 +255,7 @@ export async function sendBookingReceivedEmail(opts: {
       `How long:  ${opts.hours} hours`,
       `Price:     £${opts.price}${opts.recurring ? " per clean" : ""}`,
       `Reference: ${opts.reference}`,
+      ...(opts.payUrl ? [``, `Pay for your clean: ${opts.payUrl}`] : []),
       ``,
       `Nothing is charged yet, and nothing is booked in stone until we've spoken.`,
       `If anything above looks wrong, just reply to this email.`,

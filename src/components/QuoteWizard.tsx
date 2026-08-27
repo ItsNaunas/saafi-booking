@@ -92,6 +92,7 @@ export default function QuoteWizard({
   const [addressLine, setAddressLine] = useState("");
   const [notes, setNotes] = useState("");
   const [reference, setReference] = useState<string | null>(null);
+  const [payUrl, setPayUrl] = useState<string | null>(null);
 
   // Availability is keyed by day+length: change either and the old answer — and
   // any time picked from it — stop applying, with nothing to reset by hand.
@@ -290,6 +291,7 @@ export default function QuoteWizard({
         return;
       }
       setReference(data.reference);
+      setPayUrl(typeof data.payUrl === "string" ? data.payUrl : null);
     } catch {
       setFormError("Network problem — please try again or call us");
     } finally {
@@ -322,6 +324,21 @@ export default function QuoteWizard({
         <p className="mt-4 text-lg font-semibold text-brand-700">
           Estimated price: {formatGBP(price)}
         </p>
+        {payUrl && (
+          <>
+            <a
+              href={payUrl}
+              className="mt-5 inline-block w-full rounded-full bg-brand-600 px-6 py-3.5 text-base font-semibold text-white transition hover:bg-brand-700"
+            >
+              Pay for your clean
+            </a>
+            <p className="mt-2 text-xs text-slate-500">
+              Paying locks the booking in. The same link is in your email, and
+              if anything about the job changes on the day we agree it with you
+              first.
+            </p>
+          </>
+        )}
       </div>
     );
   }
