@@ -431,7 +431,7 @@ export async function setAdjustmentStatus(
 
 // What a booking owes lives in lib/money.ts — one source of truth shared with
 // the email layer, so the figure in an email can never drift from the charge.
-export { amountDueFor, isPaidInFull, isPartPaid, paidSoFar } from "./money";
+export { amountDueFor, agreedPriceFor, isPaidInFull, isPartPaid, paidSoFar } from "./money";
 
 export async function saveBookingPaymentLink(
   id: string,

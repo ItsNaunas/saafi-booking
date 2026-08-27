@@ -16,6 +16,7 @@ import { secret } from "./env";
 import { formatTimeRange } from "@/lib/scheduling";
 import { chargeableJourney, outcomeLabel, type OutcomeReason } from "./outcomes";
 import { site, contact } from "./business";
+import { bookingManageUrl } from "./bookingLink";
 
 /* ------------------------------------------------------------------ *
  *  The template
@@ -171,6 +172,12 @@ function looksLikeARealAddress(email: string): boolean {
   return /^\S+@\S+\.\S+$/.test(email);
 }
 
+/** The self-serve line customers get in every booking email. Null pre-config. */
+function manageLine(reference: string): string | null {
+  const url = bookingManageUrl(reference);
+  return url ? `View, pay for, or change this booking any time: ${url}` : null;
+}
+
 async function send(mail: Mail): Promise<{ ok: boolean; reason?: string }> {
   const key = secret("RESEND_API_KEY");
   if (!key) return { ok: false, reason: "email isn't configured" };
@@ -232,7 +239,10 @@ export async function sendConfirmationEmail(booking: BookingRow): Promise<void> 
       ["Price", `£${booking.quoted_price}`],
       ["Products", booking.customer_provides_products ? "you provide" : "we bring ours"],
     ],
-    outro: ["Need to change anything? Just reply to this email or give us a call."],
+    outro: [
+      "Need to change anything? Just reply to this email or give us a call.",
+      manageLine(booking.reference),
+    ],
     reference: booking.reference,
   }).catch(() => {});
 }
@@ -353,6 +363,7 @@ export async function sendBookingReceivedEmail(opts: {
     outro: [
       "Nothing is booked in stone until we've spoken.",
       "If anything above looks wrong, just reply to this email.",
+      manageLine(opts.reference),
     ],
     reference: opts.reference,
   });
@@ -611,7 +622,10 @@ export async function sendBookingChangedEmail(
       paidSoFar(booking) > 0 && ["Already paid", `£${paidSoFar(booking)}`],
       ...changes,
     ],
-    outro: ["If any of this doesn't match what we agreed, reply to this email and we'll sort it."],
+    outro: [
+      "If any of this doesn't match what we agreed, reply to this email and we'll sort it.",
+      manageLine(booking.reference),
+    ],
     reference: booking.reference,
   }).catch(() => {});
 }
@@ -754,6 +768,7 @@ export async function sendDayBeforeReminderEmail(booking: BookingRow): Promise<v
     outro: [
       "If nobody will be in, make sure we can get in the way we agreed — or reply now and we'll sort it.",
       "Need to move it? The sooner we know, the easier that is.",
+      manageLine(booking.reference),
     ],
     reference: booking.reference,
   }).catch(() => {});
