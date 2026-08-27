@@ -723,3 +723,109 @@ export async function sendNewBookingAlertEmail(opts: {
     reference: opts.reference,
   }).catch(() => {});
 }
+
+/* ------------------------------------------------------------------ *
+ *  The daily notify cron's emails (/api/notify/daily)
+ * ------------------------------------------------------------------ */
+
+/**
+ * The day-before reminder — the single best defence against the no-access
+ * wasted journeys the whole outcome flow exists to mop up AFTER the fact.
+ */
+export async function sendDayBeforeReminderEmail(booking: BookingRow): Promise<void> {
+  await send({
+    to: booking.customer_email,
+    subject: `We're coming tomorrow — ${whenLine(booking)}`,
+    greeting: first(booking.customer_name),
+    heading: "Your clean is tomorrow",
+    rows: [
+      ["When", whenLine(booking)],
+      ["Where", `${booking.address_line}, ${booking.postcode}`],
+      ["Products", booking.customer_provides_products ? "you're providing them" : "we bring everything"],
+    ],
+    outro: [
+      "If nobody will be in, make sure we can get in the way we agreed — or reply now and we'll sort it.",
+      "Need to move it? The sooner we know, the easier that is.",
+    ],
+    reference: booking.reference,
+  }).catch(() => {});
+}
+
+/** The one unpaid-link nudge. Sent once, ever — after this it's a phone call. */
+export async function sendPaymentChaseEmail(booking: BookingRow, amount: number): Promise<void> {
+  if (!booking.stripe_payment_link_url) return;
+  await send({
+    to: booking.customer_email,
+    subject: `A gentle nudge — £${amount} for your clean (${booking.reference})`,
+    greeting: first(booking.customer_name),
+    heading: "Just a nudge about your clean",
+    intro: [
+      "We cleaned for you a few days ago and the payment link hasn't been used yet — easily missed, so here it is again.",
+    ],
+    rows: [
+      ["Clean", whenLine(booking)],
+      ["To pay", `£${amount}`],
+    ],
+    cta: { label: "Pay for your clean", url: booking.stripe_payment_link_url },
+    outro: [
+      "Already sorted it with us another way, or something not right? Reply and we'll straighten it out — this is the only reminder we send.",
+    ],
+    reference: booking.reference,
+  }).catch(() => {});
+}
+
+/** A cleaner's whole day in one email, first job to last. */
+export async function sendCleanerDaySheetEmail(
+  cleaner: { name: string; email: string | null; token: string },
+  jobs: BookingRow[],
+): Promise<void> {
+  if (!cleaner.email || jobs.length === 0) return;
+  const base = process.env.NEXT_PUBLIC_SITE_URL ?? site.url;
+  await send({
+    to: cleaner.email,
+    subject: `Today: ${jobs.length} ${jobs.length === 1 ? "clean" : "cleans"} — ${jobs[0].preferred_date}`,
+    greeting: first(cleaner.name),
+    heading: jobs.length === 1 ? "One clean today" : `${jobs.length} cleans today`,
+    rows: jobs.flatMap((j, i): Row[] => [
+      [
+        `Job ${i + 1}`,
+        j.start_time
+          ? `${formatTimeRange(j.start_time, Number(j.hours))} — ${j.customer_name}`
+          : `time TBC — ${j.customer_name}`,
+      ],
+      ["", `${j.address_line}, ${j.postcode}`],
+    ]),
+    cta: { label: "Open your jobs page", url: `${base}/c/${cleaner.token}` },
+    outro: ["Tap start when you arrive and finish when you leave, as usual."],
+  }).catch(() => {});
+}
+
+/**
+ * The cron telling the office what it did — and, above all, when it FAILED.
+ * The lesson from the June silent-failure post-mortem: a scheduler that only
+ * speaks when it works is indistinguishable from one that has died.
+ */
+export async function sendCronReportEmail(opts: {
+  date: string;
+  reminders: number;
+  chases: number;
+  daySheets: number;
+  errors: string[];
+}): Promise<void> {
+  // Quiet days stay quiet: a daily "0/0/0 all fine" trains people to delete
+  // the report unread. Send only when something happened or something broke.
+  if (opts.reminders + opts.chases + opts.daySheets === 0 && opts.errors.length === 0) return;
+  await send({
+    to: officeAddress(),
+    subject: opts.errors.length
+      ? `⚠ Daily emails: ${opts.errors.length} problem${opts.errors.length === 1 ? "" : "s"} — ${opts.date}`
+      : `Daily emails sent — ${opts.date}`,
+    heading: opts.errors.length ? "The daily emails hit a problem" : "This morning's emails",
+    rows: [
+      ["Day-before reminders", String(opts.reminders)],
+      ["Payment nudges", String(opts.chases)],
+      ["Cleaner day-sheets", String(opts.daySheets)],
+      ...opts.errors.map((e, i): Row => [`Problem ${i + 1}`, e]),
+    ],
+  }).catch(() => {});
+}

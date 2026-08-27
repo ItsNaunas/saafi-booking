@@ -71,6 +71,9 @@ export type BookingRow = {
   paid_at: string | null;
   /** When the link was emailed. Null = never emailed (may still have gone by hand). */
   payment_link_sent_at: string | null;
+  /** Daily-notify sent-markers — see supabase/2026-08-28-daily-notify.sql. */
+  reminder_sent_at?: string | null;
+  payment_chased_at?: string | null;
   /** Why a visit did not happen. Null on every normal booking. */
   outcome_reason: OutcomeReason | null;
   outcome_note: string | null;
@@ -469,6 +472,54 @@ export async function markBookingPaid(
 }
 
 /** Stamp the moment the payment link was emailed to the customer. */
+/* ---------- the daily notify cron's queries ---------- */
+
+/** Confirmed cleans on `date` that have not had their day-before reminder. */
+export async function listBookingsNeedingReminder(date: string): Promise<BookingRow[]> {
+  return (
+    (await rest<BookingRow[]>(
+      `bookings?status=eq.confirmed&preferred_date=eq.${date}&reminder_sent_at=is.null&select=*`
+    )) ?? []
+  );
+}
+
+/**
+ * Completed cleans whose payment link went out at least `days` ago, unpaid and
+ * never chased. One nudge each, ever — the second chase is a phone call.
+ */
+export async function listBookingsNeedingChase(days: number): Promise<BookingRow[]> {
+  const cutoff = new Date(Date.now() - days * 86_400_000).toISOString();
+  return (
+    (await rest<BookingRow[]>(
+      `bookings?status=eq.completed&stripe_payment_link_url=not.is.null` +
+        `&payment_link_sent_at=lt.${encodeURIComponent(cutoff)}&payment_chased_at=is.null&select=*`
+    )) ?? []
+  );
+}
+
+/** Confirmed, cleaner-assigned jobs on `date` — the raw material of day-sheets. */
+export async function listAssignedJobsOn(date: string): Promise<BookingRow[]> {
+  return (
+    (await rest<BookingRow[]>(
+      `bookings?status=eq.confirmed&preferred_date=eq.${date}&cleaner_id=not.is.null&select=*&order=start_time.asc.nullslast`
+    )) ?? []
+  );
+}
+
+export async function markReminderSent(id: string): Promise<void> {
+  await rest(`bookings?id=eq.${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: JSON.stringify({ reminder_sent_at: new Date().toISOString() }),
+  });
+}
+
+export async function markPaymentChased(id: string): Promise<void> {
+  await rest(`bookings?id=eq.${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: JSON.stringify({ payment_chased_at: new Date().toISOString() }),
+  });
+}
+
 export async function markPaymentLinkSent(id: string): Promise<void> {
   await rest(`bookings?id=eq.${encodeURIComponent(id)}`, {
     method: "PATCH",
