@@ -45,7 +45,7 @@ export const metadata: Metadata = {
     url: site.url,
     title: "SAAFI Cleaning Service — home cleaning with a price you see before you book",
     description:
-      "Family-run home cleaning. See your price online in under a minute — clear per-visit prices, no hidden extras, nothing to pay upfront.",
+      "Family-run home cleaning. See your price online in under a minute — clear per-visit prices, no hidden extras, and pay securely online when you book.",
   },
   twitter: { card: "summary_large_image" },
 };

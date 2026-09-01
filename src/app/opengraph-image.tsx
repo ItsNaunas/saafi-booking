@@ -10,7 +10,7 @@ import { site, contact } from "@/lib/business";
 // woff2 only. The system stack is the honest trade rather than shipping a
 // second copy of Cabinet Grotesk purely for this route.
 
-export const alt = `${site.name} — family-run home cleaning with an honest hourly price`;
+export const alt = `${site.name} — family-run home cleaning with a price you see before you book`;
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
@@ -72,8 +72,8 @@ export default async function Image() {
               display: "flex",
             }}
           >
-            Family-run home cleaning with an honest hourly rate. See your price
-            online in under a minute.
+            Family-run home cleaning with a price you see before you book.
+            Get yours online in under a minute.
           </div>
         </div>
 
