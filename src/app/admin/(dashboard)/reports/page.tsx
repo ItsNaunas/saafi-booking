@@ -7,10 +7,9 @@ export const dynamic = "force-dynamic";
 export default async function ReportsPage() {
   const [bookings, customers] = await Promise.all([listBookings(), listCustomers()]);
 
-  // Revenue is what actually arrived (amount_paid, net of refunds) — the old
-  // report summed quoted_price, so every adjusted job reported the wrong money.
-  const takenFor = (b: (typeof bookings)[number]) =>
-    Math.max(0, paidSoFar(b) - Number(b.refund_amount ?? 0));
+  // Revenue is what actually arrived — paidSoFar() is gross takings net of
+  // refunds (the netting lives in lib/money.ts, once).
+  const takenFor = paidSoFar;
   const paid = bookings.filter((b) => takenFor(b) > 0);
   const { date: today } = londonWallClock(new Date());
   const upcoming = bookings.filter(

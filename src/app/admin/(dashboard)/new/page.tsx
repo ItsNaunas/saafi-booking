@@ -50,11 +50,16 @@ export default async function NewBookingPage({
             />
           </label>
         </div>
-        {error && (
+        {error === "2" ? (
+          <p className="mt-3 bg-red-50 px-3 py-2 text-sm font-medium text-red-700">
+            The booking couldn&apos;t be saved — nothing was created. Try again, and if it
+            keeps failing check the connection to the database.
+          </p>
+        ) : error ? (
           <p className="mt-3 bg-red-50 px-3 py-2 text-sm font-medium text-red-700">
             Name, phone and date are required.
           </p>
-        )}
+        ) : null}
         <button className="mt-5 bg-brand-600 px-5 py-2.5 font-semibold text-white hover:bg-brand-700">
           Create booking
         </button>

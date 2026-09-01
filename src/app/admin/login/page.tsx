@@ -23,7 +23,10 @@ async function login(formData: FormData) {
   const expected = process.env.ADMIN_PASSWORD;
   const secret = process.env.SESSION_SECRET;
 
-  const ip = ((await headers()).get("x-forwarded-for") ?? "?").split(",")[0].trim();
+  // x-real-ip is set by Vercel's edge and can't be spoofed by the client;
+  // the first XFF hop can be. Fall back only when the platform header is absent.
+  const h = await headers();
+  const ip = (h.get("x-real-ip") ?? h.get("x-forwarded-for") ?? "?").split(",")[0].trim();
   const now = Date.now();
   const rec = failures.get(ip);
   if (rec && rec.resetAt > now && rec.n >= LOCK_AFTER) {
@@ -76,7 +79,7 @@ export default async function LoginPage({
         />
         {error === "locked" ? (
           <p className="mt-3 bg-red-50 px-3 py-2 text-sm font-medium text-red-700">
-            Too many attempts — wait 15 minutes and try again.
+            Too many attempts — leave it a while and try again.
           </p>
         ) : error ? (
           <p className="mt-3 bg-red-50 px-3 py-2 text-sm font-medium text-red-700">

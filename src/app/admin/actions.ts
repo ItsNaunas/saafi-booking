@@ -21,14 +21,13 @@ import {
   getAdjustment,
   setAdjustmentStatus,
   amountDueFor,
-  isPaidInFull,
   paidSoFar,
   recordBookingRefund,
   markPaymentLinkSent,
   type BookingStatus,
   type BookingRow,
 } from "@/lib/supabaseAdmin";
-import { getStripe } from "@/lib/stripe";
+import { getStripe, fromPence } from "@/lib/stripe";
 import {
   sendConfirmationEmail,
   sendAdjustmentEmail,
@@ -38,6 +37,7 @@ import {
   sendBookingCancelledEmail,
   sendBookingChangedEmail,
   sendCleanerJobChangedEmail,
+  sendOpsAlertEmail,
 } from "@/lib/email";
 import {
   raiseBookingPaymentLink,
@@ -76,7 +76,9 @@ export async function setBookingStatus(formData: FormData) {
   // button instead, which does both honestly.
   if (to === "cancelled") {
     const current = await getBooking(id);
-    if (current && isPaidInFull(current) && !current.refunded_at) {
+    // ANY money in and not yet refunded blocks the plain cancel — a part
+    // payment deserves its refund conversation as much as a full one.
+    if (current && paidSoFar(current) > 0 && !current.refunded_at) {
       redirect(`/admin/booking/${id}?refund=needed`);
     }
   }
@@ -224,7 +226,7 @@ export async function createManualBooking(formData: FormData) {
     customer_name: name,
     // No email on a phone booking gets the @phone.saafi sentinel: the send()
     // gate refuses it and the customers trigger skips it, so it costs nothing.
-    customer_email: get("email") || `${phone.replace(/\D/g, "")}@phone.saafi`,
+    customer_email: get("email").toLowerCase() || `${phone.replace(/\D/g, "")}@phone.saafi`,
     customer_phone: phone,
     address_line: get("address_line") || "—",
     postcode: get("postcode").toUpperCase().replace(/\s+/g, "") || "—",
@@ -241,7 +243,11 @@ export async function createManualBooking(formData: FormData) {
     start_time: startTime,
     notes: get("notes") || null,
     status: "confirmed", // phone bookings arrive pre-agreed
+  }).catch((e) => {
+    console.error("[admin] manual booking insert failed:", e);
+    return null;
   });
+  if (!row) redirect("/admin/new?error=2");
 
   // A phone booking is still a booking: the same confirmation email (a no-op
   // when there's no real address) and the same series top-up as the public
@@ -300,16 +306,37 @@ export async function editBooking(formData: FormData) {
     ["address_line", "address_line"],
     ["postcode", "postcode"],
   ] as const) {
-    const v = form === "postcode" ? get(form).toUpperCase().replace(/\s+/g, "") : get(form);
+    const v =
+      form === "postcode"
+        ? get(form).toUpperCase().replace(/\s+/g, "")
+        : form === "customer_email"
+          ? // One casing everywhere: John@Gmail.com forking a second customer
+            // row silently loses the saved card attached to the first.
+            get(form).toLowerCase()
+          : get(form);
     if (v && v !== String((before as unknown as Record<string, unknown>)[col] ?? "")) {
       contact[col] = v;
     }
   }
 
+  // A deliberate reprice after an adjustment was agreed must actually take
+  // effect: agreedPriceFor() prefers final_price, so leaving the old agreed
+  // figure in place made the edit a silent no-op that still emailed the
+  // customer about a change that never happened.
+  const willReprice =
+    Number.isFinite(price) &&
+    price >= 0 &&
+    Math.abs(price - Number(before.quoted_price)) >= 0.005;
+  const clearAgreed =
+    willReprice && before.price_status === "agreed"
+      ? { final_price: null, price_status: "quoted" as const }
+      : {};
+
   const updated = await updateBooking(id, {
     ...(/^\d{4}-\d{2}-\d{2}$/.test(date) ? { preferred_date: date } : {}),
     ...(Number.isFinite(hours) && hours > 0 ? { hours } : {}),
     ...(Number.isFinite(price) && price >= 0 ? { quoted_price: price } : {}),
+    ...clearAgreed,
     ...contact,
     start_time: startMinutes === null ? null : toHHMM(startMinutes),
     notes: notes || null,
@@ -377,11 +404,15 @@ export async function savePricing(formData: FormData) {
     "lead_time_hours",
     "max_days_ahead",
   ];
+  // Keys where zero would break every quote on the public site — a cleared
+  // field used to submit "" which Number() turned into exactly that zero.
+  const mustBePositive = new Set(["hourly_rate", "min_hours", "max_hours", "slot_minutes", "max_days_ahead"]);
   for (const key of keys) {
     const raw = formData.get(key);
-    if (raw === null) continue;
+    if (raw === null || String(raw).trim() === "") continue;
     const value = Number(raw);
     if (!Number.isFinite(value) || value < 0) continue;
+    if (mustBePositive.has(key) && value <= 0) continue;
     await updatePricingRow(key, value);
   }
   invalidatePricingCache();
@@ -503,9 +534,16 @@ export async function createPaymentLink(formData: FormData) {
   const booking = await getBooking(id);
   if (!booking || booking.status === "paid") return;
 
-  await raiseBookingPaymentLink(booking);
+  const url = await raiseBookingPaymentLink(booking);
   revalidatePath(`/admin/booking/${booking.id}`);
   revalidatePath("/admin");
+  if (!url) {
+    redirect(
+      `/admin/booking/${id}?sent=fail&why=${encodeURIComponent(
+        amountDueFor(booking) > 0 ? "Stripe couldn't create the link" : "nothing is owed on this booking"
+      )}`
+    );
+  }
 }
 
 /**
@@ -533,12 +571,14 @@ export async function refundBooking(formData: FormData) {
   }
 
   let failure: string | null = null;
+  let refunded = 0;
   try {
-    await stripe!.refunds.create(
+    const refund = await stripe!.refunds.create(
       { payment_intent: booking.stripe_payment_intent! },
       // A double-click must not refund twice.
       { idempotencyKey: `saafi-refund-${booking.id}` }
     );
+    refunded = fromPence(refund.amount);
   } catch (e) {
     failure = (e as Error).message ?? "the refund could not be created";
   }
@@ -546,10 +586,26 @@ export async function refundBooking(formData: FormData) {
     redirect(`/admin/booking/${id}?refund=fail&why=${encodeURIComponent(failure)}`);
   }
 
-  await recordBookingRefund(booking.id, paid).catch((e) =>
+  // Record what Stripe ACTUALLY returned, never the running total. Only the
+  // last payment intent is stored, so a booking paid in two payments (deposit
+  // by link, remainder on card) refunds only the last one here — the office
+  // must finish the rest in the Stripe dashboard, and is told so plainly.
+  await recordBookingRefund(booking.id, refunded).catch((e) =>
     // The charge.refunded webhook records it as well; this is just the fast path.
     console.error("[admin] refund made but not recorded locally:", e)
   );
+
+  const shortfall = Math.round((paid - refunded) * 100) / 100;
+  if (shortfall > 0) {
+    await sendOpsAlertEmail({
+      subject: `⚠ Refund incomplete — ${booking.reference}`,
+      heading: "Only part of this booking's money could be refunded automatically",
+      lines: [
+        `${booking.customer_name} paid £${paid} in more than one payment; the button refunded the most recent one (£${refunded}).`,
+        `Refund the remaining £${shortfall} from the Stripe dashboard — search for ${booking.reference}.`,
+      ],
+    }).catch(() => {});
+  }
 
   // A refunded future visit is a cancelled visit. A refunded finished job
   // keeps its status — the money story is told by refunded_at.
@@ -557,7 +613,7 @@ export async function refundBooking(formData: FormData) {
     const updated = await updateBookingStatus(id, "cancelled");
     const b = updated ?? booking;
     await deactivatePaymentLink(b).catch(() => {});
-    await sendBookingCancelledEmail(b, { refundedAmount: paid }).catch((e) =>
+    await sendBookingCancelledEmail(b, { refundedAmount: refunded }).catch((e) =>
       console.error("[admin] refund cancellation email failed:", e)
     );
     if (b.cleaner_id) {
@@ -688,10 +744,13 @@ export async function chargeCardNow(formData: FormData) {
   const booking = await getBooking(id);
   if (!booking) return;
 
-  const result = await settleBookingWithSavedCard(booking).catch(() => ({
-    ok: false as const,
-    reason: "the charge could not be attempted",
-  }));
+  // The one deliberate "charge before the clean is finished" path.
+  const result = await settleBookingWithSavedCard(booking, { allowBeforeCompletion: true }).catch(
+    () => ({
+      ok: false as const,
+      reason: "the charge could not be attempted",
+    })
+  );
 
   revalidatePath(`/admin/booking/${id}`);
   redirect(

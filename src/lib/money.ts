@@ -22,9 +22,29 @@ export function agreedPriceFor(b: BookingRow): number {
     : Number(b.quoted_price);
 }
 
-/** What has actually been settled so far, in pounds. */
-export function paidSoFar(b: BookingRow): number {
+/** Gross money taken, before any refunds. This is what `amount_paid` stores —
+ *  payment recording accumulates on this figure, never the net one. */
+export function grossPaidFor(b: BookingRow): number {
   return Number(b.amount_paid ?? 0) || 0;
+}
+
+/** Money returned to the customer so far. */
+export function refundedFor(b: BookingRow): number {
+  return Number(b.refund_amount ?? 0) || 0;
+}
+
+/**
+ * What the customer has actually parted with: gross minus refunds. A refunded
+ * booking used to still read "paid in full" everywhere except reports, which
+ * quietly did its own subtraction — the netting lives here now, once.
+ */
+export function paidSoFar(b: BookingRow): number {
+  return Math.max(0, round2(grossPaidFor(b) - refundedFor(b)));
+}
+
+/** Money in beyond the agreed price — a refund conversation, surfaced not clamped. */
+export function overpaidBy(b: BookingRow): number {
+  return Math.max(0, round2(paidSoFar(b) - agreedPriceFor(b)));
 }
 
 /**

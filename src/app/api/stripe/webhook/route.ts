@@ -15,7 +15,8 @@ import {
   saveCustomerCard,
   clearCustomerCard,
   amountDueFor,
-  paidSoFar,
+  grossPaidFor,
+  overpaidBy,
   isPaidInFull,
 } from "@/lib/supabaseAdmin";
 import { deactivatePaymentLink } from "@/lib/paymentLink";
@@ -112,26 +113,42 @@ export async function POST(req: Request) {
         return NextResponse.json({ received: true, ignored: "no matching booking" });
       }
 
-      // Stripe retries on any non-2xx, so this has to be idempotent.
-      if (isPaidInFull(booking)) {
-        return NextResponse.json({ received: true, ignored: "already paid" });
-      }
-
       const paymentIntent =
         typeof session.payment_intent === "string"
           ? session.payment_intent
           : (session.payment_intent?.id ?? "");
 
-      const thisPayment = fromPence(session.amount_total ?? 0);
-      // Running total: a prepayment and a later remainder must add, not overwrite.
-      const total = Math.round((paidSoFar(booking) + thisPayment) * 100) / 100;
+      // Idempotent by identity, not just by the event log: a replay of a
+      // payment we already recorded must not double the running total.
+      if (paymentIntent && booking.stripe_payment_intent === paymentIntent) {
+        return NextResponse.json({ received: true, ignored: "payment already recorded" });
+      }
 
-      // Payment and workflow are different facts. A finished job that gets its
-      // money graduates to `paid`; a job still to be confirmed or cleaned keeps
-      // its place in the pipeline and simply carries the money with it — the
-      // old behaviour (status jumped straight to `paid`) froze prepaid
-      // bookings where the cleaner could never see them.
-      if (booking.status === "completed") {
+      // A *different* payment against a settled booking is real money that
+      // needs giving back — silence here was how a double payment vanished.
+      if (isPaidInFull(booking)) {
+        await sendOpsAlertEmail({
+          subject: `⚠ Extra payment on ${booking.reference}`,
+          heading: "A payment arrived on a booking that was already settled",
+          lines: [
+            `${booking.customer_name} paid again on ${booking.reference} (£${fromPence(session.amount_total ?? 0)}).`,
+            `Refund it from the Stripe dashboard — payment ${paymentIntent || "(unknown)"}.`,
+          ],
+        }).catch(() => {});
+        return NextResponse.json({ received: true, ignored: "already paid — office alerted" });
+      }
+
+      const thisPayment = fromPence(session.amount_total ?? 0);
+      // Running GROSS total: a prepayment and a later remainder must add, not
+      // overwrite — and refunds never subtract from this figure (lib/money.ts
+      // nets them out when reading).
+      const total = Math.round((grossPaidFor(booking) + thisPayment) * 100) / 100;
+      const afterThis = { ...booking, amount_paid: total };
+
+      // Payment and workflow are different facts. A finished job graduates to
+      // `paid` only when the money actually covers the agreed price — keying
+      // this on status alone made a part payment settle the whole bill.
+      if (booking.status === "completed" && amountDueFor(afterThis) <= 0) {
         await markBookingPaid(booking.id, paymentIntent, total);
       } else {
         await recordBookingPayment(booking.id, paymentIntent, total);
@@ -139,17 +156,33 @@ export async function POST(req: Request) {
       console.log(`[stripe] booking ${booking.reference} payment recorded (£${total})`);
 
       // The link did its job — a live payable page for a settled clean is how
-      // you get paid twice. Best-effort.
-      await deactivatePaymentLink({ ...booking, amount_paid: total }).catch(() => {});
+      // you get paid twice. Also killed on a short payment: the old link now
+      // charges the wrong amount, and the raiser mints a correct remainder
+      // link the next time one is needed. Best-effort.
+      await deactivatePaymentLink(afterThis).catch(() => {});
 
       // A short payment is a conversation, not a settled bill.
-      const stillOwed = amountDueFor({ ...booking, amount_paid: total });
+      const stillOwed = amountDueFor(afterThis);
       if (stillOwed > 0) {
         await sendOpsAlertEmail({
           subject: `⚠ Part payment on ${booking.reference}`,
           heading: "A booking was paid short",
           lines: [
             `${booking.customer_name} paid £${thisPayment} against ${booking.reference}; £${stillOwed} is still outstanding.`,
+            "No automatic chase covers a part payment yet — raise and send the remainder link from the booking page.",
+          ],
+        }).catch(() => {});
+      }
+
+      // Paid beyond the agreed price — money that needs giving back.
+      const over = overpaidBy(afterThis);
+      if (over > 0) {
+        await sendOpsAlertEmail({
+          subject: `⚠ Overpayment on ${booking.reference}`,
+          heading: "A booking was paid more than the agreed price",
+          lines: [
+            `${booking.customer_name} has now paid £${total} against an agreed £${total - over} on ${booking.reference}.`,
+            "Refund the difference from the booking page or the Stripe dashboard.",
           ],
         }).catch(() => {});
       }

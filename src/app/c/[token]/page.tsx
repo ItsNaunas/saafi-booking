@@ -3,6 +3,7 @@ import { formatTimeRange, londonWallClock } from "@/lib/scheduling";
 import { getCleanerByToken, listBookingsForCleaner, type BookingRow } from "@/lib/supabaseAdmin";
 import { cleanerStartJob, cleanerFinishJob, cleanerCannotDoJob } from "./actions";
 import JobClock from "./JobClock";
+import ActualHoursField from "./ActualHoursField";
 import LocationStamp from "./LocationStamp";
 import { REASONS, elapsedHours } from "@/lib/adjustments";
 import { OUTCOMES } from "@/lib/outcomes";
@@ -191,14 +192,10 @@ function JobCard({
 
           <label className="block">
             <span className="mb-1 block text-sm font-medium text-slate-700">Hours worked</span>
-            <input
-              type="number"
-              name="actual_hours"
-              step="0.25"
-              min="0.25"
-              defaultValue={String(soFar > 0 ? soFar : booked)}
-              className="w-full border border-slate-300 px-3 py-2 text-base"
-            />
+            {/* Live-synced to the clock until the cleaner edits it — the old
+                server-rendered default froze at the booked hours and billed
+                stale time. */}
+            <ActualHoursField startedAt={j.started_at as string} bookedHours={booked} />
           </label>
 
           <label className="mt-2 block">

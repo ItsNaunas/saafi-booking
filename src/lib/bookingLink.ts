@@ -8,7 +8,7 @@
 import { createHmac, timingSafeEqual } from "crypto";
 import { siteUrl } from "./stripe";
 import { londonWallClock } from "./scheduling";
-import { isPaidInFull } from "./money";
+import { paidSoFar } from "./money";
 import type { BookingRow } from "./supabaseAdmin";
 
 /**
@@ -19,11 +19,13 @@ import type { BookingRow } from "./supabaseAdmin";
  */
 export function cancellationRoute(b: BookingRow, now = new Date()): "self" | "phone" | "none" {
   if (!["requested", "confirmed"].includes(b.status)) return "none";
-  if (isPaidInFull(b)) return "phone";
+  // ANY money in means a refund conversation, not only a full payment.
+  if (paidSoFar(b) > 0) return "phone";
   const { date: today } = londonWallClock(now);
   const tomorrow = new Date(`${today}T12:00:00Z`);
   tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
-  return b.preferred_date > tomorrow.toISOString().slice(0, 10) ? "self" : "phone";
+  // ">=" — cancelling tomorrow's clean IS "a day's notice", exactly the promise.
+  return b.preferred_date >= tomorrow.toISOString().slice(0, 10) ? "self" : "phone";
 }
 
 function derive(reference: string): string | null {

@@ -62,14 +62,20 @@ export async function GET(req: NextRequest) {
 
   try {
     // ---- 1. day-before reminders ----
+    // Per-booking try/catch: one Resend hiccup on booking three must not cost
+    // bookings four to twenty their reminder — that day never comes back.
     try {
       for (const b of await listBookingsNeedingReminder(tomorrow)) {
-        // Marker first: if the process dies between send and mark, the customer
-        // must not get the email twice tomorrow. One lost reminder is the
-        // cheaper failure.
-        await markReminderSent(b.id);
-        await sendDayBeforeReminderEmail(b);
-        reminders++;
+        try {
+          // Marker first: if the process dies between send and mark, the
+          // customer must not get the email twice tomorrow. One lost reminder
+          // is the cheaper failure.
+          await markReminderSent(b.id);
+          await sendDayBeforeReminderEmail(b);
+          reminders++;
+        } catch (e) {
+          errors.push(`reminder ${b.reference}: ${String(e).slice(0, 120)}`);
+        }
       }
     } catch (e) {
       errors.push(`reminders: ${String(e).slice(0, 140)}`);
@@ -78,9 +84,13 @@ export async function GET(req: NextRequest) {
     // ---- 2. unpaid-link nudges ----
     try {
       for (const b of await listBookingsNeedingChase(3)) {
-        await markPaymentChased(b.id);
-        await sendPaymentChaseEmail(b, amountDueFor(b));
-        chases++;
+        try {
+          await markPaymentChased(b.id);
+          await sendPaymentChaseEmail(b, amountDueFor(b));
+          chases++;
+        } catch (e) {
+          errors.push(`chase ${b.reference}: ${String(e).slice(0, 120)}`);
+        }
       }
     } catch (e) {
       errors.push(`chases: ${String(e).slice(0, 140)}`);
@@ -99,8 +109,12 @@ export async function GET(req: NextRequest) {
         for (const [cleanerId, theirJobs] of byCleaner) {
           const cleaner = cleaners.find((c) => c.id === cleanerId);
           if (!cleaner?.email) continue;
-          await sendCleanerDaySheetEmail(cleaner, theirJobs);
-          daySheets++;
+          try {
+            await sendCleanerDaySheetEmail(cleaner, theirJobs);
+            daySheets++;
+          } catch (e) {
+            errors.push(`day-sheet ${cleaner.name}: ${String(e).slice(0, 120)}`);
+          }
         }
       }
     } catch (e) {

@@ -45,6 +45,10 @@ export async function raiseBookingPaymentLink(booking: BookingRow): Promise<stri
     });
     const link = await stripe.paymentLinks.create({
       line_items: [{ price: price.id, quantity: 1 }],
+      // One completed payment and the link shuts itself — our post-payment
+      // deactivation is best-effort, and best-effort alone is how a customer
+      // pays the same clean twice.
+      restrictions: { completed_sessions: { limit: 1 } },
       metadata: { booking_id: booking.id, reference: booking.reference },
       after_completion: {
         type: "redirect",

@@ -24,7 +24,7 @@ import { getStripe, toPence, siteUrl } from "./stripe";
 import {
   amountDueFor,
   isPaidInFull,
-  paidSoFar,
+  grossPaidFor,
   getCustomer,
   getCustomerByEmail,
   markBookingPaid,
@@ -164,13 +164,20 @@ export async function chargeSavedCard(
  * them throw. The reason is written to the booking so the office can see why.
  */
 export async function settleBookingWithSavedCard(
-  booking: BookingRow
+  booking: BookingRow,
+  opts: { allowBeforeCompletion?: boolean } = {}
 ): Promise<CardResult> {
   if (booking.status === "paid") {
     return { ok: false, reason: "already paid" };
   }
   if (booking.price_status === "pending") {
     return { ok: false, reason: "waiting on the owner to agree the price" };
+  }
+  // "The work is done and the price is agreed" is the whole contract of this
+  // function — approving an adjustment must never charge a card for a clean
+  // that hasn't happened. The admin's explicit "charge now" button opts out.
+  if (booking.status !== "completed" && !opts.allowBeforeCompletion) {
+    return { ok: false, reason: "the clean isn't finished yet" };
   }
   // Prepaid (pay-at-booking) jobs owe nothing by the time the cleaner finishes.
   // That is not a failure to route to a payment link — it is the job graduating.
@@ -193,9 +200,9 @@ export async function settleBookingWithSavedCard(
   const result = await chargeSavedCard(booking, card);
 
   if (result.ok) {
-    // amount_paid stores the running total: a prepaid deposit plus a charged
-    // remainder must add up, not overwrite each other.
-    const total = Math.round((paidSoFar(booking) + result.amount) * 100) / 100;
+    // amount_paid stores the running GROSS total: a prepaid deposit plus a
+    // charged remainder must add up, not overwrite each other.
+    const total = Math.round((grossPaidFor(booking) + result.amount) * 100) / 100;
     await markBookingPaid(booking.id, result.paymentIntentId, total).catch(async (e) => {
       // The money is taken and the database doesn't know. This is the most
       // expensive silent failure in the system — the customer would be chased

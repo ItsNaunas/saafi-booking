@@ -123,7 +123,9 @@ export async function POST(req: NextRequest) {
       : clampHours(Number(body.hours) || cfg.minHours, cfg);
 
   const name = String(body.name ?? "").trim();
-  const email = String(body.email ?? "").trim();
+  // One casing everywhere: case-variant emails fork the customers table and
+  // silently orphan a saved card.
+  const email = String(body.email ?? "").trim().toLowerCase();
   const phone = String(body.phone ?? "").trim();
   const addressLine = String(body.addressLine ?? "").trim();
   const preferredDate = String(body.preferredDate ?? "").trim();
@@ -318,9 +320,13 @@ async function storeBooking(
     process.env.SUPABASE_SECRET_KEY ||
     process.env.SUPABASE_SERVICE_ROLE_KEY ||
     process.env.SUPABASE_PUBLISHABLE_KEY;
-  const reference = newReference();
+  let reference = newReference();
 
   if (url && key) {
+    // A 409 on the unique reference is a same-millisecond collision, not a
+    // reason to fail the customer — retry once with a fresh reference.
+    for (let attempt = 0; attempt < 2; attempt++) {
+      if (attempt > 0) reference = newReference();
     try {
       const res = await fetch(`${url}/rest/v1/bookings`, {
       method: "POST",
@@ -365,14 +371,18 @@ async function storeBooking(
       });
       if (res.ok) return { ok: true, reference };
       console.error("[bookings] supabase insert failed:", res.status, await res.text());
+      if (res.status === 409 && attempt === 0) continue;
       // On serverless the local file is ephemeral: falling back there returns
       // a success screen, a reference and a confirmation email for a booking
       // nobody will ever see. Every service type fails loudly in production —
       // "please call us" is honest, a vanished booking is not.
       if (inProduction()) return { ok: false, reference };
+      break;
     } catch (e) {
       console.error("[bookings] supabase unreachable:", e);
       if (inProduction()) return { ok: false, reference };
+      break;
+    }
     }
   }
 
