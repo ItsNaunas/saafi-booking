@@ -4,6 +4,14 @@
 
 **State: LIVE at https://saaficleaningservice.com.**
 
+**2026-09-01 — second audit acted on end-to-end** (commits 3f7051d, 50d6465, 4c0cb41; orchestrated build — money-path corrections done directly, design/UX batches fanned out to parallel agents with file-level specs, then integrated, built, deployed and smoke-tested):
+- **Money model**: gross vs net paid split in lib/money.ts (refunds finally subtract), paid-transition gated on money covering the price (a part payment can no longer settle a bill), payment idempotent by intent identity, extra/short/over payments all alert the office, refund records what Stripe actually returned + shortfall alert, Stripe links capped at one completed session, card settle refuses unfinished work, cleaner hours field live-syncs to the clock (ActualHoursField — the stale default was silently billing booked hours), savePricing blank-field zero-wipe fixed, emails lowercased everywhere, per-booking cron error isolation.
+- **Public site**: new H1, per-visit copy everywhere (incl. social cards), plan-card hover un-deadened (Reveal releases its inline styles), one CTA colour/shape, a11y pass (accordion aria, focus on dark, contrast, 44px targets), landing page now ISR (1m) prerendered with real DB rates.
+- **Quote form**: mobile sticky price bar, "Any time — you pick" chip, per-tab addon selections (deep/standard keyspace collision fixed), on-blur validation + ARIA, human dates.
+- **Customer /b page**: two-step cancel, honest requested-state copy, tel: links, tomorrow-floored reschedule, ICS midnight rollover fixed.
+- **Admin**: Today run-sheet panel, start time + cleaner on pipeline cards, calendar day view, booking page ordered by urgency (#adjustment anchor), STATUS_LABEL (no raw enums), error boundaries, action feedback + pending states, cleaner-link Copy/WhatsApp buttons.
+- **Cleaner portal**: door-order card (address → bold postcode → access notes always shown → Call button), deep-clean crew badge, visible escape hatch, pending states, SAAFI mark.
+
 **2026-08-28 — the audit sweep: every "broken today" finding fixed in one day.** (commits f9f0ca2, 3e646f2, d70c4b2)
 - **Money and workflow decoupled** (`src/lib/money.ts` is the single source of what a booking owes). Pay-at-booking no longer freezes a booking at a terminal `paid` — money rides in `amount_paid`/`paid_at`, the booking keeps flowing, and a completed job graduates to `paid` when the money covers it. `ALLOWED.paid → confirmed` is the escape hatch for old stuck rows.
 - **Stale payment links die**: the raiser records the amount each link was priced at, deactivates and re-raises on any change; links are also killed on cancel and after payment. `createPaymentLink`/auto-invoice/cleaner-finish all share one implementation now.
