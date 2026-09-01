@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { loadPricingConfig } from "@/lib/pricingServer";
-import { listSchedulableCleaners, busyBlocksForDate } from "@/lib/supabaseAdmin";
+import { listSchedulableCleaners, listCleanersOnLeave, busyBlocksForDate } from "@/lib/supabaseAdmin";
 import { daySlots, dayClosedReason, isValidDate } from "@/lib/scheduling";
 
 // Reads live bookings, so it must never be cached or prerendered.
@@ -31,6 +31,10 @@ export async function GET(req: NextRequest) {
   let cleaners;
   try {
     cleaners = await listSchedulableCleaners();
+    // Approved time off means the cleaner doesn't exist that day — otherwise
+    // customers book slots the rota can never honour. Best-effort pre-migration.
+    const onLeave = await listCleanersOnLeave(date).catch(() => new Set<string>());
+    cleaners = cleaners.filter((c) => !onLeave.has(c.id));
   } catch (e) {
     // The quote flow must not die because the DB blinked — let the customer
     // send the request and SAAFI confirm the time by phone.

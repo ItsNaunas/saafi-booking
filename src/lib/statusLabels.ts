@@ -13,6 +13,16 @@ export const STATUS_LABEL: Record<string, string> = {
   no_access: "Couldn't get in",
 };
 
+/** How a cleaner's mid-job issue reads to the office — shared by the portal
+ *  form and the admin booking page so the two can't drift. */
+export const ISSUE_LABEL: Record<string, string> = {
+  breakage: "Something got broken or damaged",
+  supplies: "Out of products / missing equipment",
+  customer_request: "Customer asked for something extra",
+  safety: "Something doesn't feel right here",
+  other: "Something else",
+};
+
 export const STATUS_DOT: Record<BookingStatus, string> = {
   requested: "bg-amber-400",
   confirmed: "bg-sky-500",

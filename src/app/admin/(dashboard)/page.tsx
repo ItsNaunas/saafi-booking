@@ -345,6 +345,19 @@ function BookingCard({
                 PAID
               </span>
             )}
+            {/* Proof the cleaner has seen the job — the silent failure this
+                closes is a customer with nobody coming. */}
+            {b.status === "confirmed" && b.cleaner_id && (
+              b.acknowledged_at ? (
+                <span className="rounded-full bg-brand-50 px-1.5 py-0.5 text-[10px] font-semibold text-brand-700">
+                  seen ✓
+                </span>
+              ) : (
+                <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-500">
+                  not seen yet
+                </span>
+              )
+            )}
             {isRecurring && (
               <span
                 className={`rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${

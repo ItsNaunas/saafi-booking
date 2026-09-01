@@ -24,6 +24,7 @@ import {
 } from "@/lib/deepClean";
 import {
   listSchedulableCleaners,
+  listCleanersOnLeave,
   busyBlocksForDate,
   getBookingByReference,
   findRecentDuplicateBooking,
@@ -177,10 +178,12 @@ export async function POST(req: NextRequest) {
     // Never trust the browser's idea of what was free — the slot may have gone
     // while the customer was filling the form in. Same rule as the price.
     try {
-      const [cleaners, busy] = await Promise.all([
+      const [allCleaners, busy, onLeave] = await Promise.all([
         listSchedulableCleaners(),
         busyBlocksForDate(preferredDate),
+        listCleanersOnLeave(preferredDate).catch(() => new Set<string>()),
       ]);
+      const cleaners = allCleaners.filter((c) => !onLeave.has(c.id));
       const bookable = isSlotBookable({
         date: preferredDate,
         time: startTime,

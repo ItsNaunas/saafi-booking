@@ -1,6 +1,6 @@
-import { listCleaners, type CleanerRow } from "@/lib/supabaseAdmin";
+import { listCleaners, listPendingTimeOff, type CleanerRow } from "@/lib/supabaseAdmin";
 import { site } from "@/lib/business";
-import { addCleaner, toggleCleaner, updateCleanerSchedule } from "@/app/admin/actions";
+import { addCleaner, toggleCleaner, updateCleanerSchedule, decideTimeOff } from "@/app/admin/actions";
 import PendingButton from "@/components/PendingButton";
 import CopyLink from "./CopyLink";
 
@@ -22,7 +22,12 @@ export default async function CleanersPage({
 }: {
   searchParams: Promise<{ error?: string }>;
 }) {
-  const [cleaners, { error }] = await Promise.all([listCleaners(), searchParams]);
+  const [cleaners, { error }, pendingTimeOff] = await Promise.all([
+    listCleaners(),
+    searchParams,
+    // Pre-migration the table doesn't exist — the block simply hides.
+    listPendingTimeOff().catch(() => []),
+  ]);
   // Always the real public domain, never the environment's. These links get pasted
   // into WhatsApp — one opened from a local admin session must not hand a cleaner
   // a localhost or preview URL. NEXT_PUBLIC_SITE_URL deliberately isn't used here:
@@ -41,6 +46,50 @@ export default async function CleanersPage({
 
       {error && (
         <p className="mb-4 bg-red-50 px-3 py-2 text-sm font-medium text-red-700">{error}</p>
+      )}
+
+      {pendingTimeOff.length > 0 && (
+        <div className="mb-5 bg-amber-50 p-4 ring-1 ring-amber-300">
+          <h2 className="font-semibold text-amber-900">
+            {pendingTimeOff.length} time-off request{pendingTimeOff.length === 1 ? "" : "s"} waiting
+          </h2>
+          <ul className="mt-2 space-y-2 text-sm">
+            {pendingTimeOff.map((t) => (
+              <li key={t.id} className="flex flex-wrap items-center justify-between gap-2">
+                <span className="text-amber-900">
+                  <b>{t.cleaners?.name ?? "A cleaner"}</b> — {t.from_date}
+                  {t.to_date !== t.from_date && ` to ${t.to_date}`}
+                  {t.note && <span className="text-amber-800"> · &ldquo;{t.note}&rdquo;</span>}
+                </span>
+                <span className="flex gap-2">
+                  <form action={decideTimeOff}>
+                    <input type="hidden" name="id" value={t.id} />
+                    <input type="hidden" name="decision" value="approved" />
+                    <PendingButton
+                      pendingLabel="…"
+                      className="bg-brand-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-brand-700"
+                    >
+                      Approve
+                    </PendingButton>
+                  </form>
+                  <form action={decideTimeOff}>
+                    <input type="hidden" name="id" value={t.id} />
+                    <input type="hidden" name="decision" value="denied" />
+                    <PendingButton
+                      pendingLabel="…"
+                      className="border border-amber-400 bg-white px-3 py-1.5 text-xs font-semibold text-amber-900 hover:bg-amber-100"
+                    >
+                      Decline
+                    </PendingButton>
+                  </form>
+                </span>
+              </li>
+            ))}
+          </ul>
+          <p className="mt-2 text-xs text-amber-800">
+            Approving blocks those days out — customers can&apos;t book slots that need them.
+          </p>
+        </div>
       )}
 
       <form action={addCleaner} className="mb-5 flex flex-wrap items-end gap-2 bg-white p-4 shadow-sm ring-1 ring-slate-200">

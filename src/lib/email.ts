@@ -878,3 +878,114 @@ export async function sendOpsAlertEmail(opts: {
     rows: opts.rows,
   }).catch(() => {});
 }
+
+/* ------------------------------------------------------------------ *
+ *  Cleaner-portal upgrades (2026-09-01)
+ * ------------------------------------------------------------------ */
+
+/**
+ * One tap on "running late" and both sides know. The most common awkward
+ * moment of the job used to be a phone call most people avoided making —
+ * which meant the customer stood waiting and nobody knew.
+ */
+export async function sendRunningLateEmails(
+  booking: BookingRow,
+  cleanerName: string,
+  minutes: number,
+): Promise<void> {
+  await send({
+    to: booking.customer_email,
+    subject: `Running about ${minutes} minutes behind — sorry! (${booking.reference})`,
+    greeting: first(booking.customer_name),
+    heading: `We're running about ${minutes} minutes late`,
+    intro: [
+      `${first(cleanerName)} is on the way to you but running roughly ${minutes} minutes behind — sorry about that.`,
+      "No need to do anything; this is just so you're not left wondering.",
+    ],
+    reference: booking.reference,
+  }).catch(() => {});
+  await send({
+    to: officeAddress(),
+    subject: `${first(cleanerName)} running ~${minutes}m late — ${booking.reference}`,
+    heading: "A cleaner flagged they're running late",
+    rows: [
+      ["Cleaner", cleanerName],
+      ["Job", `${booking.preferred_date} · ${booking.postcode}`],
+      ["Customer", `${booking.customer_name} · ${booking.customer_phone}`],
+      ["Late by", `about ${minutes} minutes`],
+    ],
+    outro: ["The customer has been emailed the same estimate."],
+    reference: booking.reference,
+  }).catch(() => {});
+}
+
+/** A mid-job problem, reported without ending the job. */
+export async function sendIssueReportEmail(
+  booking: BookingRow,
+  cleanerName: string,
+  categoryLabel: string,
+  note: string | null,
+): Promise<void> {
+  await send({
+    to: officeAddress(),
+    subject: `⚠ ${categoryLabel} reported — ${booking.reference}`,
+    heading: `${first(cleanerName)} reported something on a job`,
+    rows: [
+      ["What", categoryLabel],
+      ["Job", `${booking.preferred_date} · ${booking.address_line}, ${booking.postcode}`],
+      ["Customer", `${booking.customer_name} · ${booking.customer_phone}`],
+      ["Cleaner", cleanerName],
+    ],
+    intro: note ? [`"${note}"`] : undefined,
+    outro: ["The job is still going — this is a report, not a cancellation."],
+    reference: booking.reference,
+  }).catch(() => {});
+}
+
+/** A cleaner asked for days off — the office decides from /admin/cleaners. */
+export async function sendTimeOffRequestEmail(
+  cleanerName: string,
+  fromDate: string,
+  toDate: string,
+  note: string | null,
+): Promise<void> {
+  await send({
+    to: officeAddress(),
+    subject: `Time off requested — ${cleanerName}`,
+    heading: `${first(cleanerName)} has asked for time off`,
+    rows: [
+      ["Who", cleanerName],
+      ["From", fromDate],
+      ["To", toDate],
+    ],
+    intro: note ? [`"${note}"`] : undefined,
+    outro: [
+      "Approve or decline it from the Cleaners page. Approved days disappear from what customers can book.",
+    ],
+  }).catch(() => {});
+}
+
+/** The office decided — the cleaner hears it in writing, not by silence. */
+export async function sendTimeOffDecisionEmail(
+  cleaner: { name: string; email: string | null },
+  fromDate: string,
+  toDate: string,
+  approved: boolean,
+): Promise<void> {
+  if (!cleaner.email) return;
+  await send({
+    to: cleaner.email,
+    subject: approved ? "Your time off is approved" : "About your time-off request",
+    greeting: first(cleaner.name),
+    heading: approved ? "Time off approved" : "That time off doesn't work this time",
+    rows: [
+      ["From", fromDate],
+      ["To", toDate],
+    ],
+    outro: [
+      approved
+        ? "Those days are blocked out — nothing will be booked on you."
+        : "Ring the office and they'll talk it through with you.",
+    ],
+  }).catch(() => {});
+}

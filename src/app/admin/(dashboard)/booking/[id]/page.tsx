@@ -2,6 +2,8 @@ import { notFound } from "next/navigation";
 import {
   getBooking,
   listAdjustmentsForBooking,
+  listIssuesForBooking,
+  listPhotosForBooking,
   amountDueFor,
   isPaidInFull,
   paidSoFar,
@@ -25,6 +27,8 @@ import { stripeConfigured, stripeIsTestMode } from "@/lib/stripe";
 import { FREQUENCY_LABEL, formatGBP } from "@/lib/pricing";
 import { reasonLabel } from "@/lib/adjustments";
 import { outcomeLabel, chargeableJourney } from "@/lib/outcomes";
+import { ISSUE_LABEL } from "@/lib/statusLabels";
+import { signedPhotoUrl } from "@/lib/storage";
 import { describeCard } from "@/lib/cardOnFile";
 import { STATUS_LABEL } from "@/lib/statusLabels";
 
@@ -51,6 +55,14 @@ export default async function BookingDetailPage({
 
   // Tolerate the table not existing yet (pre-migration) rather than 500ing.
   const adjustments = await listAdjustmentsForBooking(id).catch(() => [] as AdjustmentRow[]);
+  // Pre-migration tolerance, same as adjustments.
+  const issues = await listIssuesForBooking(id).catch(() => []);
+  const photos = await listPhotosForBooking(id).catch(() => []);
+  const photoUrls = (
+    await Promise.all(
+      photos.map(async (ph) => ({ ...ph, url: await signedPhotoUrl(ph.path).catch(() => null) }))
+    )
+  ).filter((ph) => ph.url);
 
   // Tolerate the card columns not existing yet (pre-migration).
   const customer = b.customer_id ? await getCustomer(b.customer_id).catch(() => null) : null;
@@ -231,8 +243,58 @@ export default async function BookingDetailPage({
             v={`${b.actual_hours}h${b.final_price != null ? ` · ${formatGBP(Number(b.final_price))}` : ""}`}
           />
         )}
+        {b.status === "confirmed" && b.cleaner_id && (
+          <Row
+            k="Cleaner seen it"
+            v={
+              b.acknowledged_at
+                ? `Yes — ${new Date(b.acknowledged_at).toLocaleString("en-GB")}`
+                : "Not yet — no proof they know about this job"
+            }
+          />
+        )}
         <Row k="Booked" v={new Date(b.created_at).toLocaleString("en-GB")} />
       </div>
+
+      {issues.length > 0 && (
+        <div className="mb-4 bg-white p-5 text-sm shadow-sm ring-1 ring-slate-200">
+          <h2 className="mb-2 font-semibold text-slate-900">Reported from the job</h2>
+          <ul className="space-y-2">
+            {issues.map((i) => (
+              <li key={i.id} className="border-l-2 border-amber-300 pl-3">
+                <p className="font-medium text-slate-800">{ISSUE_LABEL[i.category] ?? i.category}</p>
+                {i.note && <p className="text-slate-600">&ldquo;{i.note}&rdquo;</p>}
+                <p className="text-xs text-slate-400">
+                  {new Date(i.created_at).toLocaleString("en-GB")}
+                </p>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {photoUrls.length > 0 && (
+        <div className="mb-4 bg-white p-5 text-sm shadow-sm ring-1 ring-slate-200">
+          <h2 className="mb-2 font-semibold text-slate-900">Job photos</h2>
+          <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+            {photoUrls.map((ph) => (
+              <a key={ph.id} href={ph.url!} target="_blank" rel="noreferrer" className="block">
+                {/* Signed, short-lived URLs into a private bucket — next/image
+                    can't optimise a URL that expires hourly. */}
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={ph.url!}
+                  alt={`${ph.phase} photo`}
+                  className="h-24 w-full object-cover ring-1 ring-slate-200"
+                />
+                <span className="block text-center text-[10px] uppercase tracking-wide text-slate-400">
+                  {ph.phase}
+                </span>
+              </a>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* ---------- payment ---------- */}
       <div className="mb-4 bg-white p-5 text-sm shadow-sm ring-1 ring-slate-200">

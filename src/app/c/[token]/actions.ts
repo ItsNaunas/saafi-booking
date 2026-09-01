@@ -9,7 +9,17 @@ import {
   getBooking,
   updateBooking,
   insertAdjustment,
+  markBookingAcknowledged,
+  insertBookingIssue,
+  insertTimeOffRequest,
+  insertBookingPhoto,
+  voidOpenAdjustments,
+  paidSoFar,
+  type IssueCategory,
 } from "@/lib/supabaseAdmin";
+import { deactivatePaymentLink } from "@/lib/paymentLink";
+import { uploadJobPhoto, ensurePhotoBucket } from "@/lib/storage";
+import { ISSUE_LABEL } from "@/lib/statusLabels";
 import { autoInvoiceIfUnpaid } from "@/lib/paymentLink";
 import { loadPricingConfig } from "@/lib/pricingServer";
 import { spawnNextOccurrence } from "@/lib/recurring";
@@ -233,4 +243,194 @@ export async function cleanerCannotDoJob(formData: FormData) {
   revalidatePath(`/c/${token}`);
   revalidatePath("/admin");
   revalidatePath("/admin/calendar");
+}
+
+/* ------------------------------------------------------------------ *
+ *  Cleaner-portal upgrades (2026-09-01)
+ * ------------------------------------------------------------------ */
+
+/** Like ownConfirmedJob but for any status in `allowed` — undo needs completed. */
+async function ownJob(token: string, bookingId: string, allowed: string[]) {
+  const cleaner = await getCleanerByToken(token);
+  if (!cleaner || !bookingId) return null;
+  const booking = await getBooking(bookingId);
+  if (!booking || booking.cleaner_id !== cleaner.id || !allowed.includes(booking.status)) return null;
+  return { cleaner, booking };
+}
+
+/** "Got it" — the office finally gets proof the assignment was seen. */
+export async function cleanerAcknowledgeJob(formData: FormData) {
+  const token = String(formData.get("token") ?? "");
+  const bookingId = String(formData.get("booking_id") ?? "");
+  const found = await ownJob(token, bookingId, ["confirmed"]);
+  if (!found) return;
+  // Best-effort pre-migration: a missing column must not break the button.
+  await markBookingAcknowledged(bookingId).catch((e) =>
+    console.error("[cleaner] could not record acknowledgment:", e)
+  );
+  revalidatePath(`/c/${token}`);
+  revalidatePath("/admin");
+}
+
+/** One tap tells the customer and the office — no phone call to dread. */
+export async function cleanerRunningLate(formData: FormData) {
+  const token = String(formData.get("token") ?? "");
+  const bookingId = String(formData.get("booking_id") ?? "");
+  const minutes = Number(formData.get("minutes"));
+  if (![15, 30, 45].includes(minutes)) return;
+  const found = await ownJob(token, bookingId, ["confirmed"]);
+  if (!found) return;
+
+  const { sendRunningLateEmails } = await import("@/lib/email");
+  await sendRunningLateEmails(found.booking, found.cleaner.name, minutes).catch((e) =>
+    console.error("[cleaner] running-late emails failed:", e)
+  );
+  revalidatePath(`/c/${token}`);
+}
+
+// Labels live in lib/statusLabels so the admin page reads the same words.
+
+/**
+ * A mid-job problem gets a home without ending the job. The email goes first
+ * and independently of the write, same rule as the wasted-journey report:
+ * the office hearing about it is the part that matters.
+ */
+export async function cleanerReportIssue(formData: FormData) {
+  const token = String(formData.get("token") ?? "");
+  const bookingId = String(formData.get("booking_id") ?? "");
+  const category = String(formData.get("category") ?? "");
+  if (!(category in ISSUE_LABEL)) return;
+  const note = String(formData.get("note") ?? "").trim().slice(0, 1000) || null;
+  const found = await ownJob(token, bookingId, ["confirmed", "completed"]);
+  if (!found) return;
+
+  const { sendIssueReportEmail } = await import("@/lib/email");
+  await sendIssueReportEmail(
+    found.booking,
+    found.cleaner.name,
+    ISSUE_LABEL[category],
+    note
+  ).catch((e) => console.error("[cleaner] issue email failed:", e));
+
+  await insertBookingIssue({
+    booking_id: bookingId,
+    cleaner_id: found.cleaner.id,
+    category: category as IssueCategory,
+    note,
+  }).catch((e) => console.error("[cleaner] issue insert failed (pre-migration?):", e));
+
+  revalidatePath(`/c/${token}`);
+}
+
+/** How long after Finish a mistake can still be self-corrected. */
+const UNDO_WINDOW_MS = 15 * 60 * 1000;
+
+/**
+ * Undo a Finish tapped in error, within 15 minutes and only while no money
+ * has moved. Puts the job back to confirmed with the clock still running,
+ * voids the finish's undecided adjustments, and kills any invoice link the
+ * auto-invoice already raised — the stale-link machinery mints a correct one
+ * on the real finish.
+ */
+export async function cleanerUndoFinish(formData: FormData) {
+  const token = String(formData.get("token") ?? "");
+  const bookingId = String(formData.get("booking_id") ?? "");
+  const found = await ownJob(token, bookingId, ["completed"]);
+  if (!found) return;
+  const { booking, cleaner } = found;
+
+  if (paidSoFar(booking) > 0) return; // money moved — the office untangles it
+  if (!booking.finished_at) return;
+  if (Date.now() - new Date(booking.finished_at).getTime() > UNDO_WINDOW_MS) return;
+
+  await voidOpenAdjustments(bookingId).catch(() => {});
+  await deactivatePaymentLink(booking).catch(() => {});
+  await updateBooking(bookingId, {
+    status: "confirmed",
+    finished_at: null,
+    actual_hours: null,
+    final_price: null,
+    price_status: "quoted",
+  });
+
+  const { sendOpsAlertEmail } = await import("@/lib/email");
+  await sendOpsAlertEmail({
+    subject: `Finish undone — ${booking.reference}`,
+    heading: "A cleaner undid a finish to correct a mistake",
+    lines: [
+      `${cleaner.name} undid their finish on ${booking.reference} within the 15-minute window. The job is back in progress and will be finished again properly.`,
+      "Any 'clean completed' email the customer just received will be superseded by the corrected one.",
+    ],
+  }).catch(() => {});
+
+  revalidatePath(`/c/${token}`);
+  revalidatePath("/admin");
+}
+
+/** Days off requested from the phone; the office decides from /admin/cleaners. */
+export async function cleanerRequestTimeOff(formData: FormData) {
+  const token = String(formData.get("token") ?? "");
+  const cleaner = await getCleanerByToken(token);
+  if (!cleaner) return;
+
+  const from = String(formData.get("from_date") ?? "");
+  const to = String(formData.get("to_date") ?? "") || from;
+  const note = String(formData.get("note") ?? "").trim().slice(0, 300) || null;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to)) return;
+  if (to < from) return;
+
+  const row = await insertTimeOffRequest({
+    cleaner_id: cleaner.id,
+    from_date: from,
+    to_date: to,
+    note,
+  }).catch((e) => {
+    console.error("[cleaner] time-off insert failed (pre-migration?):", e);
+    return null;
+  });
+
+  if (row) {
+    const { sendTimeOffRequestEmail } = await import("@/lib/email");
+    await sendTimeOffRequestEmail(cleaner.name, from, to, note).catch(() => {});
+  }
+  revalidatePath(`/c/${token}`);
+}
+
+/**
+ * Before/after photos from the phone camera. Optional by deliberate default —
+ * whether they become required is the family's call. Capped and validated
+ * here because the input is a phone in the field, not a trusted client.
+ */
+export async function cleanerUploadPhotos(formData: FormData) {
+  const token = String(formData.get("token") ?? "");
+  const bookingId = String(formData.get("booking_id") ?? "");
+  const phase = String(formData.get("phase") ?? "");
+  if (phase !== "before" && phase !== "after") return;
+  const found = await ownJob(token, bookingId, ["confirmed", "completed"]);
+  if (!found) return;
+
+  const files = formData.getAll("photos").filter((f): f is File => f instanceof File && f.size > 0);
+  if (files.length === 0) return;
+
+  try {
+    await ensurePhotoBucket();
+    // A handful per tap is plenty; 8MB each keeps phone photos in and abuse out.
+    for (const file of files.slice(0, 6)) {
+      if (file.size > 8 * 1024 * 1024) continue;
+      const type = file.type || "image/jpeg";
+      if (!type.startsWith("image/")) continue;
+      const ext = type.split("/")[1]?.replace("jpeg", "jpg") ?? "jpg";
+      const path = `${bookingId}/${phase}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}.${ext}`;
+      await uploadJobPhoto(path, await file.arrayBuffer(), type);
+      await insertBookingPhoto({
+        booking_id: bookingId,
+        cleaner_id: found.cleaner.id,
+        phase,
+        path,
+      }).catch((e) => console.error("[cleaner] photo row insert failed:", e));
+    }
+  } catch (e) {
+    console.error("[cleaner] photo upload failed:", e);
+  }
+  revalidatePath(`/c/${token}`);
 }

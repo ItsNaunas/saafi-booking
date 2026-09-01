@@ -77,9 +77,11 @@ export type BookingRow = {
   /** Money returned to the customer. Optional pre-migration. */
   refunded_at?: string | null;
   refund_amount?: number | null;
-  /** Daily-notify sent-markers — see supabase/2026-08-28-daily-notify.sql. */
+  /** Daily-notify sent-markers — see supabase/2026-08-28-upgrades.sql. */
   reminder_sent_at?: string | null;
   payment_chased_at?: string | null;
+  /** Cleaner tapped "Got it" on the assignment. Null = no proof they know. */
+  acknowledged_at?: string | null;
   /** Why a visit did not happen. Null on every normal booking. */
   outcome_reason: OutcomeReason | null;
   outcome_note: string | null;
@@ -716,6 +718,131 @@ export async function clearCustomerCard(id: string): Promise<void> {
       card_saved_at: null,
     }),
   });
+}
+
+/* ---------- cleaner-portal upgrades (2026-09-01 migration) ---------- */
+
+export type IssueCategory = "breakage" | "supplies" | "customer_request" | "safety" | "other";
+
+export type IssueRow = {
+  id: string;
+  booking_id: string;
+  cleaner_id: string | null;
+  category: IssueCategory;
+  note: string | null;
+  created_at: string;
+};
+
+export type TimeOffRow = {
+  id: string;
+  cleaner_id: string;
+  from_date: string;
+  to_date: string;
+  note: string | null;
+  status: "pending" | "approved" | "denied";
+  created_at: string;
+  decided_at: string | null;
+};
+
+export type PhotoRow = {
+  id: string;
+  booking_id: string;
+  cleaner_id: string | null;
+  phase: "before" | "after";
+  path: string;
+  created_at: string;
+};
+
+/** The cleaner has seen the job. Best-effort pre-migration: failure is fine. */
+export async function markBookingAcknowledged(id: string): Promise<void> {
+  await rest(`bookings?id=eq.${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: JSON.stringify({ acknowledged_at: new Date().toISOString() }),
+  });
+}
+
+export async function insertBookingIssue(
+  fields: Omit<IssueRow, "id" | "created_at">
+): Promise<IssueRow | null> {
+  const rows = await rest<IssueRow[]>("booking_issues", {
+    method: "POST",
+    body: JSON.stringify(fields),
+  });
+  return rows?.[0] ?? null;
+}
+
+export async function listIssuesForBooking(bookingId: string): Promise<IssueRow[]> {
+  return rest<IssueRow[]>(
+    `booking_issues?booking_id=eq.${encodeURIComponent(bookingId)}&select=*&order=created_at.desc`
+  );
+}
+
+export async function insertTimeOffRequest(
+  fields: Pick<TimeOffRow, "cleaner_id" | "from_date" | "to_date" | "note">
+): Promise<TimeOffRow | null> {
+  const rows = await rest<TimeOffRow[]>("cleaner_time_off", {
+    method: "POST",
+    body: JSON.stringify(fields),
+  });
+  return rows?.[0] ?? null;
+}
+
+export async function listTimeOffForCleaner(cleanerId: string): Promise<TimeOffRow[]> {
+  return rest<TimeOffRow[]>(
+    `cleaner_time_off?cleaner_id=eq.${encodeURIComponent(cleanerId)}&select=*&order=from_date.desc&limit=10`
+  );
+}
+
+export async function listPendingTimeOff(): Promise<(TimeOffRow & { cleaners: { name: string } | null })[]> {
+  return rest(
+    "cleaner_time_off?status=eq.pending&select=*,cleaners(name)&order=created_at.asc"
+  );
+}
+
+export async function setTimeOffStatus(
+  id: string,
+  status: "approved" | "denied"
+): Promise<TimeOffRow | null> {
+  const rows = await rest<TimeOffRow[]>(`cleaner_time_off?id=eq.${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: JSON.stringify({ status, decided_at: new Date().toISOString() }),
+  });
+  return rows?.[0] ?? null;
+}
+
+/** Cleaner ids on APPROVED leave covering `date` — the rota treats them as absent. */
+export async function listCleanersOnLeave(date: string): Promise<Set<string>> {
+  const d = encodeURIComponent(date);
+  const rows = await rest<{ cleaner_id: string }[]>(
+    `cleaner_time_off?status=eq.approved&from_date=lte.${d}&to_date=gte.${d}&select=cleaner_id`
+  );
+  return new Set(rows.map((r) => r.cleaner_id));
+}
+
+export async function insertBookingPhoto(
+  fields: Omit<PhotoRow, "id" | "created_at">
+): Promise<void> {
+  await rest("booking_photos", { method: "POST", body: JSON.stringify(fields) });
+}
+
+export async function listPhotosForBooking(bookingId: string): Promise<PhotoRow[]> {
+  return rest<PhotoRow[]>(
+    `booking_photos?booking_id=eq.${encodeURIComponent(bookingId)}&select=*&order=created_at.asc`
+  );
+}
+
+/**
+ * Undo support: any not-yet-decided adjustments from a finish that is being
+ * unwound. Marked rejected rather than deleted — the trail survives.
+ */
+export async function voidOpenAdjustments(bookingId: string): Promise<void> {
+  await rest(
+    `booking_adjustments?booking_id=eq.${encodeURIComponent(bookingId)}&status=in.(pending,auto)`,
+    {
+      method: "PATCH",
+      body: JSON.stringify({ status: "rejected", decided_at: new Date().toISOString() }),
+    }
+  );
 }
 
 /** Record how an automatic charge went, successful or not. */

@@ -20,6 +20,7 @@ import {
   getCustomer,
   getAdjustment,
   setAdjustmentStatus,
+  setTimeOffStatus,
   amountDueFor,
   paidSoFar,
   recordBookingRefund,
@@ -169,6 +170,25 @@ export async function assignCleaner(formData: FormData) {
   revalidatePath("/admin");
   revalidatePath("/admin/calendar");
   revalidatePath(`/admin/booking/${id}`);
+}
+
+/** Approve or deny a cleaner's time-off request; approved days leave the rota. */
+export async function decideTimeOff(formData: FormData) {
+  const id = String(formData.get("id") ?? "");
+  const decision = String(formData.get("decision") ?? "");
+  if (!id || (decision !== "approved" && decision !== "denied")) return;
+
+  const row = await setTimeOffStatus(id, decision);
+  if (row) {
+    const cleaner = (await listCleaners()).find((c) => c.id === row.cleaner_id);
+    if (cleaner) {
+      const { sendTimeOffDecisionEmail } = await import("@/lib/email");
+      await sendTimeOffDecisionEmail(cleaner, row.from_date, row.to_date, decision === "approved").catch(
+        () => {}
+      );
+    }
+  }
+  revalidatePath("/admin/cleaners");
 }
 
 export async function addCleaner(formData: FormData) {
