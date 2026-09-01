@@ -35,12 +35,14 @@ import { formatGBP, quotePrice, recommendedHours } from "@/lib/pricing";
 import { deepPrice } from "@/lib/deepClean";
 
 export const metadata: Metadata = {
-  title: "SAAFI Cleaning Service — home cleaning with an honest hourly price",
+  title: "SAAFI Cleaning Service — home cleaning with a price you see before you book",
   description:
-    "Family-run home cleaning. See your price online in under a minute — clear hourly rates, no hidden extras, and pay securely online when you book.",
+    "Family-run home cleaning. See your price online in under a minute — clear per-visit prices, no hidden extras, and pay securely online when you book.",
 };
 
-export const dynamic = "force-dynamic";
+// Pricing config changes by hand, not by the minute — a 5-minute-stale price
+// is a fair trade for not paying full TTFB on every hit.
+export const revalidate = 300;
 
 /** Example homes for the price table — costed from the live config, never hardcoded. */
 /**
@@ -135,7 +137,7 @@ const FAQS: { q: string; a: string }[] = [
   },
   {
     q: "Which areas do you cover?",
-    a: "We're covering more of the area all the time. Put your postcode in to start a quote and we'll confirm we can reach you when we ring to book the date.",
+    a: "IG1 to IG6, E11, E18, RM6 and RM7 — and we're covering more of the area all the time. Put your postcode in to start a quote and we'll confirm we can reach you when we ring to book the date.",
   },
 ];
 
@@ -163,6 +165,9 @@ export default async function Home() {
     cfg,
     "fortnightly",
   );
+  // The featured card's own cadence (fortnightly = 26 visits/year), not a
+  // guessed weekly rate — so the saving can't overstate the discount.
+  const regularYearlySaving = (oneOffVisit - typicalVisit) * 26;
 
   return (
     // pb on mobile only: StickyQuoteBar is fixed to the bottom of the viewport,
@@ -208,19 +213,19 @@ export default async function Home() {
               SAAFI
             </Link>
             <nav className="hidden items-center gap-8 text-sm font-medium text-white/85 md:flex">
-              <a className="transition hover:text-white" href="#services">
+              <a className="outline-none transition hover:text-white focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-brand-300" href="#services">
                 Services
               </a>
-              <a className="transition hover:text-white" href="#included">
+              <a className="outline-none transition hover:text-white focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-brand-300" href="#included">
                 What&apos;s included
               </a>
-              <a className="transition hover:text-white" href="#pricing">
+              <a className="outline-none transition hover:text-white focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-brand-300" href="#pricing">
                 Pricing
               </a>
-              <a className="transition hover:text-white" href="#how">
+              <a className="outline-none transition hover:text-white focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-brand-300" href="#how">
                 How it works
               </a>
-              <a className="transition hover:text-white" href="#faqs">
+              <a className="outline-none transition hover:text-white focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-brand-300" href="#faqs">
                 FAQs
               </a>
             </nav>
@@ -229,13 +234,13 @@ export default async function Home() {
                   to book a cleaner are the least likely to fill in a form. */}
               <a
                 href={`tel:${contact.phoneHref}`}
-                className="hidden text-sm font-semibold text-white transition hover:text-brand-200 sm:block"
+                className="hidden text-sm font-semibold text-white outline-none transition hover:text-brand-200 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-brand-300 sm:block"
               >
                 {contact.phoneDisplay}
               </a>
               <Link
                 href="/quote"
-                className="rounded-full bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800"
+                className="rounded-full bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white outline-none transition hover:bg-slate-800 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-brand-300"
               >
                 Get a quote
               </Link>
@@ -250,11 +255,11 @@ export default async function Home() {
           {/* headline */}
           <div className="mx-auto max-w-6xl px-5 text-center sm:px-8">
             <h1 className="mx-auto max-w-3xl text-4xl font-bold leading-[1.08] tracking-tight text-white sm:text-5xl">
-              A Spotless Home, Without Lifting a Finger
+              A family-run clean, with your price agreed before you book
             </h1>
             <p className="mx-auto mt-4 max-w-lg text-base text-white/80 sm:text-lg">
-              Family-run home cleaning with an honest hourly rate — see your
-              price online in under a minute.
+              See it online in under a minute, then we ring to confirm the
+              date.
             </p>
           </div>
         </div>
@@ -306,7 +311,7 @@ export default async function Home() {
       {/* ---------- plan picker ---------- */}
       <section
         id="services"
-        className="mx-auto max-w-6xl scroll-mt-20 px-4 py-20"
+        className="mx-auto max-w-6xl scroll-mt-20 px-4 py-20 lg:py-28"
       >
         <Reveal>
           <SectionHead
@@ -326,7 +331,7 @@ export default async function Home() {
             title="Regular clean"
             price={formatGBP(typicalVisit)}
             unit=" a visit"
-            note={`Save ${formatGBP(oneOffVisit - typicalVisit)} every visit`}
+            note={`Save about ${formatGBP(regularYearlySaving)} a year`}
             text="Weekly or fortnightly visits — the easiest and best-value way to keep on top of your home."
             points={[
               "Best value",
@@ -371,14 +376,14 @@ export default async function Home() {
            pricing block, so the jump to white and photography is the point. */}
       <section
         id="included"
-        className="flex min-h-svh scroll-mt-20 flex-col justify-center bg-white py-14 lg:py-16"
+        className="scroll-mt-20 bg-white py-20 lg:py-28"
       >
         <div className="mx-auto w-full max-w-6xl px-4">
           {/* Columns are placed by hand rather than auto-flowed, so no two blocks
               share a size or a baseline. */}
           {/* heading — left-aligned on purpose, unlike every other section head */}
           <Reveal className="max-w-2xl">
-            <h2 className="font-display text-3xl font-bold leading-[1.08] tracking-tight text-slate-900 lg:text-4xl">
+            <h2 className="font-display text-3xl font-bold leading-[1.08] tracking-tight text-slate-900 sm:text-4xl">
               Every room, every visit
             </h2>
             <p className="mt-3 max-w-lg text-[15px] leading-relaxed text-slate-600">
@@ -442,7 +447,7 @@ export default async function Home() {
            This block used to repeat the pricing above it; it now carries the
            reasons to book that have nothing to do with the number. */}
       <section className="bg-slate-900">
-        <div className="mx-auto max-w-[1400px] px-6 py-20 sm:px-10 sm:py-24">
+        <div className="mx-auto max-w-[1400px] px-6 py-20 sm:px-10 lg:py-28">
           <h2 className="mx-auto max-w-3xl text-center font-display text-3xl font-bold tracking-tight text-white sm:text-4xl">
             What you can count on
           </h2>
@@ -471,7 +476,7 @@ export default async function Home() {
       {/* ---------- pricing ---------- */}
       <section
         id="pricing"
-        className="flex min-h-svh scroll-mt-20 flex-col justify-center bg-slate-50 py-12 lg:py-14"
+        className="scroll-mt-20 bg-slate-50 py-20 lg:py-28"
       >
         <div className="mx-auto max-w-7xl px-4 sm:px-6">
           <Reveal>
@@ -507,7 +512,7 @@ export default async function Home() {
            rather than a plus rotated into an ×. */}
       <section
         id="faqs"
-        className="relative isolate scroll-mt-20 overflow-hidden bg-white py-20 lg:py-24"
+        className="relative isolate scroll-mt-20 overflow-hidden bg-white py-20 lg:py-28"
       >
         <div
           aria-hidden="true"
@@ -570,7 +575,7 @@ export default async function Home() {
           className="pointer-events-none absolute -bottom-72 right-24 size-[34rem] rounded-full border border-white/15"
         />
 
-        <Reveal className="mx-auto max-w-6xl px-4 py-24 text-center sm:px-6 lg:py-28">
+        <Reveal className="mx-auto max-w-6xl px-4 py-20 text-center sm:px-6 lg:py-28">
           <h2 className="mx-auto max-w-3xl font-display text-4xl font-bold leading-[1.05] tracking-tight text-white sm:text-5xl lg:text-[3.5rem]">
             See your price in under a minute
           </h2>
@@ -581,9 +586,9 @@ export default async function Home() {
 
           <Link
             href="/quote"
-            className="group mt-10 inline-flex items-center gap-2.5 rounded-sm bg-white px-8 py-4 text-base font-semibold text-slate-900 transition hover:bg-brand-50"
+            className="group mt-10 inline-flex items-center gap-2.5 rounded-full bg-white px-8 py-4 text-base font-semibold text-slate-900 outline-none transition hover:bg-brand-50 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white"
           >
-            Start my quote
+            Get a quote
             <Icon
               glyph={ArrowRight}
               className="size-[18px] transition-transform duration-200 group-hover:translate-x-1"
@@ -610,7 +615,7 @@ export default async function Home() {
               SAAFI <span className="text-brand-400">Cleaning</span>
             </span>
             <p className="mt-3 text-sm leading-relaxed">
-              Family-run home cleaning with straightforward hourly pricing and
+              Family-run home cleaning with a clear price for every visit and
               no surprises on the bill.
             </p>
           </div>
@@ -620,19 +625,28 @@ export default async function Home() {
             </h4>
             <ul className="mt-4 space-y-2 text-sm">
               <li>
-                <Link href="/quote" className="transition hover:text-brand-400">
+                <Link
+                  href="/quote?frequency=fortnightly"
+                  className="outline-none transition hover:text-brand-400 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-brand-300"
+                >
                   Regular cleaning
                 </Link>
               </li>
               <li>
-                <Link href="/quote" className="transition hover:text-brand-400">
+                <Link
+                  href="/quote?frequency=one_off"
+                  className="outline-none transition hover:text-brand-400 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-brand-300"
+                >
                   One-off cleaning
                 </Link>
               </li>
               <li>
-                <a href="#services" className="transition hover:text-brand-400">
+                <Link
+                  href="/quote?service=deep"
+                  className="outline-none transition hover:text-brand-400 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-brand-300"
+                >
                   Deep cleaning
-                </a>
+                </Link>
               </li>
             </ul>
           </div>
@@ -642,24 +656,24 @@ export default async function Home() {
             </h4>
             <ul className="mt-4 space-y-2 text-sm">
               <li>
-                <a href="#how" className="transition hover:text-brand-400">
+                <a href="#how" className="outline-none transition hover:text-brand-400 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-brand-300">
                   How it works
                 </a>
               </li>
               <li>
-                <a href="#pricing" className="transition hover:text-brand-400">
+                <a href="#pricing" className="outline-none transition hover:text-brand-400 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-brand-300">
                   Pricing
                 </a>
               </li>
               <li>
-                <a href="#faqs" className="transition hover:text-brand-400">
+                <a href="#faqs" className="outline-none transition hover:text-brand-400 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-brand-300">
                   FAQs
                 </a>
               </li>
               <li>
                 <a
                   href="mailto:info@saaficleaningservice.com?subject=Cleaning%20work"
-                  className="transition hover:text-brand-400"
+                  className="outline-none transition hover:text-brand-400 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-brand-300"
                 >
                   Work with us
                 </a>
@@ -674,7 +688,7 @@ export default async function Home() {
               <li>
                 <a
                   href={`tel:${contact.phoneHref}`}
-                  className="text-base font-semibold text-white transition hover:text-brand-400"
+                  className="text-base font-semibold text-white outline-none transition hover:text-brand-400 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-brand-300"
                 >
                   {contact.phoneDisplay}
                 </a>
@@ -683,13 +697,13 @@ export default async function Home() {
               <li className="pt-1">
                 <a
                   href={`mailto:${contact.email}`}
-                  className="transition hover:text-brand-400"
+                  className="outline-none transition hover:text-brand-400 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-brand-300"
                 >
                   {contact.email}
                 </a>
               </li>
               <li>
-                <a href="#areas" className="transition hover:text-brand-400">
+                <a href="#areas" className="outline-none transition hover:text-brand-400 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-brand-300">
                   Areas we cover
                 </a>
               </li>
@@ -727,7 +741,7 @@ export default async function Home() {
             telephone: contact.phoneHref,
             image: `${site.url}/opengraph-image`,
             description:
-              "Family-run home cleaning with an honest hourly rate. See your price online in under a minute.",
+              "Family-run home cleaning with a clear price for every visit. See your price online in under a minute.",
             address: {
               "@type": "PostalAddress",
               addressLocality: address.locality,

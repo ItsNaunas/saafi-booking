@@ -26,6 +26,7 @@ import { FREQUENCY_LABEL, formatGBP } from "@/lib/pricing";
 import { reasonLabel } from "@/lib/adjustments";
 import { outcomeLabel, chargeableJourney } from "@/lib/outcomes";
 import { describeCard } from "@/lib/cardOnFile";
+import { STATUS_LABEL } from "@/lib/statusLabels";
 
 export const dynamic = "force-dynamic";
 
@@ -72,7 +73,7 @@ export default async function BookingDetailPage({
     <div className="mx-auto max-w-xl">
       <h1 className="mb-1 text-2xl font-bold text-slate-900">{b.customer_name}</h1>
       <p className="mb-4 text-sm text-slate-500">
-        {b.reference} · status <b>{b.status}</b> · {FREQUENCY_LABEL[b.frequency]}
+        {b.reference} · status <b>{STATUS_LABEL[b.status]}</b> · {FREQUENCY_LABEL[b.frequency]}
         {b.frequency !== "one_off" && !b.recurring_active && " (recurring stopped)"}
         {b.status !== "paid" && isPaidInFull(b) && (
           <span className="ml-2 bg-brand-100 px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide text-brand-800">
@@ -156,76 +157,82 @@ export default async function BookingDetailPage({
         </div>
       )}
 
-      {/* ---------- card on file ---------- */}
-      {b.status !== "paid" && stripeConfigured() && (
-        <div className="mb-4 bg-white p-5 text-sm shadow-sm ring-1 ring-slate-200">
-          <div className="mb-3 flex items-baseline justify-between gap-3">
-            <h2 className="font-semibold text-slate-900">Card on file</h2>
-            {card && <span className="text-xs font-medium text-brand-700">{card}</span>}
-          </div>
-
-          {card ? (
-            <>
-              <p className="text-slate-600">
-                Finished cleans settle themselves against this card, for whatever the visit
-                actually came to. Nothing is taken while a price is still pending.
-              </p>
-              <form action={chargeCardNow} className="mt-3">
-                <input type="hidden" name="id" value={b.id} />
-                <button className="bg-brand-600 px-4 py-2 text-xs font-bold text-white transition hover:bg-brand-700">
-                  Charge {formatGBP(amountDueFor(b))} now
-                </button>
-              </form>
-            </>
-          ) : (
-            <>
-              <p className="text-slate-600">
-                No card saved. Sending one takes the chasing out of every future clean — they
-                save it once on Stripe&apos;s own page and we never see the details.
-              </p>
-              <form action={sendCardSetupLink} className="mt-3">
-                <input type="hidden" name="id" value={b.id} />
-                <button className="border border-brand-600 px-4 py-2 text-xs font-bold text-brand-700 transition hover:bg-brand-50">
-                  Email a card-saving link
-                </button>
-              </form>
-            </>
-          )}
-
-          {b.charge_error && (
-            <p className="mt-3 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-              Last automatic charge didn&apos;t go through — {b.charge_error}. The payment link
-              below still works.
-            </p>
-          )}
-
-          {cardResult.card === "sent" && (
-            <p className="mt-3 bg-brand-50 px-3 py-2 text-xs font-medium text-brand-800">
-              Sent — they&apos;ve got 24 hours to use it before it expires.
-            </p>
-          )}
-          {cardResult.card === "charged" && (
-            <p className="mt-3 bg-brand-50 px-3 py-2 text-xs font-medium text-brand-800">
-              Charged.
-            </p>
-          )}
-          {(cardResult.card === "declined" || cardResult.card === "fail") && (
-            <p className="mt-3 bg-red-50 px-3 py-2 text-xs font-medium text-red-700">
-              {cardResult.why || "That didn't work"}. Send a payment link instead.
-            </p>
-          )}
-          {cardResult.card === "link" && cardResult.url && (
-            <div className="mt-3 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-              Couldn&apos;t email it — {cardResult.why || "no usable address"}. Send this by hand:
-              <input
-                readOnly
-                value={cardResult.url}
-                className="mt-1 w-full border border-amber-300 bg-white px-2 py-1 font-mono text-[11px]"
-              />
-            </div>
-          )}
-        </div>
+      {/* ---------- pending adjustment + schedule clash: urgent, so it comes
+          before the money panels and the read-only facts below ---------- */}
+      {clash && (
+        <p className="mb-4 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-900 ring-1 ring-amber-200">
+          Heads up — this cleaner has another job overlapping{" "}
+          {formatTimeRange(toHHMM(clash.start), (clash.end - clash.start) / 60)} on this date.
+        </p>
       )}
+
+      <Adjustments rows={adjustments} />
+
+      {/* ---------- booking facts ---------- */}
+      <div className="mb-4 bg-white p-5 text-sm shadow-sm ring-1 ring-slate-200">
+        <Row k="Contact" v={`${b.customer_phone} · ${b.customer_email}`} />
+        {(b.started_lat != null || b.finished_lat != null) && (
+          <Row
+            k="Location stamps"
+            v={
+              <>
+                {b.started_lat != null && (
+                  <a
+                    className="text-brand-700 hover:underline"
+                    href={`https://www.google.com/maps?q=${b.started_lat},${b.started_lng}`}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    start ↗
+                  </a>
+                )}
+                {b.started_lat != null && b.finished_lat != null && " · "}
+                {b.finished_lat != null && (
+                  <a
+                    className="text-brand-700 hover:underline"
+                    href={`https://www.google.com/maps?q=${b.finished_lat},${b.finished_lng}`}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    finish ↗
+                  </a>
+                )}
+              </>
+            }
+          />
+        )}
+        {b.service_type === "deep" && (
+          <Row
+            k="Service"
+            v={`Deep clean — ${b.cleaners_needed ?? 2} cleaners, priced per room`}
+          />
+        )}
+        <Row k="Address" v={`${b.address_line}, ${b.postcode}`} />
+        <Row
+          k="When"
+          v={
+            b.start_time
+              ? `${b.preferred_date}, ${formatTimeRange(b.start_time, Number(b.hours))}`
+              : `${b.preferred_date} — no time set`
+          }
+        />
+        <Row
+          k="Rooms"
+          v={`${b.bedrooms} bed · ${b.bathrooms} bath · ${b.dining_rooms} dining · ${b.living_rooms} living`}
+        />
+        <Row k="Products" v={b.customer_provides_products ? "Customer provides" : "We bring ours"} />
+        {(b.addons?.length ?? 0) > 0 && (
+          <Row k="Extras" v={b.addons.map((a) => `${a.label} (£${a.price})`).join(", ")} />
+        )}
+        <Row k="Quoted" v={`${formatGBP(Number(b.quoted_price))} · ${b.quoted_hours ?? b.hours}h`} />
+        {b.actual_hours != null && (
+          <Row
+            k="Actually worked"
+            v={`${b.actual_hours}h${b.final_price != null ? ` · ${formatGBP(Number(b.final_price))}` : ""}`}
+          />
+        )}
+        <Row k="Booked" v={new Date(b.created_at).toLocaleString("en-GB")} />
+      </div>
 
       {/* ---------- payment ---------- */}
       <div className="mb-4 bg-white p-5 text-sm shadow-sm ring-1 ring-slate-200">
@@ -340,79 +347,76 @@ export default async function BookingDetailPage({
         )}
       </div>
 
-      <div className="mb-4 bg-white p-5 text-sm shadow-sm ring-1 ring-slate-200">
-        <Row k="Contact" v={`${b.customer_phone} · ${b.customer_email}`} />
-        {(b.started_lat != null || b.finished_lat != null) && (
-          <Row
-            k="Location stamps"
-            v={
-              <>
-                {b.started_lat != null && (
-                  <a
-                    className="text-brand-700 hover:underline"
-                    href={`https://www.google.com/maps?q=${b.started_lat},${b.started_lng}`}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    start ↗
-                  </a>
-                )}
-                {b.started_lat != null && b.finished_lat != null && " · "}
-                {b.finished_lat != null && (
-                  <a
-                    className="text-brand-700 hover:underline"
-                    href={`https://www.google.com/maps?q=${b.finished_lat},${b.finished_lng}`}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    finish ↗
-                  </a>
-                )}
-              </>
-            }
-          />
-        )}
-        {b.service_type === "deep" && (
-          <Row
-            k="Service"
-            v={`Deep clean — ${b.cleaners_needed ?? 2} cleaners, priced per room`}
-          />
-        )}
-        <Row k="Address" v={`${b.address_line}, ${b.postcode}`} />
-        <Row
-          k="When"
-          v={
-            b.start_time
-              ? `${b.preferred_date}, ${formatTimeRange(b.start_time, Number(b.hours))}`
-              : `${b.preferred_date} — no time set`
-          }
-        />
-        <Row
-          k="Rooms"
-          v={`${b.bedrooms} bed · ${b.bathrooms} bath · ${b.dining_rooms} dining · ${b.living_rooms} living`}
-        />
-        <Row k="Products" v={b.customer_provides_products ? "Customer provides" : "We bring ours"} />
-        {(b.addons?.length ?? 0) > 0 && (
-          <Row k="Extras" v={b.addons.map((a) => `${a.label} (£${a.price})`).join(", ")} />
-        )}
-        <Row k="Quoted" v={`${formatGBP(Number(b.quoted_price))} · ${b.quoted_hours ?? b.hours}h`} />
-        {b.actual_hours != null && (
-          <Row
-            k="Actually worked"
-            v={`${b.actual_hours}h${b.final_price != null ? ` · ${formatGBP(Number(b.final_price))}` : ""}`}
-          />
-        )}
-        <Row k="Booked" v={new Date(b.created_at).toLocaleString("en-GB")} />
-      </div>
+      {/* ---------- card on file ---------- */}
+      {b.status !== "paid" && stripeConfigured() && (
+        <div className="mb-4 bg-white p-5 text-sm shadow-sm ring-1 ring-slate-200">
+          <div className="mb-3 flex items-baseline justify-between gap-3">
+            <h2 className="font-semibold text-slate-900">Card on file</h2>
+            {card && <span className="text-xs font-medium text-brand-700">{card}</span>}
+          </div>
 
-      {clash && (
-        <p className="mb-4 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-900 ring-1 ring-amber-200">
-          Heads up — this cleaner has another job overlapping{" "}
-          {formatTimeRange(toHHMM(clash.start), (clash.end - clash.start) / 60)} on this date.
-        </p>
+          {card ? (
+            <>
+              <p className="text-slate-600">
+                Finished cleans settle themselves against this card, for whatever the visit
+                actually came to. Nothing is taken while a price is still pending.
+              </p>
+              <form action={chargeCardNow} className="mt-3">
+                <input type="hidden" name="id" value={b.id} />
+                <button className="bg-brand-600 px-4 py-2 text-xs font-bold text-white transition hover:bg-brand-700">
+                  Charge {formatGBP(amountDueFor(b))} now
+                </button>
+              </form>
+            </>
+          ) : (
+            <>
+              <p className="text-slate-600">
+                No card saved. Sending one takes the chasing out of every future clean — they
+                save it once on Stripe&apos;s own page and we never see the details.
+              </p>
+              <form action={sendCardSetupLink} className="mt-3">
+                <input type="hidden" name="id" value={b.id} />
+                <button className="border border-brand-600 px-4 py-2 text-xs font-bold text-brand-700 transition hover:bg-brand-50">
+                  Email a card-saving link
+                </button>
+              </form>
+            </>
+          )}
+
+          {b.charge_error && (
+            <p className="mt-3 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+              Last automatic charge didn&apos;t go through — {b.charge_error}. The payment link
+              below still works.
+            </p>
+          )}
+
+          {cardResult.card === "sent" && (
+            <p className="mt-3 bg-brand-50 px-3 py-2 text-xs font-medium text-brand-800">
+              Sent — they&apos;ve got 24 hours to use it before it expires.
+            </p>
+          )}
+          {cardResult.card === "charged" && (
+            <p className="mt-3 bg-brand-50 px-3 py-2 text-xs font-medium text-brand-800">
+              Charged.
+            </p>
+          )}
+          {(cardResult.card === "declined" || cardResult.card === "fail") && (
+            <p className="mt-3 bg-red-50 px-3 py-2 text-xs font-medium text-red-700">
+              {cardResult.why || "That didn't work"}. Send a payment link instead.
+            </p>
+          )}
+          {cardResult.card === "link" && cardResult.url && (
+            <div className="mt-3 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+              Couldn&apos;t email it — {cardResult.why || "no usable address"}. Send this by hand:
+              <input
+                readOnly
+                value={cardResult.url}
+                className="mt-1 w-full border border-amber-300 bg-white px-2 py-1 font-mono text-[11px]"
+              />
+            </div>
+          )}
+        </div>
       )}
-
-      <Adjustments rows={adjustments} />
 
       <form action={editBooking} className="bg-white p-5 shadow-sm ring-1 ring-slate-200">
         <input type="hidden" name="id" value={b.id} />
@@ -544,7 +548,7 @@ function Row({ k, v }: { k: string; v: React.ReactNode }) {
 function Adjustments({ rows }: { rows: AdjustmentRow[] }) {
   if (rows.length === 0) return null;
   return (
-    <div className="mb-4 space-y-3">
+    <div id="adjustment" className="mb-4 space-y-3">
       {rows.map((a) => {
         const longer = Number(a.to_hours) > Number(a.from_hours);
         const delta = Math.round((Number(a.to_hours) - Number(a.from_hours)) * 100) / 100;

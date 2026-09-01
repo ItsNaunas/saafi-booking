@@ -8,9 +8,9 @@ import {
   paidSoFar,
   isPaidInFull,
 } from "@/lib/supabaseAdmin";
-import { formatTimeRange } from "@/lib/scheduling";
+import { formatTimeRange, londonWallClock } from "@/lib/scheduling";
 import { formatGBP, FREQUENCY_LABEL } from "@/lib/pricing";
-import { contact } from "@/lib/business";
+import { contact, site } from "@/lib/business";
 import { customerPayNow, customerCancelBooking, customerRequestReschedule } from "./actions";
 
 export const dynamic = "force-dynamic";
@@ -45,6 +45,20 @@ const STATUS_LINE: Record<string, { title: string; body: string }> = {
   },
 };
 
+/** "2026-09-01" to "Tuesday 1 September" — year only when it isn't this one. */
+function humanDate(dateStr: string): string {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  const date = new Date(Date.UTC(y, m - 1, d));
+  const sameYear = y === new Date().getUTCFullYear();
+  return new Intl.DateTimeFormat("en-GB", {
+    timeZone: "UTC",
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    ...(sameYear ? {} : { year: "numeric" }),
+  }).format(date);
+}
+
 export default async function CustomerBookingPage({
   params,
   searchParams,
@@ -64,6 +78,19 @@ export default async function CustomerBookingPage({
   const active = ["requested", "confirmed"].includes(b.status);
   const icsUrl = `/b/${encodeURIComponent(reference)}/ics?t=${q.t}`;
 
+  // "Nothing else needed from you" reads as a lie next to a pay button.
+  const bodyText =
+    b.status === "requested" && due > 0
+      ? "We'll ring you shortly to confirm — you can pay below to lock it in."
+      : line.body;
+
+  // Reschedule requests can't land in the past — floor the date picker at tomorrow,
+  // reckoned on the London wall clock the rest of scheduling uses.
+  const wall = londonWallClock(new Date());
+  const minMoveDate = new Date(`${wall.date}T00:00:00Z`);
+  minMoveDate.setUTCDate(minMoveDate.getUTCDate() + 1);
+  const minMoveDateStr = minMoveDate.toISOString().slice(0, 10);
+
   return (
     <main className="min-h-screen bg-slate-50 px-4 py-10">
       <div className="mx-auto max-w-lg">
@@ -73,7 +100,7 @@ export default async function CustomerBookingPage({
 
         <div className="bg-white p-6 shadow-lg ring-1 ring-slate-200 sm:p-8">
           <h1 className="text-2xl font-bold text-slate-900">{line.title}</h1>
-          <p className="mt-1 text-slate-600">{line.body}</p>
+          <p className="mt-1 text-slate-600">{bodyText}</p>
 
           {q.cancel === "done" && (
             <p className="mt-4 bg-brand-50 px-3 py-2 text-sm font-medium text-brand-800 ring-1 ring-brand-200">
@@ -83,7 +110,11 @@ export default async function CustomerBookingPage({
           {q.cancel === "call" && (
             <p className="mt-4 bg-amber-50 px-3 py-2 text-sm text-amber-800">
               This one&apos;s too close (or already paid) to cancel online — give us a quick ring
-              on {contact.phoneDisplay} and we&apos;ll sort it.
+              on{" "}
+              <a href={`tel:${contact.phoneHref}`} className="underline underline-offset-2">
+                {contact.phoneDisplay}
+              </a>{" "}
+              and we&apos;ll sort it.
             </p>
           )}
           {q.move === "sent" && (
@@ -94,7 +125,11 @@ export default async function CustomerBookingPage({
           {q.pay === "unavailable" && (
             <p className="mt-4 bg-amber-50 px-3 py-2 text-sm text-amber-800">
               Online payment isn&apos;t available just now — you can pay after the clean, or ring
-              us on {contact.phoneDisplay}.
+              us on{" "}
+              <a href={`tel:${contact.phoneHref}`} className="underline underline-offset-2">
+                {contact.phoneDisplay}
+              </a>
+              .
             </p>
           )}
 
@@ -104,8 +139,8 @@ export default async function CustomerBookingPage({
               k="When"
               v={
                 b.start_time
-                  ? `${b.preferred_date}, ${formatTimeRange(b.start_time, Number(b.hours))}`
-                  : `${b.preferred_date} — we'll agree the time with you`
+                  ? `${humanDate(b.preferred_date)}, ${formatTimeRange(b.start_time, Number(b.hours))}`
+                  : `${humanDate(b.preferred_date)} — we'll agree the time with you`
               }
             />
             <Row k="Where" v={`${b.address_line}, ${b.postcode}`} />
@@ -156,48 +191,65 @@ export default async function CustomerBookingPage({
             <form action={customerRequestReschedule} className="mt-3">
               <input type="hidden" name="reference" value={reference} />
               <input type="hidden" name="t" value={q.t} />
-              <label className="block">
-                <span className="mb-1 block font-medium text-slate-700">
-                  Move it to another day
-                </span>
-                <div className="flex gap-2">
-                  <input
-                    type="date"
-                    name="new_date"
-                    required
-                    className="border border-slate-300 px-3 py-2 outline-none focus:border-brand-500"
-                  />
-                  <button className="bg-brand-600 px-4 py-2 font-semibold text-white transition hover:bg-brand-700">
-                    Request
-                  </button>
-                </div>
+              <label htmlFor="new_date" className="mb-1 block font-medium text-slate-700">
+                Move it to another day
               </label>
-              <input
-                type="text"
-                name="note"
-                placeholder="Anything we should know? (optional)"
-                className="mt-2 w-full border border-slate-300 px-3 py-2 outline-none focus:border-brand-500"
-              />
-              <p className="mt-1 text-xs text-slate-400">
+              <div className="flex gap-2">
+                <input
+                  id="new_date"
+                  type="date"
+                  name="new_date"
+                  required
+                  min={minMoveDateStr}
+                  className="border border-slate-300 px-3 py-2 outline-none focus:border-brand-500"
+                />
+                <button className="bg-brand-600 px-4 py-2 font-semibold text-white transition hover:bg-brand-700">
+                  Request
+                </button>
+              </div>
+              <label htmlFor="note" className="mt-2 block">
+                <span className="mb-1 block text-xs font-medium text-slate-500">
+                  Anything we should know? (optional)
+                </span>
+                <input
+                  id="note"
+                  type="text"
+                  name="note"
+                  className="w-full border border-slate-300 px-3 py-2 outline-none focus:border-brand-500"
+                />
+              </label>
+              <p className="mt-1 text-xs text-slate-500">
                 We&apos;ll ring you to agree the exact time before anything moves.
               </p>
             </form>
 
             <div className="mt-5 border-t border-slate-100 pt-4">
               {canCancel === "self" ? (
-                <form action={customerCancelBooking}>
-                  <input type="hidden" name="reference" value={reference} />
-                  <input type="hidden" name="t" value={q.t} />
-                  <button className="text-sm font-medium text-slate-400 underline underline-offset-2 hover:text-red-600">
+                <details>
+                  <summary className="cursor-pointer text-sm font-medium text-slate-500 underline underline-offset-2 hover:text-red-600">
                     Cancel this clean
-                  </button>
-                  <span className="ml-2 text-xs text-slate-400">
-                    Free with a day&apos;s notice — that&apos;s the deal.
-                  </span>
-                </form>
+                  </summary>
+                  <div className="mt-2">
+                    <p className="text-xs text-slate-500">
+                      This cancels the visit — the cleaner is told and the slot is released.
+                      Free with a day&apos;s notice — that&apos;s the deal.
+                    </p>
+                    <form action={customerCancelBooking} className="mt-2">
+                      <input type="hidden" name="reference" value={reference} />
+                      <input type="hidden" name="t" value={q.t} />
+                      <button className="rounded-full bg-red-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-red-700">
+                        Yes, cancel it
+                      </button>
+                    </form>
+                  </div>
+                </details>
               ) : (
-                <p className="text-xs text-slate-400">
-                  To cancel this one, ring us on {contact.phoneDisplay} — it&apos;s{" "}
+                <p className="text-xs text-slate-500">
+                  To cancel this one, ring us on{" "}
+                  <a href={`tel:${contact.phoneHref}`} className="underline underline-offset-2">
+                    {contact.phoneDisplay}
+                  </a>{" "}
+                  — it&apos;s{" "}
                   {paid > 0 ? "already paid, so we'll refund you properly" : "close enough that we'd rather talk"}
                   .
                 </p>
@@ -206,8 +258,17 @@ export default async function CustomerBookingPage({
           </div>
         )}
 
-        <p className="mt-6 text-center text-xs text-slate-400">
-          Questions? Ring {contact.phoneDisplay} or reply to any of our emails.
+        <p className="mt-6 text-center text-xs text-slate-500">
+          Questions? Ring{" "}
+          <a href={`tel:${contact.phoneHref}`} className="underline underline-offset-2">
+            {contact.phoneDisplay}
+          </a>{" "}
+          or reply to any of our emails.
+        </p>
+        <p className="mt-2 text-center text-xs text-slate-400">
+          <a href={site.url} className="text-brand-700 hover:underline">
+            {site.url.replace("https://", "")}
+          </a>
         </p>
       </div>
     </main>

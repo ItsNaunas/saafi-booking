@@ -175,7 +175,9 @@ export async function addCleaner(formData: FormData) {
   const name = String(formData.get("name") ?? "").trim();
   const phone = String(formData.get("phone") ?? "").trim();
   const email = String(formData.get("email") ?? "").trim() || null;
-  if (name.length < 2 || phone.length < 7) return;
+  if (name.length < 2 || phone.length < 7) {
+    redirect(`/admin/cleaners?error=${encodeURIComponent("Name and phone are required")}`);
+  }
   await createCleaner(name, phone, email);
   revalidatePath("/admin/cleaners");
 }
@@ -418,6 +420,7 @@ export async function savePricing(formData: FormData) {
   invalidatePricingCache();
   revalidatePath("/admin/pricing");
   revalidatePath("/quote");
+  redirect("/admin/pricing?saved=1");
 }
 
 export async function saveAddon(formData: FormData) {
@@ -441,11 +444,16 @@ export async function saveAddon(formData: FormData) {
   invalidatePricingCache();
   revalidatePath("/admin/pricing");
   revalidatePath("/quote");
+  redirect("/admin/pricing?saved=1");
 }
 
 export async function addServiceArea(formData: FormData) {
   const prefix = String(formData.get("prefix") ?? "").trim().toUpperCase();
-  if (!/^[A-Z]{1,2}\d{0,2}$/.test(prefix)) return;
+  if (!/^[A-Z]{1,2}\d{0,2}$/.test(prefix)) {
+    redirect(
+      `/admin/pricing?error=${encodeURIComponent("That prefix doesn't look right — e.g. IG1 or RM6")}`
+    );
+  }
   await addServiceAreaPrefix(prefix);
   invalidatePricingCache();
   revalidatePath("/admin/pricing");
@@ -644,7 +652,11 @@ export async function updateCleanerSchedule(formData: FormData) {
   const from = toMinutes(String(formData.get("works_from") ?? ""));
   const to = toMinutes(String(formData.get("works_to") ?? ""));
   // A backwards or zero-length day would make every slot vanish with no clue why.
-  if (from === null || to === null || to <= from) return;
+  if (from === null || to === null || to <= from) {
+    redirect(
+      `/admin/cleaners?error=${encodeURIComponent("The finish time has to be after the start time")}`
+    );
+  }
 
   await updateCleanerHours(id, days, toHHMM(from), toHHMM(to));
   revalidatePath("/admin/cleaners");

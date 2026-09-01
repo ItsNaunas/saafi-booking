@@ -48,12 +48,14 @@ export async function loadPricingAndAddons(): Promise<{ cfg: PricingConfig; addo
     try {
       const headers = { apikey: key, Authorization: `Bearer ${key}` };
       const [pricingRes, areasRes, addonsRes] = await Promise.all([
-        fetch(`${url}/rest/v1/pricing_config?select=key,value`, { headers, cache: "no-store" }),
-        fetch(`${url}/rest/v1/service_areas?select=prefix`, { headers, cache: "no-store" }),
+        // Data-cache revalidation, not no-store: no-store threw during the ISR
+        // landing-page prerender and the catch baked fallback defaults into it.
+        fetch(`${url}/rest/v1/pricing_config?select=key,value`, { headers, next: { revalidate: 60 } }),
+        fetch(`${url}/rest/v1/service_areas?select=prefix`, { headers, next: { revalidate: 60 } }),
         // select=* so the fetch keeps working before/after the `hours` column migration
         fetch(`${url}/rest/v1/addons?select=*&active=eq.true&order=sort.asc`, {
           headers,
-          cache: "no-store",
+          next: { revalidate: 60 },
         }),
       ]);
       if (pricingRes.ok) {

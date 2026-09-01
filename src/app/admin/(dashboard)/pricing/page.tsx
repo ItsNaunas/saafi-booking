@@ -1,5 +1,6 @@
 import { getPricingRows, getServiceAreaPrefixes, listAllAddons } from "@/lib/supabaseAdmin";
 import { savePricing, saveAddon, addServiceArea, removeServiceArea } from "@/app/admin/actions";
+import PendingButton from "@/components/PendingButton";
 
 export const dynamic = "force-dynamic";
 
@@ -22,8 +23,13 @@ const FIELDS: { key: string; label: string; hint?: string; step?: string }[] = [
   { key: "max_days_ahead", label: "Booking horizon (days)", hint: "how far ahead the calendar opens", step: "1" },
 ];
 
-export default async function PricingPage() {
-  const [rows, prefixes, addons] = await Promise.all([
+export default async function PricingPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ saved?: string; error?: string }>;
+}) {
+  const [{ saved, error }, rows, prefixes, addons] = await Promise.all([
+    searchParams,
     getPricingRows(),
     getServiceAreaPrefixes(),
     listAllAddons(),
@@ -37,6 +43,14 @@ export default async function PricingPage() {
         <p className="mb-4 text-sm text-slate-500">
           Changes go live on the quote form within a minute — no developer needed.
         </p>
+        {saved && (
+          <p className="mb-3 bg-brand-50 px-3 py-2 text-sm font-medium text-brand-800 ring-1 ring-brand-200">
+            Saved.
+          </p>
+        )}
+        {error && (
+          <p className="mb-3 bg-red-50 px-3 py-2 text-sm font-medium text-red-700">{error}</p>
+        )}
         <form action={savePricing} className="bg-white p-5 shadow-sm ring-1 ring-slate-200">
           <div className="grid gap-4 sm:grid-cols-2">
             {FIELDS.map((f) => (
@@ -54,9 +68,12 @@ export default async function PricingPage() {
               </label>
             ))}
           </div>
-          <button className="mt-5 bg-brand-600 px-5 py-2.5 font-semibold text-white hover:bg-brand-700">
+          <PendingButton
+            pendingLabel="Saving…"
+            className="mt-5 bg-brand-600 px-5 py-2.5 font-semibold text-white hover:bg-brand-700"
+          >
             Save pricing
-          </button>
+          </PendingButton>
         </form>
       </section>
 

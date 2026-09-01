@@ -15,29 +15,47 @@ export async function GET(
   req: NextRequest,
   ctx: { params: Promise<{ reference: string }> }
 ) {
+  const notFoundResponse = () =>
+    new NextResponse("Not found", { status: 404, headers: { "Content-Type": "text/plain" } });
+
   const { reference } = await ctx.params;
   const token = req.nextUrl.searchParams.get("t") ?? "";
   if (!verifyBookingToken(reference, token)) {
-    return NextResponse.json({ error: "not found" }, { status: 404 });
+    return notFoundResponse();
   }
   const b = await getBookingByReference(reference);
   if (!b || b.status === "cancelled") {
-    return NextResponse.json({ error: "not found" }, { status: 404 });
+    return notFoundResponse();
   }
 
-  const esc = (s: string) => s.replace(/\\/g, "\\\\").replace(/;/g, "\\;").replace(/,/g, "\\,");
+  const esc = (s: string) =>
+    s
+      .replace(/\\/g, "\\\\")
+      .replace(/;/g, "\\;")
+      .replace(/,/g, "\\,")
+      .replace(/\r?\n/g, "\\n");
   const d = b.preferred_date.replace(/-/g, "");
   const startMins = b.start_time ? toMinutes(b.start_time) : null;
   const hhmm = (mins: number) =>
     `${String(Math.floor(mins / 60)).padStart(2, "0")}${String(mins % 60).padStart(2, "0")}00`;
+
+  // date+time arithmetic that carries minutes past 24:00 into the next day —
+  // an evening job otherwise emits an invalid T25xxxx DTEND.
+  const dateTimeAfter = (dateStr: string, mins: number) => {
+    // Noon UTC sidesteps any DST-edge weirdness from adding days at midnight.
+    const base = new Date(`${dateStr}T12:00:00Z`);
+    base.setUTCDate(base.getUTCDate() + Math.floor(mins / 1440));
+    const ymd = base.toISOString().slice(0, 10).replace(/-/g, "");
+    return `${ymd}T${hhmm(((mins % 1440) + 1440) % 1440)}`;
+  };
 
   // With a time: local London wall-clock times with a TZID. All-day otherwise.
   const timing =
     startMins === null
       ? [`DTSTART;VALUE=DATE:${d}`]
       : [
-          `DTSTART;TZID=Europe/London:${d}T${hhmm(startMins)}`,
-          `DTEND;TZID=Europe/London:${d}T${hhmm(startMins + Math.round(Number(b.hours) * 60))}`,
+          `DTSTART;TZID=Europe/London:${dateTimeAfter(b.preferred_date, startMins)}`,
+          `DTEND;TZID=Europe/London:${dateTimeAfter(b.preferred_date, startMins + Math.round(Number(b.hours) * 60))}`,
         ];
 
   const ics = [

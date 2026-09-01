@@ -35,6 +35,7 @@ export default function Reveal({
   const ref = useRef<HTMLDivElement>(null);
   const [shown, setShown] = useState(false);
   const [armed, setArmed] = useState(false);
+  const [settled, setSettled] = useState(false);
 
   useEffect(() => {
     const reduced = window.matchMedia(
@@ -64,22 +65,51 @@ export default function Reveal({
     return () => io.disconnect();
   }, []);
 
+  // Once the entrance transition has actually finished, the inline style
+  // stops being written at all. Left in place permanently it wins over any
+  // hover/transform classes the caller puts on this div forever — the inline
+  // `transform: none` and `transition` never yield to a class's `:hover`
+  // rule, silently killing e.g. hover:-translate-y-1 on a revealed card.
+  useEffect(() => {
+    if (!shown) return;
+    const el = ref.current;
+    if (!el) {
+      setSettled(true);
+      return;
+    }
+    const onEnd = (e: TransitionEvent) => {
+      if (e.target === el) setSettled(true);
+    };
+    el.addEventListener("transitionend", onEnd);
+    // Background tabs skip transitions entirely and transitionend never fires
+    // — without this fallback those cards would keep the inline style (and a
+    // dead hover) forever.
+    const t = setTimeout(() => setSettled(true), 620 + delay + 150);
+    return () => {
+      el.removeEventListener("transitionend", onEnd);
+      clearTimeout(t);
+    };
+  }, [shown, delay]);
+
   const hidden = armed && !shown;
   const travel = distance === "none" ? 0 : distance;
+  const animating = armed && !settled;
 
   return (
     <div
       ref={ref}
       className={className}
-      style={{
-        opacity: hidden ? 0 : 1,
-        transform: hidden ? `translate3d(0, ${travel}px, 0)` : "none",
-        // Exponential ease-out: quick to commit, slow to settle.
-        transition: armed
-          ? `opacity 620ms cubic-bezier(0.16, 1, 0.3, 1) ${delay}ms, transform 620ms cubic-bezier(0.16, 1, 0.3, 1) ${delay}ms`
-          : undefined,
-        willChange: hidden ? "opacity, transform" : undefined,
-      }}
+      style={
+        animating
+          ? {
+              opacity: hidden ? 0 : 1,
+              transform: hidden ? `translate3d(0, ${travel}px, 0)` : "none",
+              // Exponential ease-out: quick to commit, slow to settle.
+              transition: `opacity 620ms cubic-bezier(0.16, 1, 0.3, 1) ${delay}ms, transform 620ms cubic-bezier(0.16, 1, 0.3, 1) ${delay}ms`,
+              willChange: hidden ? "opacity, transform" : undefined,
+            }
+          : undefined
+      }
     >
       {children}
     </div>

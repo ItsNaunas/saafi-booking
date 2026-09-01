@@ -2,18 +2,12 @@ import Link from "next/link";
 import { headers } from "next/headers";
 import { listBookings, listCleaners, type BookingRow } from "@/lib/supabaseAdmin";
 import { formatGBP } from "@/lib/pricing";
-import { formatTimeRange, londonWallClock } from "@/lib/scheduling";
+import { formatTime, formatTimeRange, isValidDate, londonWallClock } from "@/lib/scheduling";
 import { calendarFeedToken } from "@/lib/calendarFeed";
+import { STATUS_DOT, STATUS_LABEL } from "@/lib/statusLabels";
 
 export const dynamic = "force-dynamic";
 
-const STATUS_DOT: Record<string, string> = {
-  requested: "bg-amber-400",
-  confirmed: "bg-sky-400",
-  completed: "bg-violet-400",
-  paid: "bg-brand-500",
-  no_access: "bg-rose-400",
-};
 const STATUS_CHIP: Record<string, string> = {
   no_access: "bg-rose-50 text-rose-800 ring-rose-200",
   requested: "bg-amber-50 text-amber-800 ring-amber-200",
@@ -40,16 +34,17 @@ function outward(postcode: string): string {
 export default async function CalendarPage({
   searchParams,
 }: {
-  searchParams: Promise<{ m?: string; cleaner?: string }>;
+  searchParams: Promise<{ m?: string; cleaner?: string; d?: string }>;
 }) {
   const [allBookings, cleaners] = await Promise.all([listBookings(), listCleaners()]);
   const cleanerName = new Map<string, string>(cleaners.map((c) => [c.id, c.name]));
   const activeCleaners = cleaners.filter((c) => c.active);
 
   const todayStr = londonWallClock(new Date()).date;
-  const { m: mParam, cleaner: cParam } = await searchParams;
+  const { m: mParam, cleaner: cParam, d: dParam } = await searchParams;
   const month = /^\d{4}-\d{2}$/.test(mParam ?? "") ? mParam! : todayStr.slice(0, 7);
   const [year, mon] = month.split("-").map(Number);
+  const selectedDay = dParam && isValidDate(dParam) ? dParam : null;
 
   // Cleaner filter: a real id, "none" (unassigned), or unset (all).
   const cleaner = cParam ?? "";
@@ -57,7 +52,8 @@ export default async function CalendarPage({
   if (cleaner === "none") bookings = bookings.filter((b) => !b.cleaner_id);
   else if (cleaner) bookings = bookings.filter((b) => b.cleaner_id === cleaner);
 
-  // Preserve the cleaner filter across month navigation, and vice-versa.
+  // Preserve the cleaner filter across month navigation, and vice-versa. Never
+  // carries the day-agenda param forward — a new month or cleaner dismisses it.
   const href = (over: { m?: string; cleaner?: string }) => {
     const p = new URLSearchParams();
     const m = over.m ?? month;
@@ -66,6 +62,15 @@ export default async function CalendarPage({
     if (c) p.set("cleaner", c);
     const qs = p.toString();
     return qs ? `/admin/calendar?${qs}` : "/admin/calendar";
+  };
+
+  // Same as href(), plus the day-agenda param — used by "+N more" links.
+  const dayHref = (d: string) => {
+    const p = new URLSearchParams();
+    if (month !== todayStr.slice(0, 7)) p.set("m", month);
+    if (cleaner) p.set("cleaner", cleaner);
+    p.set("d", d);
+    return `/admin/calendar?${p.toString()}`;
   };
 
   // Bookings grouped by date for O(1) lookup while laying out the grid.
@@ -217,6 +222,55 @@ export default async function CalendarPage({
         )}
       </div>
 
+      {/* that day — every booking on a date opened from "+N more", not just the
+          three the grid cell has room for */}
+      {selectedDay && (
+        <div className="mb-4 bg-white p-4 shadow-sm ring-1 ring-brand-200">
+          <div className="mb-2 flex items-center justify-between gap-3">
+            <h2 className="font-semibold text-slate-900">
+              {new Date(selectedDay + "T00:00:00").toLocaleDateString("en-GB", {
+                weekday: "long",
+                day: "numeric",
+                month: "long",
+              })}
+            </h2>
+            <Link href={href({})} className="text-xs font-medium text-slate-400 hover:text-slate-700">
+              Dismiss ×
+            </Link>
+          </div>
+          <div className="space-y-1.5">
+            {(byDate.get(selectedDay) ?? []).length === 0 && (
+              <p className="text-sm text-slate-400">Nothing booked this day.</p>
+            )}
+            {(byDate.get(selectedDay) ?? []).map((b) => {
+              const cn = b.cleaner_id ? cleanerName.get(b.cleaner_id) : null;
+              return (
+                <Link
+                  key={b.id}
+                  href={`/admin/booking/${b.id}`}
+                  className="flex items-center gap-3 border border-slate-100 px-2 py-1.5 text-sm hover:bg-slate-50"
+                >
+                  <span className="w-14 shrink-0 text-xs font-medium text-slate-500">
+                    {b.start_time ? formatTime(b.start_time) : "TBC"}
+                  </span>
+                  <span className="min-w-0 flex-1 truncate font-medium text-slate-900">
+                    {b.customer_name}
+                  </span>
+                  <span className={`shrink-0 text-xs ${cn ? "text-slate-500" : "text-amber-600"}`}>
+                    {cn ?? "unassigned"}
+                  </span>
+                  <span
+                    className={`shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-semibold ring-1 ring-inset ${STATUS_CHIP[b.status]}`}
+                  >
+                    {STATUS_LABEL[b.status]}
+                  </span>
+                </Link>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {/* calendar grid */}
       <div className="overflow-hidden bg-white shadow-sm ring-1 ring-slate-200">
         <div className="grid grid-cols-7 border-b border-slate-200 bg-slate-50 text-center text-xs font-semibold uppercase tracking-wide text-slate-400">
@@ -236,6 +290,7 @@ export default async function CalendarPage({
               rows={byDate.get(cell.date) ?? []}
               lastCol={i % 7 === 6}
               cleanerName={cleanerName}
+              dayHref={dayHref}
             />
           ))}
         </div>
@@ -246,7 +301,7 @@ export default async function CalendarPage({
         {STATUS_ORDER.map((s) => (
           <span key={s} className="flex items-center gap-1.5">
             <span className={`h-2.5 w-2.5 rounded-full ${STATUS_DOT[s]}`} />
-            <span className="capitalize">{s.replace("_", " ")}</span>
+            <span>{STATUS_LABEL[s]}</span>
           </span>
         ))}
         <span className="flex items-center gap-1.5">
@@ -296,6 +351,15 @@ function FilterChip({
   );
 }
 
+/** "Jennifer Garda" -> "Jennifer G." — enough to tell people apart in the space a cell has. */
+function firstNameLastInitial(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return name;
+  const [first, ...rest] = parts;
+  const last = rest[rest.length - 1];
+  return last ? `${first} ${last[0]}.` : first;
+}
+
 function DayCell({
   date,
   inMonth,
@@ -303,6 +367,7 @@ function DayCell({
   rows,
   lastCol,
   cleanerName,
+  dayHref,
 }: {
   date: string;
   inMonth: boolean;
@@ -310,6 +375,7 @@ function DayCell({
   rows: BookingRow[];
   lastCol: boolean;
   cleanerName: Map<string, string>;
+  dayHref: (d: string) => string;
 }) {
   const dayNum = Number(date.slice(8, 10));
   const shown = rows.slice(0, 3);
@@ -354,15 +420,23 @@ function DayCell({
               title={`${b.customer_name} · ${b.start_time ? formatTimeRange(b.start_time, Number(b.hours)) : "no time"} · ${b.hours}h · ${b.status}${cn ? ` · ${cn}` : " · unassigned"} · ${b.postcode}`}
               className={`block truncate  px-1.5 py-0.5 text-[11px] font-medium ring-1 ring-inset hover:brightness-95 ${STATUS_CHIP[b.status]}`}
             >
-              {b.customer_name.split(" ")[0]}
+              {b.start_time && <span className="tabular-nums">{formatTime(b.start_time)} </span>}
+              {firstNameLastInitial(b.customer_name)}
               {needsCleaner && <span className="ml-1 text-amber-500">●</span>}
             </Link>
           );
         })}
-        {extra > 0 && <div className="px-1.5 text-[10px] font-medium text-slate-400">+{extra} more</div>}
+        {extra > 0 && (
+          <Link
+            href={dayHref(date)}
+            className="block px-1.5 text-[10px] font-medium text-slate-400 hover:text-brand-700 hover:underline"
+          >
+            +{extra} more
+          </Link>
+        )}
       </div>
       {areas.length > 0 && (
-        <div className="mt-1 truncate px-0.5 text-[9px] uppercase tracking-wide text-slate-300" title={`Areas: ${areas.join(", ")}`}>
+        <div className="mt-1 truncate px-0.5 text-[10px] uppercase tracking-wide text-slate-400" title={`Areas: ${areas.join(", ")}`}>
           {areas.slice(0, 3).join(" · ")}
         </div>
       )}

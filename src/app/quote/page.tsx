@@ -5,8 +5,8 @@ import { loadPricingAndAddons } from "@/lib/pricingServer";
 import { normalisePostcode } from "@/lib/pricing";
 
 export const metadata: Metadata = {
-  title: "Get a free quote — SAAFI Cleaning Service",
-  description: "Instant quote for your home clean. Pick your rooms, get a price, book in minutes.",
+  title: "Get a quote — SAAFI Cleaning Service",
+  description: "Instant quote for your home clean. Pick your rooms, get a price, book in under a minute.",
 };
 
 export const dynamic = "force-dynamic";
@@ -56,7 +56,7 @@ export default async function QuotePage({
         <Link href="/" className="text-sm font-medium text-brand-700 hover:underline">
           ← SAAFI Cleaning Service
         </Link>
-        <h1 className="mt-2 text-3xl font-bold text-slate-900">Get your free quote</h1>
+        <h1 className="mt-2 text-3xl font-bold text-slate-900">Get your quote</h1>
       </div>
       <QuoteWizard
         cfg={cfg}

@@ -1,6 +1,8 @@
 import { listCleaners, type CleanerRow } from "@/lib/supabaseAdmin";
 import { site } from "@/lib/business";
 import { addCleaner, toggleCleaner, updateCleanerSchedule } from "@/app/admin/actions";
+import PendingButton from "@/components/PendingButton";
+import CopyLink from "./CopyLink";
 
 /** 0=Sunday..6=Saturday, matching JS getUTCDay() and the works_days column. */
 const DAYS = [
@@ -15,8 +17,12 @@ const DAYS = [
 
 export const dynamic = "force-dynamic";
 
-export default async function CleanersPage() {
-  const cleaners = await listCleaners();
+export default async function CleanersPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ error?: string }>;
+}) {
+  const [cleaners, { error }] = await Promise.all([listCleaners(), searchParams]);
   // Always the real public domain, never the environment's. These links get pasted
   // into WhatsApp — one opened from a local admin session must not hand a cleaner
   // a localhost or preview URL. NEXT_PUBLIC_SITE_URL deliberately isn't used here:
@@ -33,6 +39,10 @@ export default async function CleanersPage() {
         offered, so keep them right.
       </p>
 
+      {error && (
+        <p className="mb-4 bg-red-50 px-3 py-2 text-sm font-medium text-red-700">{error}</p>
+      )}
+
       <form action={addCleaner} className="mb-5 flex flex-wrap items-end gap-2 bg-white p-4 shadow-sm ring-1 ring-slate-200">
         <label className="block flex-1 min-w-36">
           <span className="mb-1 block text-xs font-medium text-slate-500">Name</span>
@@ -46,13 +56,21 @@ export default async function CleanersPage() {
           <span className="mb-1 block text-xs font-medium text-slate-500">Email (optional)</span>
           <input name="email" type="email" className="w-full border border-slate-300 px-3 py-2 text-sm" />
         </label>
-        <button className="bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700">
+        <PendingButton
+          pendingLabel="Saving…"
+          className="bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700"
+        >
           Add cleaner
-        </button>
+        </PendingButton>
       </form>
 
       <div className="space-y-3">
-        {cleaners.length === 0 && <p className="text-sm text-slate-400">No cleaners yet.</p>}
+        {cleaners.length === 0 && (
+          <p className="text-sm text-slate-400">
+            No cleaners yet. Until a cleaner is added, the public booking form can&apos;t offer any
+            times.
+          </p>
+        )}
         {cleaners.map((c) => (
           <div
             key={c.id}
@@ -79,11 +97,12 @@ export default async function CleanersPage() {
             {c.active && <Schedule c={c} />}
 
             {c.active && (
-              <div className="mt-2 bg-slate-50 px-3 py-2 text-xs text-slate-500">
+              <div className="mt-2 flex flex-wrap items-center gap-1 bg-slate-50 px-3 py-2 text-xs text-slate-500">
                 Job link:{" "}
                 <code className="select-all break-all text-brand-700">
                   {base}/c/{c.token}
                 </code>
+                <CopyLink url={`${base}/c/${c.token}`} phone={c.phone} />
               </div>
             )}
           </div>
@@ -125,6 +144,9 @@ function Schedule({ c }: { c: CleanerRow }) {
             </label>
           ))}
         </div>
+        <p className="mt-1 text-[11px] text-slate-400">
+          Tick Saturday/Sunday to open weekend bookings.
+        </p>
       </fieldset>
       <label className="block">
         <span className="mb-1 block text-xs font-medium text-slate-500">From</span>

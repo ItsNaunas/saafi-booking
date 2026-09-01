@@ -45,7 +45,7 @@ export default async function ReportsPage() {
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Stat label="Revenue collected" value={formatGBP(paid.reduce((s, b) => s + takenFor(b), 0))} sub="money actually taken, net of refunds" />
         <Stat label="Upcoming pipeline" value={formatGBP(pipelineValue)} sub={`${upcoming.length} clean${upcoming.length === 1 ? "" : "s"} booked`} />
-        <Stat label="Recurring customers" value={String(recurringActive)} sub="active repeat series" />
+        <Stat label="Recurring customers" value={String(recurringActive)} sub="customers on a regular clean" />
         <Stat label="Repeat rate" value={`${repeatRate}%`} sub={`${repeatCustomers} of ${customers.length} customers rebook`} />
       </div>
 

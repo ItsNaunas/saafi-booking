@@ -80,7 +80,7 @@ export default function StickyHeader({
           <Link
             href="/quote"
             tabIndex={shown ? 0 : -1}
-            className="rounded-full bg-slate-900 px-5 py-2 text-sm font-semibold text-white transition hover:bg-slate-800"
+            className="rounded-full bg-brand-600 px-5 py-2 text-sm font-semibold text-white transition hover:bg-brand-700"
           >
             Get a quote
           </Link>

@@ -62,7 +62,7 @@ export default function HeroSearchBar() {
             placeholder="e.g. IG1 1BA"
             autoComplete="postal-code"
             aria-label="Your postcode"
-            className="w-full bg-transparent text-[15px] font-semibold uppercase tracking-wide text-slate-900 outline-none placeholder:font-normal placeholder:normal-case placeholder:tracking-normal placeholder:text-slate-400"
+            className="w-full bg-transparent text-[15px] font-semibold uppercase tracking-wide text-slate-900 outline-none placeholder:font-normal placeholder:normal-case placeholder:tracking-normal placeholder:text-slate-500"
           />
         </Field>
 
@@ -122,7 +122,7 @@ export default function HeroSearchBar() {
       </div>
 
       {error && (
-        <p className="mt-3 rounded-full bg-rose-50 px-4 py-2 text-center text-sm font-medium text-rose-700">
+        <p className="mt-3 bg-rose-50 px-4 py-2 text-center text-sm font-medium text-rose-700">
           {error}
         </p>
       )}
@@ -149,7 +149,7 @@ function Field({
         {icon}
       </span>
       <div className="min-w-0 flex-1">
-        <p className="text-[11px] font-medium text-slate-400">{label}</p>
+        <p className="text-[11px] font-medium text-slate-500">{label}</p>
         {children}
       </div>
     </div>
@@ -225,7 +225,9 @@ function StepBtn({
       // while leaving the buttons clickable and tappable.
       tabIndex={-1}
       onClick={onClick}
-      className="flex size-6 shrink-0 items-center justify-center rounded-full border border-slate-300 text-sm font-semibold text-slate-600 transition enabled:hover:border-brand-500 enabled:hover:text-brand-700 disabled:opacity-35"
+      // The circle stays 24px — the ::before pseudo-element pads the hit area
+      // out to the 44px minimum tap target without enlarging the border.
+      className="relative flex size-6 shrink-0 items-center justify-center rounded-full border border-slate-300 text-sm font-semibold text-slate-600 transition before:absolute before:-inset-2.5 before:content-[''] enabled:hover:border-brand-500 enabled:hover:text-brand-700 disabled:opacity-35"
     >
       {children}
     </button>

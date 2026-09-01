@@ -1,6 +1,7 @@
 import { createManualBooking } from "@/app/admin/actions";
 import { loadPricingConfig } from "@/lib/pricingServer";
 import ManualPriceFields from "@/components/ManualPriceFields";
+import PendingButton from "@/components/PendingButton";
 
 export const dynamic = "force-dynamic";
 
@@ -60,9 +61,12 @@ export default async function NewBookingPage({
             Name, phone and date are required.
           </p>
         ) : null}
-        <button className="mt-5 bg-brand-600 px-5 py-2.5 font-semibold text-white hover:bg-brand-700">
+        <PendingButton
+          pendingLabel="Saving…"
+          className="mt-5 bg-brand-600 px-5 py-2.5 font-semibold text-white hover:bg-brand-700"
+        >
           Create booking
-        </button>
+        </PendingButton>
       </form>
     </div>
   );

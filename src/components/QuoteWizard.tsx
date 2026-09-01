@@ -31,6 +31,25 @@ import {
 /** Which field a validation message belongs to, so it can be shown in place. */
 type FieldKey = "postcode" | "products" | "date" | "time" | "name" | "email" | "phone" | "address";
 
+// Shared between submit-time validate() and the on-blur checks below, so
+// "valid" can't quietly mean two different things depending on when it runs.
+const NAME_ERROR = "Please tell us your name.";
+const EMAIL_ERROR = "Please enter a valid email.";
+const PHONE_ERROR = "Please enter a valid phone number.";
+const ADDRESS_ERROR = "Please enter your address.";
+const isValidName = (v: string) => v.trim().length >= 2;
+const isValidEmail = (v: string) => /^\S+@\S+\.\S+$/.test(v);
+const isValidPhone = (v: string) => v.replace(/\D/g, "").length >= 10;
+const isValidAddress = (v: string) => v.trim().length >= 3;
+
+/** "Monday 14 September" rather than the raw ISO the server stores — midday
+ * UTC keeps the formatted date off any timezone's date line. */
+function humanDate(iso: string): string {
+  return new Intl.DateTimeFormat("en-GB", { weekday: "long", day: "numeric", month: "long" }).format(
+    new Date(`${iso}T12:00:00Z`)
+  );
+}
+
 /**
  * The whole quote on one page, kept as short as it can honestly be.
  *
@@ -83,7 +102,11 @@ export default function QuoteWizard({
   // assumes "own products" while unanswered, so choosing ours visibly adds the
   // £5 rather than a preselected charge quietly sitting in the total.
   const [customerProvidesProducts, setCustomerProvidesProducts] = useState<boolean | null>(null);
-  const [selectedAddons, setSelectedAddons] = useState<string[]>(initialAddons ?? []);
+  // Kept as two lists, not one shared array: DEEP_EXTRAS keys and standard
+  // addon keys overlap, so a single array meant picking windows+laundry on
+  // Standard silently carried the charge over when switching to Deep.
+  const [standardAddons, setStandardAddons] = useState<string[]>(initialAddons ?? []);
+  const [deepAddons, setDeepAddons] = useState<string[]>([]);
   const [frequency, setFrequency] = useState<Frequency>(initialFrequency ?? "one_off");
   const [preferredDate, setPreferredDate] = useState("");
   const [name, setName] = useState("");
@@ -97,6 +120,10 @@ export default function QuoteWizard({
   // a live preview and can drift (config edits, a long-idle tab).
   const [serverPrice, setServerPrice] = useState<number | null>(null);
   const [timeDropped, setTimeDropped] = useState(false);
+  // Set when a retry landed on a booking the server already had — not an
+  // error, just worth telling them so a repeated "did it work?" click doesn't
+  // read as silence.
+  const [duplicate, setDuplicate] = useState(false);
 
   // Availability is keyed by day+length: change either and the old answer — and
   // any time picked from it — stop applying, with nothing to reset by hand.
@@ -106,20 +133,22 @@ export default function QuoteWizard({
     closed: string | null;
   } | null>(null);
   const [pickedSlot, setPickedSlot] = useState<{ key: string; time: string } | null>(null);
+  // "Any time" is its own choice, not just an empty pickedSlot — keyed the
+  // same way so it resets the moment date or hours change the picture.
+  const [anyTime, setAnyTime] = useState<{ key: string } | null>(null);
 
   const recommended = useMemo(() => recommendedHours(rooms, cfg), [rooms, cfg]);
   const chosenHours = hours ?? recommended;
   const chosenAddons = useMemo(
-    () => addons.filter((a) => selectedAddons.includes(a.key)),
-    [addons, selectedAddons]
+    () => addons.filter((a) => standardAddons.includes(a.key)),
+    [addons, standardAddons]
   );
   const addonsTotal = useMemo(() => chosenAddons.reduce((s, a) => s + a.price, 0), [chosenAddons]);
   // Extras add time to the visit, and that time is what gets billed.
   const extrasHours = useMemo(() => addonsHours(chosenAddons), [chosenAddons]);
 
   // Deep clean geometry: flat per-room pricing, staffed in pairs, hours on
-  // site derived rather than chosen. selectedAddons doubles as the deep extras
-  // list — the keys overlap on purpose so switching tabs keeps the selection.
+  // site derived rather than chosen.
   const deepRooms = useMemo(
     () => ({
       bedrooms: rooms.bedrooms,
@@ -131,8 +160,8 @@ export default function QuoteWizard({
     [rooms]
   );
   const deepExtras = useMemo(
-    () => DEEP_EXTRAS.filter((e) => selectedAddons.includes(e.key)).map((e) => e.key),
-    [selectedAddons]
+    () => DEEP_EXTRAS.filter((e) => deepAddons.includes(e.key)).map((e) => e.key),
+    [deepAddons]
   );
   const deepMans = useMemo(() => deepMinutes(deepRooms, deepExtras), [deepRooms, deepExtras]);
   const crew = deepCleaners(deepMans);
@@ -213,6 +242,7 @@ export default function QuoteWizard({
   const closedReason = fresh?.closed ?? null;
   const slotsBusy = Boolean(preferredDate) && fresh === null;
   const startTime = pickedSlot?.key === slotKey ? pickedSlot.time : null;
+  const anyTimeChosen = anyTime?.key === slotKey;
   const anySlotFree = (slots ?? []).some((s) => s.available);
 
   // London wall-clock date, whatever the visitor's device thinks: the server
@@ -248,15 +278,15 @@ export default function QuoteWizard({
       // Telling them "we're fully booked, pick another" while accepting the
       // submit anyway was the worst of both worlds.
       found.time = "We're fully booked that day — please pick another date.";
-    else if (anySlotFree && !startTime) found.time = "Pick a start time.";
+    else if (anySlotFree && !startTime && !anyTimeChosen) found.time = "Pick a start time.";
 
     if (!isDeep && customerProvidesProducts === null)
       found.products = "Choose who brings the cleaning products.";
 
-    if (name.trim().length < 2) found.name = "Please tell us your name.";
-    if (!/^\S+@\S+\.\S+$/.test(email)) found.email = "Please enter a valid email.";
-    if (phone.replace(/\D/g, "").length < 10) found.phone = "Please enter a valid phone number.";
-    if (addressLine.trim().length < 3) found.address = "Please enter your address.";
+    if (!isValidName(name)) found.name = NAME_ERROR;
+    if (!isValidEmail(email)) found.email = EMAIL_ERROR;
+    if (!isValidPhone(phone)) found.phone = PHONE_ERROR;
+    if (!isValidAddress(addressLine)) found.address = ADDRESS_ERROR;
 
     return found;
   }
@@ -289,7 +319,7 @@ export default function QuoteWizard({
           // A deep clean is two cleaners arriving fully kitted — the products
           // question is a standard-clean concern and never shown on this tab.
           customerProvidesProducts: isDeep ? false : customerProvidesProducts,
-          addons: isDeep ? deepExtras : selectedAddons,
+          addons: isDeep ? deepExtras : standardAddons,
           frequency: isDeep ? "one_off" : frequency,
           name,
           email,
@@ -313,6 +343,7 @@ export default function QuoteWizard({
       setPayUrl(typeof data.payUrl === "string" ? data.payUrl : null);
       setServerPrice(typeof data.quotedPrice === "number" ? data.quotedPrice : null);
       setTimeDropped(Boolean(data.timeDropped));
+      setDuplicate(Boolean(data.duplicate));
     } catch {
       setFormError("Network problem — please try again or call us");
     } finally {
@@ -333,7 +364,7 @@ export default function QuoteWizard({
           Your reference is <span className="font-semibold text-slate-900">{reference}</span>.
           We&apos;ll call you shortly to confirm your{" "}
           <span className="font-semibold">{totalHours}-hour clean</span> on{" "}
-          <span className="font-semibold">{preferredDate}</span>
+          <span className="font-semibold">{humanDate(preferredDate)}</span>
           {startTime && !timeDropped ? (
             <>
               , <span className="font-semibold">{formatTimeRange(startTime, totalHours)}</span>.
@@ -342,6 +373,11 @@ export default function QuoteWizard({
             <>, and agree a time with you.</>
           )}
         </p>
+        {duplicate && (
+          <p className="mt-3 bg-slate-50 px-3 py-2 text-sm text-slate-600">
+            Looks like this booking already reached us — here are its details again.
+          </p>
+        )}
         {timeDropped && (
           <p className="mt-3 bg-amber-50 px-3 py-2 text-sm text-amber-800">
             We couldn&apos;t hold the time you picked, so we&apos;ll agree one on the phone —
@@ -373,6 +409,7 @@ export default function QuoteWizard({
   /* ---------- form ---------- */
 
   return (
+    <>
     <div className="mx-auto grid max-w-5xl gap-6 lg:grid-cols-[1fr_19rem] lg:items-start lg:gap-8">
       {/* Price sits above the form on mobile so it is seen before scrolling,
           and rides alongside it on desktop. */}
@@ -392,7 +429,7 @@ export default function QuoteWizard({
         />
       </aside>
 
-      <form ref={formRef} onSubmit={submit} noValidate className="space-y-5">
+      <form ref={formRef} onSubmit={submit} noValidate className="space-y-5 pb-16 lg:pb-0">
         {/* Honeypot — off-screen, skipped by keyboard and screen readers.
             A filled value marks the submit as a bot; the server discards it. */}
         <input
@@ -445,7 +482,7 @@ export default function QuoteWizard({
               : "Kitchen, hallways and landings are always included."
           }
         >
-          <Field label="Postcode" error={errors.postcode}>
+          <Field label="Postcode" error={errors.postcode} errorId="postcode-error">
             <div className="relative">
               <input
                 value={postcode}
@@ -454,6 +491,8 @@ export default function QuoteWizard({
                 placeholder="e.g. IG1 1BA"
                 autoComplete="postal-code"
                 data-invalid={errors.postcode ? "true" : undefined}
+                aria-invalid={errors.postcode ? true : undefined}
+                aria-describedby={errors.postcode ? "postcode-error" : undefined}
                 className={`w-full border px-3 py-2 pr-24 uppercase tracking-wide outline-none placeholder:normal-case placeholder:tracking-normal focus:ring-2 focus:ring-brand-200 ${
                   errors.postcode ? "border-red-400" : "border-slate-300 focus:border-brand-500"
                 }`}
@@ -463,9 +502,16 @@ export default function QuoteWizard({
                   <span className="text-slate-400">checking&hellip;</span>
                 )}
                 {postcodeState === "ok" && <span className="text-brand-600">✓ covered</span>}
-                {postcodeState === "unknown" && <span className="text-amber-600">not found</span>}
               </span>
             </div>
+            {/* Amber, but no longer a dead-end shrug — tells them what to do
+                about it instead of just flagging that something's off. */}
+            {postcodeState === "unknown" && (
+              <p className="mt-2 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                We couldn&apos;t verify that postcode — double-check it, or carry on if
+                you&apos;re sure.
+              </p>
+            )}
           </Field>
 
           {/* The two rooms that decide most of the price. */}
@@ -633,17 +679,17 @@ export default function QuoteWizard({
             >
               <div className="grid gap-2 sm:grid-cols-2">
                 {DEEP_EXTRAS.map((e) => {
-                  const on = selectedAddons.includes(e.key);
+                  const on = deepAddons.includes(e.key);
                   return (
                     <button
                       key={e.key}
                       type="button"
                       aria-pressed={on}
                       onClick={() =>
-                        setSelectedAddons(
+                        setDeepAddons(
                           on
-                            ? selectedAddons.filter((k) => k !== e.key)
-                            : [...selectedAddons, e.key]
+                            ? deepAddons.filter((k) => k !== e.key)
+                            : [...deepAddons, e.key]
                         )
                       }
                       className={`flex items-center justify-between border-2 px-3 py-2 text-left text-sm transition ${
@@ -674,17 +720,17 @@ export default function QuoteWizard({
             >
               <div className="grid gap-2 sm:grid-cols-2">
                 {addons.map((a) => {
-                  const on = selectedAddons.includes(a.key);
+                  const on = standardAddons.includes(a.key);
                   return (
                     <button
                       key={a.key}
                       type="button"
                       aria-pressed={on}
                       onClick={() =>
-                        setSelectedAddons(
+                        setStandardAddons(
                           on
-                            ? selectedAddons.filter((k) => k !== a.key)
-                            : [...selectedAddons, a.key]
+                            ? standardAddons.filter((k) => k !== a.key)
+                            : [...standardAddons, a.key]
                         )
                       }
                       className={`flex items-center justify-between border-2 px-3 py-2 text-left text-sm transition ${
@@ -754,6 +800,7 @@ export default function QuoteWizard({
             <Field
               label={isDeep || frequency === "one_off" ? "Preferred date" : "Date of the first clean"}
               error={errors.date}
+              errorId="date-error"
             >
               <input
                 type="date"
@@ -762,6 +809,8 @@ export default function QuoteWizard({
                 max={maxDate}
                 onChange={(e) => setPreferredDate(e.target.value)}
                 data-invalid={errors.date ? "true" : undefined}
+                aria-invalid={errors.date ? true : undefined}
+                aria-describedby={errors.date ? "date-error" : undefined}
                 className={`w-full border px-3 py-2 outline-none focus:ring-2 focus:ring-brand-200 ${
                   errors.date ? "border-red-400" : "border-slate-300 focus:border-brand-500"
                 }`}
@@ -797,8 +846,11 @@ export default function QuoteWizard({
                         type="button"
                         disabled={!s.available}
                         aria-pressed={startTime === s.time}
-                        onClick={() => setPickedSlot({ key: slotKey, time: s.time })}
-                        className={`px-1 py-2 text-sm font-semibold transition ${
+                        onClick={() => {
+                          setPickedSlot({ key: slotKey, time: s.time });
+                          setAnyTime(null);
+                        }}
+                        className={`px-1 py-3 text-sm font-semibold transition ${
                           startTime === s.time
                             ? "bg-brand-600 text-white"
                             : s.available
@@ -809,6 +861,24 @@ export default function QuoteWizard({
                         {formatTime(s.time)}
                       </button>
                     ))}
+                    {/* No time works, or they just don't mind — this passes
+                        validation on its own and the booking goes through with
+                        startTime left null, same as a day with no live times. */}
+                    <button
+                      type="button"
+                      aria-pressed={anyTimeChosen}
+                      onClick={() => {
+                        setPickedSlot(null);
+                        setAnyTime({ key: slotKey });
+                      }}
+                      className={`col-span-2 border-2 px-1 py-3 text-sm font-semibold transition ${
+                        anyTimeChosen
+                          ? "border-brand-500 bg-brand-50 text-brand-800"
+                          : "border-slate-200 text-slate-600 hover:border-slate-300"
+                      }`}
+                    >
+                      Any time — you pick
+                    </button>
                   </div>
                   {startTime && (
                     <p className="mt-3 text-sm text-slate-600">
@@ -817,6 +887,11 @@ export default function QuoteWizard({
                         {formatTimeRange(startTime, totalHours)}
                       </span>
                       .
+                    </p>
+                  )}
+                  {anyTimeChosen && (
+                    <p className="mt-3 text-sm text-slate-600">
+                      No problem — we&apos;ll agree a time with you when we call to confirm.
                     </p>
                   )}
                   {!anySlotFree && (
@@ -834,33 +909,72 @@ export default function QuoteWizard({
         {/* ---------- details ---------- */}
         <Section title="Your details" sub="So we can confirm your clean by phone.">
           <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Full name" error={errors.name}>
-              <Input value={name} onChange={setName} autoComplete="name" invalid={!!errors.name} />
+            <Field label="Full name" error={errors.name} errorId="name-error">
+              <Input
+                value={name}
+                onChange={setName}
+                autoComplete="name"
+                invalid={!!errors.name}
+                describedBy={errors.name ? "name-error" : undefined}
+                // Empty is skipped — flagging a field they haven't reached yet
+                // is just noise. Submit still catches it either way.
+                onBlur={() =>
+                  setErrors((e) => ({
+                    ...e,
+                    name: name.trim() ? (isValidName(name) ? undefined : NAME_ERROR) : e.name,
+                  }))
+                }
+              />
             </Field>
-            <Field label="Phone" error={errors.phone}>
+            <Field label="Phone" error={errors.phone} errorId="phone-error">
               <Input
                 value={phone}
                 onChange={setPhone}
                 type="tel"
                 autoComplete="tel"
                 invalid={!!errors.phone}
+                describedBy={errors.phone ? "phone-error" : undefined}
+                onBlur={() =>
+                  setErrors((e) => ({
+                    ...e,
+                    phone: phone.trim() ? (isValidPhone(phone) ? undefined : PHONE_ERROR) : e.phone,
+                  }))
+                }
               />
             </Field>
-            <Field label="Email" error={errors.email}>
+            <Field label="Email" error={errors.email} errorId="email-error">
               <Input
                 value={email}
                 onChange={setEmail}
                 type="email"
                 autoComplete="email"
                 invalid={!!errors.email}
+                describedBy={errors.email ? "email-error" : undefined}
+                onBlur={() =>
+                  setErrors((e) => ({
+                    ...e,
+                    email: email.trim() ? (isValidEmail(email) ? undefined : EMAIL_ERROR) : e.email,
+                  }))
+                }
               />
             </Field>
-            <Field label="First line of address" error={errors.address}>
+            <Field label="First line of address" error={errors.address} errorId="address-error">
               <Input
                 value={addressLine}
                 onChange={setAddressLine}
                 autoComplete="address-line1"
                 invalid={!!errors.address}
+                describedBy={errors.address ? "address-error" : undefined}
+                onBlur={() =>
+                  setErrors((e) => ({
+                    ...e,
+                    address: addressLine.trim()
+                      ? isValidAddress(addressLine)
+                        ? undefined
+                        : ADDRESS_ERROR
+                      : e.address,
+                  }))
+                }
               />
             </Field>
           </div>
@@ -876,13 +990,15 @@ export default function QuoteWizard({
         </Section>
 
         {formError && (
-          <p className="bg-red-50 px-3 py-2 text-sm font-medium text-red-700">{formError}</p>
+          <p role="alert" className="bg-red-50 px-3 py-2 text-sm font-medium text-red-700">
+            {formError}
+          </p>
         )}
 
         <button
           type="submit"
           disabled={submitting}
-          className="w-full bg-brand-600 px-6 py-3.5 text-base font-bold text-white transition hover:bg-brand-700 disabled:opacity-60"
+          className="w-full rounded-full bg-brand-600 px-6 py-3.5 text-base font-bold text-white transition hover:bg-brand-700 disabled:opacity-60"
         >
           {submitting ? "Sending…" : `Request booking · ${formatGBP(price)}`}
         </button>
@@ -892,6 +1008,15 @@ export default function QuoteWizard({
         </p>
       </form>
     </div>
+    {/* Price scrolls out of view on phones the moment they leave the top of
+        the form — this rides along instead. Informational only, so it's a
+        div, not a button. Hidden on the success screen because this whole
+        branch never renders there. */}
+    <div className="fixed inset-x-0 bottom-0 z-40 flex h-12 items-center justify-between bg-slate-900 px-4 pb-[env(safe-area-inset-bottom)] text-white lg:hidden">
+      <span className="text-sm text-slate-300">{totalHours}h clean</span>
+      <span className="tnum text-base font-bold">{formatGBP(price)}</span>
+    </div>
+    </>
   );
 }
 
@@ -967,8 +1092,8 @@ function PricePanel({
           v={
             preferredDate
               ? startTime
-                ? `${preferredDate}, ${formatTime(startTime)}`
-                : preferredDate
+                ? `${humanDate(preferredDate)}, ${formatTime(startTime)}`
+                : humanDate(preferredDate)
               : "not chosen yet"
           }
         />
@@ -1036,12 +1161,15 @@ function Field({
   label,
   hint,
   error,
+  errorId,
   className = "",
   children,
 }: {
   label: string;
   hint?: string;
   error?: string;
+  /** id put on the error text so the input can point to it via aria-describedby. */
+  errorId?: string;
   className?: string;
   children: React.ReactNode;
 }) {
@@ -1051,7 +1179,11 @@ function Field({
         {label} {hint && <span className="font-normal text-slate-400">({hint})</span>}
       </span>
       {children}
-      {error && <span className="mt-1 block text-sm text-red-600">{error}</span>}
+      {error && (
+        <span id={errorId} className="mt-1 block text-sm text-red-600">
+          {error}
+        </span>
+      )}
     </label>
   );
 }
@@ -1059,15 +1191,21 @@ function Field({
 function Input({
   value,
   onChange,
+  onBlur,
   type = "text",
   autoComplete,
   invalid,
+  describedBy,
 }: {
   value: string;
   onChange: (v: string) => void;
+  onBlur?: () => void;
   type?: string;
   autoComplete?: string;
   invalid?: boolean;
+  /** Points at the matching Field's errorId — kept as one prop rather than
+   * inferred, since Field can't reach into arbitrary children to wire it. */
+  describedBy?: string;
 }) {
   return (
     <input
@@ -1075,7 +1213,10 @@ function Input({
       value={value}
       autoComplete={autoComplete}
       onChange={(e) => onChange(e.target.value)}
+      onBlur={onBlur}
       data-invalid={invalid ? "true" : undefined}
+      aria-invalid={invalid ? true : undefined}
+      aria-describedby={describedBy}
       className={`w-full border px-3 py-2 outline-none focus:ring-2 focus:ring-brand-200 ${
         invalid ? "border-red-400" : "border-slate-300 focus:border-brand-500"
       }`}
@@ -1140,7 +1281,7 @@ function RoundBtn({
       onClick={onClick}
       disabled={disabled}
       className={`flex items-center justify-center rounded-full bg-slate-100 font-bold text-slate-600 transition hover:bg-brand-100 hover:text-brand-700 active:scale-90 disabled:opacity-35 disabled:hover:bg-slate-100 disabled:hover:text-slate-600 ${
-        small ? "h-8 w-8 text-base" : "h-11 w-11 text-xl"
+        small ? "h-11 w-11 text-base" : "h-11 w-11 text-xl"
       }`}
     >
       {children}

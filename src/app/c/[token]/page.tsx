@@ -5,10 +5,22 @@ import { cleanerStartJob, cleanerFinishJob, cleanerCannotDoJob } from "./actions
 import JobClock from "./JobClock";
 import ActualHoursField from "./ActualHoursField";
 import LocationStamp from "./LocationStamp";
+import PendingButton from "@/components/PendingButton";
 import { REASONS, elapsedHours } from "@/lib/adjustments";
 import { OUTCOMES } from "@/lib/outcomes";
 
 export const dynamic = "force-dynamic";
+
+// "Mon 14 Sep" — the raw YYYY-MM-DD read fine in a database and nowhere else;
+// a cleaner scanning the list at speed shouldn't have to parse ISO dates.
+function formatDate(iso: string): string {
+  const d = new Date(`${iso}T00:00:00`);
+  return new Intl.DateTimeFormat("en-GB", {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+  }).format(d);
+}
 
 export default async function CleanerJobsPage({
   params,
@@ -35,6 +47,7 @@ export default async function CleanerJobsPage({
   return (
     <main className="min-h-screen bg-slate-50 px-4 py-8">
       <div className="mx-auto max-w-lg">
+        <p className="text-xs font-bold tracking-[0.2em] text-brand-800">SAAFI CLEANING</p>
         <h1 className="text-2xl font-bold text-slate-900">
           Hi {cleaner.name.split(" ")[0]} 👋
         </h1>
@@ -74,7 +87,7 @@ export default async function CleanerJobsPage({
                 className="border border-slate-200 bg-white p-4 text-sm text-slate-500"
               >
                 <p className="font-semibold text-slate-700">
-                  {j.preferred_date} · {j.postcode}
+                  {formatDate(j.preferred_date)} · {j.postcode}
                 </p>
                 <p className="mt-1">
                   Recorded as a visit that couldn&apos;t happen — the office has it and will sort
@@ -129,20 +142,57 @@ function JobCard({
   // Server-rendered, so this is the elapsed time as of page load.
   const soFar = j.started_at ? elapsedHours(j.started_at, new Date().toISOString()) : 0;
 
+  // Dining and living rooms are separate columns but one line item to a
+  // cleaner deciding what they're walking into.
+  const livingTotal = (j.dining_rooms ?? 0) + (j.living_rooms ?? 0);
+
   return (
     <article className={` bg-white p-4 shadow-sm ring-1 ring-slate-200 ${done ? "opacity-60" : ""}`}>
       <div className="flex items-baseline justify-between">
         <span className="font-semibold text-slate-900">{j.customer_name}</span>
         <span className="text-sm text-slate-500">
-          {j.preferred_date}
+          {formatDate(j.preferred_date)}
           {j.start_time ? ` · ${formatTimeRange(j.start_time, booked)}` : ""} · {booked}h booked
         </span>
       </div>
-      <a href={mapsUrl} target="_blank" rel="noreferrer" className="mt-1 block text-sm text-brand-700 hover:underline">
+
+      {j.service_type === "deep" && (
+        <span className="mt-1 inline-block bg-indigo-100 px-2 py-0.5 text-xs font-semibold tracking-wide text-indigo-800">
+          DEEP CLEAN · {j.cleaners_needed ?? 2} cleaners
+        </span>
+      )}
+
+      {/* Where, then how in, then who to ring — the order of need at a
+          front door, not the order the record was typed in. */}
+      <a
+        href={mapsUrl}
+        target="_blank"
+        rel="noreferrer"
+        className="mt-2 block py-2 text-sm text-brand-700 hover:underline"
+      >
         📍 {j.address_line}, {j.postcode}
       </a>
-      <div className="mt-1 text-sm text-slate-500">
-        {j.bedrooms} bed · {j.bathrooms} bath ·{" "}
+      <p className="text-lg font-bold tracking-wide text-slate-900">{j.postcode}</p>
+
+      <div className="mt-2 bg-amber-50 p-3 ring-1 ring-amber-200">
+        <p className="text-xs font-semibold uppercase tracking-wide text-amber-800">
+          Getting in / notes
+        </p>
+        <p className="mt-1 text-sm text-amber-900">
+          {j.notes || "No access notes — ring the office if you can't get in."}
+        </p>
+      </div>
+
+      <a
+        href={`tel:${j.customer_phone}`}
+        className="mt-3 flex h-11 w-full items-center justify-center rounded-full border border-brand-600 text-sm font-semibold text-brand-700 hover:bg-brand-50"
+      >
+        Call customer
+      </a>
+
+      <div className="mt-3 text-sm text-slate-500">
+        {j.bedrooms} bed · {j.bathrooms} bath
+        {livingTotal > 0 ? ` · ${livingTotal} living` : ""} ·{" "}
         {j.customer_provides_products ? "products at the house" : "bring products"}
       </div>
       {(j.addons?.length ?? 0) > 0 && (
@@ -150,26 +200,24 @@ function JobCard({
           Extras: {j.addons.map((a) => a.label).join(", ")}
         </div>
       )}
-      {j.notes && <p className="mt-1 bg-amber-50 px-2 py-1 text-sm text-amber-800">{j.notes}</p>}
-
-      <div className="mt-2 flex items-center gap-3">
-        <a href={`tel:${j.customer_phone}`} className="text-sm font-medium text-brand-700 hover:underline">
-          📞 Call customer
-        </a>
-        {done && (
+      {done && (
+        <div className="mt-1">
           <span className="text-sm font-medium text-brand-600">
             ✓ Completed{j.actual_hours ? ` · ${j.actual_hours}h` : ""}
           </span>
-        )}
-      </div>
+        </div>
+      )}
 
       {live && !running && (
         <form action={cleanerStartJob} className="mt-3">
           <input type="hidden" name="token" value={token} />
           <input type="hidden" name="booking_id" value={j.id} />
-          <button className="w-full rounded-full bg-brand-600 px-4 py-3 text-base font-semibold text-white hover:bg-brand-700">
+          <PendingButton
+            pendingLabel="Starting…"
+            className="w-full rounded-full bg-brand-600 px-4 py-3 text-base font-semibold text-white hover:bg-brand-700"
+          >
             ▶ Start job
-          </button>
+          </PendingButton>
           <LocationStamp prefix="started" />
         </form>
       )}
@@ -200,14 +248,14 @@ function JobCard({
 
           <label className="mt-2 block">
             <span className="mb-1 block text-sm font-medium text-slate-700">
-              Longer than the {booked}h booked? Why
+              Did it run long? Tell us why
             </span>
             <select
               name="reason_code"
               defaultValue=""
               className="w-full border border-slate-300 px-3 py-2 text-base"
             >
-              <option value="">Ran to time</option>
+              <option value="">No — ran to time</option>
               {REASONS.map((r) => (
                 <option key={r.code} value={r.code}>
                   {r.label}
@@ -227,9 +275,12 @@ function JobCard({
           </label>
 
           <LocationStamp prefix="finished" />
-          <button className="mt-3 w-full rounded-full bg-brand-600 px-4 py-3 text-base font-semibold text-white hover:bg-brand-700">
+          <PendingButton
+            pendingLabel="Finishing…"
+            className="mt-3 w-full rounded-full bg-brand-600 px-4 py-3 text-base font-semibold text-white hover:bg-brand-700"
+          >
             ✓ Finish job
-          </button>
+          </PendingButton>
           <p className="mt-2 text-xs text-slate-500">
             The price only changes if the job itself was bigger than booked, and the office approves it first.
           </p>
@@ -238,7 +289,7 @@ function JobCard({
 
       {live && !done && (
         <details className="mt-2 group">
-          <summary className="cursor-pointer list-none py-1 text-sm font-medium text-slate-400 transition hover:text-amber-700">
+          <summary className="cursor-pointer list-none py-3 text-sm font-semibold text-amber-700 transition hover:text-amber-800">
             Can&apos;t do this job?
           </summary>
           <form action={cleanerCannotDoJob} className="mt-2 bg-amber-50 p-3 ring-1 ring-amber-200">
@@ -276,9 +327,12 @@ function JobCard({
                 className="w-full border border-slate-300 px-3 py-2 text-base"
               />
             </label>
-            <button className="mt-3 w-full rounded-full bg-amber-600 px-4 py-3 text-base font-semibold text-white hover:bg-amber-700">
+            <PendingButton
+              pendingLabel="Sending…"
+              className="mt-3 w-full rounded-full bg-amber-600 px-4 py-3 text-base font-semibold text-white hover:bg-amber-700"
+            >
               Tell the office
-            </button>
+            </PendingButton>
           </form>
         </details>
       )}

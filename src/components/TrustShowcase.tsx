@@ -113,7 +113,6 @@ export default function TrustShowcase() {
             type="button"
             onClick={() => setOpen(i)}
             aria-expanded={isOpen}
-            aria-label={p.title}
             // flex-grow is what animates: the open panel takes roughly two and a
             // half times the width and its neighbours give it up.
             style={{ flexGrow: isOpen ? 2.6 : 1 }}
@@ -201,13 +200,13 @@ export default function TrustShowcase() {
                       {p.kicker}
                     </p>
                   )}
-                  <p
+                  <h3
                     className={`font-display font-bold leading-tight text-white transition-all duration-300 ${
                       isOpen ? "text-2xl lg:text-[1.75rem]" : "text-lg"
                     }`}
                   >
                     {p.title}
-                  </p>
+                  </h3>
                   {/* The lead belongs to the argument, not the teaser: a closed
                       panel is a number and a title and nothing else. */}
                   {isOpen && (
@@ -241,7 +240,7 @@ export function ShowcaseCta() {
       href="/quote"
       className="shrink-0 rounded-full bg-white px-6 py-2.5 text-sm font-semibold text-slate-900 transition hover:bg-brand-50"
     >
-      Build my quote
+      Get a quote
     </Link>
   );
 }

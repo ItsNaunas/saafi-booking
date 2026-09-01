@@ -14,20 +14,23 @@ import { setBookingStatus, stopRecurring, assignCleaner } from "@/app/admin/acti
 import {
   busyFromBooking,
   fitForJob,
+  londonWallClock,
   toMinutes,
   type BusyBlock,
   type CleanerFit,
   type SchedulableCleaner,
 } from "@/lib/scheduling";
 import { formatGBP, FREQUENCY_LABEL } from "@/lib/pricing";
+import { STATUS_DOT } from "@/lib/statusLabels";
+import PendingButton from "@/components/PendingButton";
 
 export const dynamic = "force-dynamic";
 
-const COLUMNS: { status: BookingStatus; title: string; accent: string }[] = [
-  { status: "requested", title: "Requested", accent: "bg-amber-400" },
-  { status: "confirmed", title: "Confirmed", accent: "bg-blue-500" },
-  { status: "completed", title: "Completed", accent: "bg-violet-400" },
-  { status: "paid", title: "Paid", accent: "bg-brand-500" },
+const COLUMNS: { status: BookingStatus; title: string }[] = [
+  { status: "requested", title: "Requested" },
+  { status: "confirmed", title: "Confirmed" },
+  { status: "completed", title: "Completed" },
+  { status: "paid", title: "Paid" },
 ];
 
 /**
@@ -110,6 +113,25 @@ export default async function PipelinePage({
   // Wasted journeys waiting on a decision. They match no pipeline column, so
   // without this banner they were simply invisible on this page.
   const noAccess = bookings.filter((b) => b.status === "no_access");
+  // Nothing in any of the four working columns — the search box just told the
+  // office someone doesn't exist, which deserves its own message, not four
+  // empty boxes.
+  const columnRows = bookings.filter((b) => COLUMNS.some((c) => c.status === b.status));
+  const noResults = needle.length > 0 && columnRows.length === 0;
+
+  // Today's run sheet — confirmed cleans happening today, in the order the day
+  // will actually go. Unscheduled ones sink to the bottom, still visible
+  // rather than lost inside a status column.
+  const { date: todayStr } = londonWallClock(new Date());
+  const todayRows = bookings
+    .filter((b) => b.status === "confirmed" && b.preferred_date === todayStr)
+    .slice()
+    .sort((a, z) => {
+      if (a.start_time === z.start_time) return 0;
+      if (!a.start_time) return 1;
+      if (!z.start_time) return -1;
+      return a.start_time.localeCompare(z.start_time);
+    });
 
   return (
     <div>
@@ -123,6 +145,9 @@ export default async function PipelinePage({
               placeholder="Search name, phone, postcode…"
               className="w-56 border border-slate-300 px-3 py-1.5 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-200"
             />
+            <button className="border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-50">
+              Search
+            </button>
           </form>
           <Link
             href="/admin/new"
@@ -143,7 +168,7 @@ export default async function PipelinePage({
             {pendingAdjustments.map((a) => (
               <li key={a.id}>
                 <Link
-                  href={`/admin/booking/${a.booking_id}`}
+                  href={`/admin/booking/${a.booking_id}#adjustment`}
                   className="font-medium text-amber-900 underline hover:no-underline"
                 >
                   {a.bookings?.customer_name ?? "Booking"}
@@ -180,31 +205,86 @@ export default async function PipelinePage({
         </div>
       )}
 
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        {COLUMNS.map((col) => {
-          const rows = bookings.filter((b) => b.status === col.status);
-          return (
-            <section
-              key={col.status}
-              className="bg-white p-3 shadow-sm ring-1 ring-slate-200"
-            >
-              <h2 className="mb-3 flex items-center justify-between px-1 font-semibold text-slate-800">
-                <span className="flex items-center gap-2">
-                  <span className={`h-2 w-2 shrink-0 rounded-full ${col.accent}`} aria-hidden="true" />
-                  {col.title}
-                </span>
-                <span className="text-sm font-normal text-slate-400">{rows.length}</span>
-              </h2>
-              <div className="space-y-3">
-                {rows.length === 0 && <p className="px-1 pb-2 text-sm text-slate-400">Nothing here.</p>}
-                {rows.map((b) => (
-                  <BookingCard key={b.id} b={b} cleaners={activeCleaners} fit={fitFor(b)} />
-                ))}
-              </div>
-            </section>
-          );
-        })}
-      </div>
+      {/* today's run sheet — what the office actually needs at 8am */}
+      <section className="mb-4 bg-white p-3 shadow-sm ring-1 ring-slate-200">
+        <h2 className="mb-2 px-1 font-semibold text-slate-800">Today</h2>
+        {todayRows.length === 0 ? (
+          <p className="px-1 pb-1 text-sm text-slate-400">No cleans today.</p>
+        ) : (
+          <div className="space-y-1.5">
+            {todayRows.map((b) => {
+              const cleaner = b.cleaner_id ? activeCleaners.find((c) => c.id === b.cleaner_id) : null;
+              return (
+                <div
+                  key={b.id}
+                  className="relative flex flex-wrap items-center gap-x-3 gap-y-1 border border-slate-100 px-3 py-2 text-sm hover:bg-slate-50"
+                >
+                  <Link
+                    href={`/admin/booking/${b.id}`}
+                    className="absolute inset-0"
+                    aria-label={`View booking for ${b.customer_name}`}
+                  />
+                  <span className="w-20 shrink-0 font-semibold text-slate-800">
+                    {b.start_time ? b.start_time.slice(0, 5) : "time TBC"}
+                  </span>
+                  <span className="min-w-0 flex-1 truncate font-medium text-slate-900">
+                    {b.customer_name}
+                  </span>
+                  <span className="shrink-0 text-xs text-slate-500">{b.postcode}</span>
+                  {cleaner ? (
+                    <span className="shrink-0 text-xs text-slate-500">{cleaner.name.split(" ")[0]}</span>
+                  ) : (
+                    <span className="shrink-0 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800">
+                      needs cleaner
+                    </span>
+                  )}
+                  <a
+                    href={`tel:${b.customer_phone}`}
+                    className="relative z-10 shrink-0 text-xs font-medium text-brand-700 hover:underline"
+                  >
+                    {b.customer_phone}
+                  </a>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </section>
+
+      {noResults ? (
+        <div className="bg-white p-6 text-center shadow-sm ring-1 ring-slate-200">
+          <p className="text-sm text-slate-500">No bookings match &lsquo;{q}&rsquo;.</p>
+          <Link href="/admin" className="mt-2 inline-block text-sm font-medium text-brand-700 hover:underline">
+            Clear search
+          </Link>
+        </div>
+      ) : (
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          {COLUMNS.map((col) => {
+            const rows = bookings.filter((b) => b.status === col.status);
+            return (
+              <section
+                key={col.status}
+                className="bg-white p-3 shadow-sm ring-1 ring-slate-200"
+              >
+                <h2 className="mb-3 flex items-center justify-between px-1 font-semibold text-slate-800">
+                  <span className="flex items-center gap-2">
+                    <span className={`h-2 w-2 shrink-0 rounded-full ${STATUS_DOT[col.status]}`} aria-hidden="true" />
+                    {col.title}
+                  </span>
+                  <span className="text-sm font-normal text-slate-400">{rows.length}</span>
+                </h2>
+                <div className="space-y-3">
+                  {rows.length === 0 && <p className="px-1 pb-2 text-sm text-slate-400">Nothing here.</p>}
+                  {rows.map((b) => (
+                    <BookingCard key={b.id} b={b} cleaners={activeCleaners} fit={fitFor(b)} />
+                  ))}
+                </div>
+              </section>
+            );
+          })}
+        </div>
+      )}
 
       {cancelled.length > 0 && (
         <details className="mt-6">
@@ -244,14 +324,16 @@ function BookingCard({
           <div className="flex items-center gap-1.5">
             <span className="truncate font-semibold text-slate-900">{b.customer_name}</span>
             {needsCleaner && (
-              <span className="text-amber-500" title="No cleaner assigned">
-                ●
+              <span className="shrink-0 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800">
+                needs cleaner
               </span>
             )}
           </div>
           <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs text-slate-500">
             <span>
-              {b.preferred_date} · {b.hours}h · {b.postcode}
+              {b.preferred_date}
+              {b.start_time && ` · ${b.start_time.slice(0, 5)}`} · {b.hours}h · {b.postcode}
+              {cleaner && ` · ${cleaner.name.split(" ")[0]}`}
             </span>
             {b.service_type === "deep" && (
               <span className="rounded-full bg-indigo-100 px-1.5 py-0.5 text-[10px] font-semibold text-indigo-800">
@@ -318,9 +400,12 @@ function BookingCard({
               </option>
             ))}
           </select>
-          <button className="bg-slate-100 px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-200">
+          <PendingButton
+            pendingLabel="Saving…"
+            className="bg-slate-100 px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-200"
+          >
             Set
-          </button>
+          </PendingButton>
         </form>
       )}
 

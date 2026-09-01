@@ -124,7 +124,10 @@ export default function Reviews() {
                 key={r.name + i}
                 type="button"
                 onClick={() => setFeatured(i)}
-                aria-label={`Read ${r.name}'s review in full`}
+                // Always false: promoting a quote moves it out of this list
+                // into the featured slot, so no button rendered here is ever
+                // itself the expanded one.
+                aria-expanded={false}
                 className={`group block w-full cursor-pointer text-left outline-none focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-brand-300 ${
                   position === 0
                     ? "pb-9"

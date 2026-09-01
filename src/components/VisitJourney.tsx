@@ -67,7 +67,7 @@ const ON_THE_DAY: Beat[] = [
   {
     icon: CreditCard,
     title: "You already know the total",
-    text: "The price was agreed when you booked. If the job turned out bigger, you approved that before we carried on — so there is nothing to settle up and nothing taken without asking.",
+    text: "You paid when you booked, so there's nothing to hand over on the day — no card machine, no invoice, just the clean you agreed to.",
   },
 ];
 
@@ -179,13 +179,13 @@ function Panel({
 
 export default function VisitJourney() {
   return (
-    <section id="how" className="scroll-mt-20 bg-white py-20 lg:py-24">
+    <section id="how" className="scroll-mt-20 bg-white py-20 lg:py-28">
       <div className="mx-auto max-w-6xl px-4 sm:px-6">
         <div className="text-center">
-          <p className="mx-auto w-fit rounded-full bg-brand-700 px-4 py-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] text-white">
+          <p className="text-xs font-semibold uppercase tracking-[0.24em] text-brand-700">
             The SAAFI experience
           </p>
-          <h2 className="mt-7 font-display text-3xl font-bold leading-[1.08] tracking-tight text-slate-900 sm:text-4xl lg:text-[2.6rem]">
+          <h2 className="mt-5 font-display text-3xl font-bold leading-[1.08] tracking-tight text-slate-900 sm:text-4xl">
             From your quote to a clean home
           </h2>
           <p className="mx-auto mt-4 max-w-xl text-[15px] leading-relaxed text-slate-500 sm:text-base">

@@ -236,7 +236,7 @@ export async function sendConfirmationEmail(booking: BookingRow): Promise<void> 
       ["When", whenLine(booking)],
       ["Where", `${booking.address_line}, ${booking.postcode}`],
       ["Duration", `${booking.hours} hours`],
-      ["Price", `£${booking.quoted_price}`],
+      ["Price", `£${agreedPriceFor(booking)}`],
       ["Products", booking.customer_provides_products ? "you provide" : "we bring ours"],
     ],
     outro: [
@@ -427,8 +427,7 @@ export async function sendPaymentReceivedEmails(
     ],
     outro: [
       "Your card receipt comes separately from Stripe.",
-      booking.frequency !== "one_off" &&
-        "We'll see you again next time — your next visit is already booked in.",
+      booking.frequency !== "one_off" && "We'll confirm your next visit with you.",
     ],
     reference: booking.reference,
   }).catch(() => {});
@@ -691,6 +690,7 @@ export async function sendCleanCompletedEmail(
     outro: [
       "The link stays valid, so pay whenever suits you.",
       "Anything not right with the clean? Reply to this email — we'd rather fix it than not know.",
+      manageLine(booking.reference),
     ],
     reference: booking.reference,
   }).catch(() => {});
@@ -792,6 +792,7 @@ export async function sendPaymentChaseEmail(booking: BookingRow, amount: number)
     cta: { label: "Pay for your clean", url: booking.stripe_payment_link_url },
     outro: [
       "Already sorted it with us another way, or something not right? Reply and we'll straighten it out — this is the only reminder we send.",
+      manageLine(booking.reference),
     ],
     reference: booking.reference,
   }).catch(() => {});

@@ -14,12 +14,12 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   return (
     <div className="min-h-screen bg-slate-50">
       <header className="border-b border-slate-200 bg-white">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
-          <div className="flex items-center gap-6">
+        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-y-2 px-4 py-3">
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
             <span className="font-bold text-slate-900">
               SAAFI <span className="text-brand-600">Admin</span>
             </span>
-            <nav className="flex gap-1">
+            <nav className="flex flex-wrap gap-1">
               {NAV.map((n) => (
                 <Link
                   key={n.href}
