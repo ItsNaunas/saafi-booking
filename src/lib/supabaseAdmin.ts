@@ -38,6 +38,8 @@ export type BookingRow = {
   /** 'standard' | 'deep' — optional so the app runs before the migration lands. */
   service_type?: "standard" | "deep";
   cleaners_needed?: number;
+  /** Deep cleans only: why the house needs one, when no walkthrough was attached. */
+  deep_reason?: string | null;
   /** One GPS fix at start and finish — a stamp, not a track. */
   started_lat?: number | null;
   started_lng?: number | null;
@@ -748,7 +750,9 @@ export type PhotoRow = {
   id: string;
   booking_id: string;
   cleaner_id: string | null;
-  phase: "before" | "after";
+  /** before/after come from the cleaner mid-job; proof is the customer's
+   * deep-clean walkthrough attached at booking time. */
+  phase: "before" | "after" | "proof";
   path: string;
   created_at: string;
 };

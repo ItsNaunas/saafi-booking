@@ -36,50 +36,42 @@ export const site = {
 
 export const contact = {
   email: "info@saaficleaningservice.com",
-  /**
-   * INVENTED. 020 7946 0xxx is Ofcom's reserved range for drama and fiction:
-   * a real-looking London number that can never connect to a real person's
-   * phone. Deliberately not a plausible-but-unreserved number, which would
-   * eventually ring some stranger's landline.
-   */
-  phoneDisplay: "020 7946 0958",
-  phoneHref: "+442079460958",
+  /** REAL — the business number, supplied 2026-09-02. */
+  phoneDisplay: "07835 532920",
+  phoneHref: "+447835532920",
   /** INVENTED — confirm the hours someone actually answers. */
   hours: "Mon to Sat, 8am to 6pm",
 } as const;
 
 /**
- * INVENTED — the trading address for the LocalBusiness schema. Ilford is a
- * guess drawn from the IG1 postcode used as the quote form's example, not
- * something SAAFI have confirmed. A local service business needs a real
- * locality here to appear in local results.
+ * PARTLY CONFIRMED — SAAFI serve Oxfordshire (2026-09-01 meeting: "restrict
+ * it to only OX"). Oxford as the locality is an inference from that, not a
+ * confirmed trading address; a local service business needs a real locality
+ * here to appear in local results, so confirm it with the family.
  */
 export const address = {
-  locality: "Ilford",
-  region: "Greater London",
+  locality: "Oxford",
+  region: "Oxfordshire",
   postalCode: "",
   country: "GB",
 } as const;
 
 /**
- * INVENTED — Redbridge and the Essex border, inferred from that same IG1
- * example. Plausible, unconfirmed.
- *
- * Also still a live operational gap: `service_areas` is empty in Supabase, so
- * the quote form accepts any UK postcode regardless of what this list says.
- * Filling that table is what makes the check real.
+ * CONFIRMED at the level of "Oxfordshire only" (2026-09-01 meeting) and
+ * enforced for real: `service_areas` in Supabase holds the OX prefix, so the
+ * quote form and the bookings API both reject anything else. This list is the
+ * display copy — the Oxford-city districts plus the county towns, which is
+ * every OX outward area's headline. Trim it if the family serve less.
  */
 export const serviceAreas: string[] = [
-  "IG1",
-  "IG2",
-  "IG3",
-  "IG4",
-  "IG5",
-  "IG6",
-  "E11",
-  "E18",
-  "RM6",
-  "RM7",
+  "Oxford",
+  "Kidlington",
+  "Abingdon",
+  "Witney",
+  "Bicester",
+  "Didcot",
+  "Wallingford",
+  "Thame",
 ];
 
 /**
@@ -104,21 +96,21 @@ export const reviews: Review[] = [
     quote:
       "I put off getting a cleaner for two years because I didn't like the idea of someone in the house while I was at work. Six months in and I've stopped thinking about it. I come home on a Thursday and the place is just done.",
     name: "Priya S.",
-    area: "Barkingside",
+    area: "Headington",
     plan: "Fortnightly clean",
   },
   {
     quote:
       "What sold me was being given a price before anyone came round. Everywhere else I rang wanted to pop by and quote first.",
     name: "Daniel O.",
-    area: "Seven Kings",
+    area: "Cowley",
     plan: "Weekly clean",
   },
   {
     quote:
       "Booked them at the end of a tenancy and expected a fight about the deposit. The landlord signed it off the same day.",
     name: "Hannah M.",
-    area: "Woodford Green",
+    area: "Summertown",
     plan: "One-off clean",
   },
 ];

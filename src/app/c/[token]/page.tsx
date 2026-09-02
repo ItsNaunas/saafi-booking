@@ -22,6 +22,7 @@ import {
   cleanerUploadPhotos,
 } from "./actions";
 import { ISSUE_LABEL } from "@/lib/statusLabels";
+import { CLEANER_HOURLY, workedSplit, type WorkedSplit } from "@/lib/cleanerPay";
 import JobClock from "./JobClock";
 import ActualHoursField from "./ActualHoursField";
 import LocationStamp from "./LocationStamp";
@@ -48,6 +49,26 @@ function formatDate(iso: string): string {
     day: "numeric",
     month: "short",
   }).format(d);
+}
+
+/** One week's line in the balance: hours split by type, and what they add up to. */
+function WeekEarnings({ label, w, big }: { label: string; w: WorkedSplit; big?: boolean }) {
+  const parts: string[] = [];
+  if (w.standardHours > 0) parts.push(`${w.standardHours}h standard`);
+  if (w.deepHours > 0) parts.push(`${w.deepHours}h deep`);
+  return (
+    <div>
+      <div className="flex items-baseline justify-between">
+        <span className="text-slate-500">{label}</span>
+        <span className={big ? "text-lg font-bold text-slate-900" : "font-semibold text-slate-700"}>
+          £{w.earned.toFixed(w.earned % 1 === 0 ? 0 : 2)}
+        </span>
+      </div>
+      <p className="mt-0.5 text-xs text-slate-400">
+        {parts.length > 0 ? parts.join(" · ") : "no finished jobs"}
+      </p>
+    </div>
+  );
 }
 
 export default async function CleanerJobsPage({
@@ -92,15 +113,14 @@ export default async function CleanerJobsPage({
   const hoursOf = (list: BookingRow[]) =>
     Math.round(list.reduce((sum, j) => sum + Number(j.hours), 0) * 4) / 4;
 
-  // Worked hours: what actually got done, this week and last. Hours only —
-  // whether pay figures appear here is the family's decision, not a default.
+  // Worked hours, split standard/deep with the £ they earn — the balance the
+  // 2026-09-01 meeting asked for. The £ figures are what the rota says, not a
+  // payslip: paying stays the office's call.
   const completedAll = jobs.filter((j) => (j.status === "completed" || j.status === "paid") && j.actual_hours);
   const workedIn = (fromIso: string, beforeIso: string) =>
-    Math.round(
-      completedAll
-        .filter((j) => j.preferred_date >= fromIso && j.preferred_date < beforeIso)
-        .reduce((sum, j) => sum + Number(j.actual_hours ?? 0), 0) * 4
-    ) / 4;
+    workedSplit(
+      completedAll.filter((j) => j.preferred_date >= fromIso && j.preferred_date < beforeIso)
+    );
   const workedThisWeek = workedIn(thisMonday, nextMonday);
   const workedLastWeek = workedIn(lastMonday, thisMonday);
 
@@ -177,18 +197,16 @@ export default async function CleanerJobsPage({
           </>
         )}
 
-        <Section title="Your hours">
+        <Section title="Your hours & pay">
           <div className="bg-white p-4 text-sm ring-1 ring-slate-200">
-            <div className="flex items-baseline justify-between">
-              <span className="text-slate-500">This week</span>
-              <span className="text-lg font-bold text-slate-900">{workedThisWeek}h worked</span>
+            <WeekEarnings label="This week" w={workedThisWeek} big />
+            <div className="mt-3 border-t border-slate-100 pt-3">
+              <WeekEarnings label="Last week" w={workedLastWeek} />
             </div>
-            <div className="mt-1 flex items-baseline justify-between">
-              <span className="text-slate-500">Last week</span>
-              <span className="font-semibold text-slate-700">{workedLastWeek}h</span>
-            </div>
-            <p className="mt-2 text-xs text-slate-400">
-              Counted from the jobs you finished in the app.
+            <p className="mt-3 text-xs text-slate-400">
+              Counted from the jobs you finished in the app — standard hours at £
+              {CLEANER_HOURLY.standard}/h, deep cleans at £{CLEANER_HOURLY.deep}/h. The office
+              confirms the final figure when they pay you.
             </p>
           </div>
         </Section>

@@ -31,7 +31,7 @@ export default function HeroSearchBar() {
       return;
     }
     if (!looksLikeUkPostcode(norm)) {
-      setError("That doesn't look like a UK postcode — try e.g. IG1 1BA");
+      setError("That doesn't look like a UK postcode — try e.g. OX4 2AB");
       return;
     }
     setError(null);
@@ -59,7 +59,7 @@ export default function HeroSearchBar() {
               setError(null);
             }}
             onKeyDown={(e) => e.key === "Enter" && go()}
-            placeholder="e.g. IG1 1BA"
+            placeholder="e.g. OX4 2AB"
             autoComplete="postal-code"
             aria-label="Your postcode"
             className="w-full bg-transparent text-[15px] font-semibold uppercase tracking-wide text-slate-900 outline-none placeholder:font-normal placeholder:normal-case placeholder:tracking-normal placeholder:text-slate-500"

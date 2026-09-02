@@ -3,18 +3,14 @@ import { MapPin, ArrowRight } from "lucide-react";
 import Icon from "./Icon";
 import { contact, serviceAreas as fallbackAreas } from "@/lib/business";
 
-// A band above the closing CTA. It exists because someone two hundred miles
-// away can currently complete an entire quote — `service_areas` is empty in
-// Supabase, so lib/pricing.ts treats every UK postcode as coverable.
-//
-// `areas` comes from the live table when it has rows, and only falls back to
-// the placeholder list in lib/business.ts when it does not. Filling that table
-// fixes both the page and the postcode check in one move, with no edit here.
+// A band above the closing CTA. Enforcement lives elsewhere: `service_areas`
+// in Supabase holds the OX prefix and lib/pricing.ts rejects everything else,
+// on the form and in the API alike. `areas` here is the human copy of that
+// fact — town names from lib/business.ts, not outward codes.
 //
 // The background linework is abstract on purpose. A real map of the coverage
-// area would be a factual claim drawn at a scale nobody could verify, and the
-// districts are still unconfirmed — so it reads as cartography without
-// asserting any geography.
+// area would be a factual claim drawn at a scale nobody could verify — so it
+// reads as cartography without asserting any geography.
 
 /** Faint contour linework. Concentric, irregular, and deliberately of nowhere. */
 function Contours() {

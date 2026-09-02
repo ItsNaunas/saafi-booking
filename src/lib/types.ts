@@ -17,6 +17,13 @@ export type BookingRequest = {
   /** "09:30". Optional — an unscheduled booking is a request SAAFI slots by phone. */
   startTime?: string | null;
   notes?: string;
+  /**
+   * Deep cleans only (2026-09-01 meeting): the booking must carry either a
+   * walkthrough (storage paths already uploaded via /api/deep-proof) or a
+   * stated reason for the deep clean. Both absent = rejected.
+   */
+  deepReason?: string | null;
+  proofPaths?: string[];
 };
 
 export type BookingRecord = Omit<BookingRequest, "addons"> & {

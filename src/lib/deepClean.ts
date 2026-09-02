@@ -57,6 +57,25 @@ export const DEEP_EXTRAS = [
 
 export type DeepExtraKey = (typeof DEEP_EXTRAS)[number]["key"];
 
+/**
+ * Why the house needs a deep clean — the fallback when no walkthrough
+ * video/photos are attached (2026-09-01 meeting: proof is preferred, a reason
+ * is the floor; neither means no booking). Keys are what the DB stores.
+ */
+export const DEEP_REASONS = [
+  { key: "end_of_tenancy", label: "Moving out — end of tenancy" },
+  { key: "moving_in", label: "Just moved in" },
+  { key: "post_renovation", label: "After building or decorating work" },
+  { key: "needs_reset", label: "It's been a while — needs a proper going-over" },
+  { key: "other", label: "Something else" },
+] as const;
+
+export type DeepReasonKey = (typeof DEEP_REASONS)[number]["key"];
+
+export const DEEP_REASON_LABEL: Record<string, string> = Object.fromEntries(
+  DEEP_REASONS.map((r) => [r.key, r.label])
+);
+
 /** £ for one room type: first at £58, the rest at £5 each. Zero rooms cost zero. */
 function typePrice(count: number, cfg = deepConfig): number {
   if (count <= 0) return 0;

@@ -20,6 +20,7 @@ import {
   deepCleaners,
   deepElapsedHours,
   DEEP_EXTRAS,
+  DEEP_REASON_LABEL,
   type DeepExtraKey,
 } from "@/lib/deepClean";
 import {
@@ -28,6 +29,7 @@ import {
   busyBlocksForDate,
   getBookingByReference,
   findRecentDuplicateBooking,
+  insertBookingPhoto,
 } from "@/lib/supabaseAdmin";
 import { raiseBookingPaymentLink } from "@/lib/paymentLink";
 import { sendBookingReceivedEmail, sendNewBookingAlertEmail } from "@/lib/email";
@@ -122,6 +124,26 @@ export async function POST(req: NextRequest) {
     serviceType === "deep"
       ? deepElapsedHours(deepMans)
       : clampHours(Number(body.hours) || cfg.minHours, cfg);
+
+  // Deep-clean proof (2026-09-01 meeting): a walkthrough already uploaded to
+  // storage via /api/deep-proof, or at least a stated reason. Neither = no
+  // booking — pricing a deep clean blind is how a cleaner walks into a
+  // 5-hour job sold as 2 and the refund flow becomes the product.
+  const deepReason =
+    serviceType === "deep" && typeof body.deepReason === "string" && DEEP_REASON_LABEL[body.deepReason]
+      ? body.deepReason
+      : null;
+  const proofPaths =
+    serviceType === "deep" && Array.isArray(body.proofPaths)
+      ? body.proofPaths
+          .map(String)
+          // Only paths our own upload route mints — nothing client-invented
+          // gets recorded against the private bucket.
+          .filter((p) => /^proof\/[0-9a-f-]{36}\/[\w.-]+$/.test(p))
+          .slice(0, 6)
+      : [];
+  if (serviceType === "deep" && proofPaths.length === 0 && !deepReason)
+    return bad("For a deep clean, add a quick video or photos of the house — or tell us why it needs one");
 
   const name = String(body.name ?? "").trim();
   // One casing everywhere: case-variant emails fork the customers table and
@@ -222,6 +244,8 @@ export async function POST(req: NextRequest) {
     addonsHours: extrasHours,
     serviceType,
     cleanersNeeded,
+    deepReason,
+    proofPaths,
     frequency,
     name,
     email,
@@ -264,7 +288,20 @@ export async function POST(req: NextRequest) {
   let payUrl: string | null = null;
   try {
     const row = await getBookingByReference(stored.reference);
-    if (row) payUrl = await raiseBookingPaymentLink(row);
+    if (row) {
+      payUrl = await raiseBookingPaymentLink(row);
+      // Attach the walkthrough files the customer already uploaded. Best-effort
+      // one by one: losing a proof row must never lose the booking, and the
+      // files themselves are safe in the bucket regardless.
+      for (const p of record.proofPaths ?? []) {
+        await insertBookingPhoto({
+          booking_id: row.id,
+          cleaner_id: null,
+          phase: "proof",
+          path: p,
+        }).catch((e) => console.error("[bookings] proof link failed:", e));
+      }
+    }
   } catch (e) {
     console.error("[bookings] pay-at-booking link failed:", e);
   }
@@ -284,6 +321,8 @@ export async function POST(req: NextRequest) {
     quotedPrice: record.quotedPrice,
     addonLabels: record.addons.map((a) => a.label),
     notes: record.notes ?? "",
+    deepReason: record.deepReason ? DEEP_REASON_LABEL[record.deepReason] ?? record.deepReason : null,
+    proofCount: record.proofPaths?.length ?? 0,
     reference: stored.reference,
   }).catch((e) => console.error("[bookings] alert email failed:", e));
 
@@ -324,6 +363,9 @@ async function storeBooking(
     process.env.SUPABASE_SERVICE_ROLE_KEY ||
     process.env.SUPABASE_PUBLISHABLE_KEY;
   let reference = newReference();
+  // Flipped when the DB reports the deep_reason column missing (migration not
+  // pasted yet) — the retry then omits it rather than losing the booking.
+  let skipDeepReasonColumn = false;
 
   if (url && key) {
     // A 409 on the unique reference is a same-millisecond collision, not a
@@ -358,7 +400,17 @@ async function storeBooking(
         // standard bookings stay insertable even before
         // supabase/2026-08-27-deep-clean.sql has run. Deep bookings need it.
         ...(record.serviceType === "deep"
-          ? { service_type: "deep", cleaners_needed: record.cleanersNeeded }
+          ? {
+              service_type: "deep",
+              cleaners_needed: record.cleanersNeeded,
+              // Ahead of supabase/2026-09-02-deep-proof.sql the column doesn't
+              // exist — sending it would fail the whole insert, and losing the
+              // booking over metadata is the wrong trade. The reason still
+              // reaches the office in the alert email either way.
+              ...(record.deepReason && !skipDeepReasonColumn
+                ? { deep_reason: record.deepReason }
+                : {}),
+            }
           : {}),
         frequency: record.frequency,
         customer_name: record.name,
@@ -373,7 +425,12 @@ async function storeBooking(
       }),
       });
       if (res.ok) return { ok: true, reference };
-      console.error("[bookings] supabase insert failed:", res.status, await res.text());
+      const errText = await res.text();
+      console.error("[bookings] supabase insert failed:", res.status, errText);
+      if (errText.includes("deep_reason") && !skipDeepReasonColumn && attempt === 0) {
+        skipDeepReasonColumn = true;
+        continue;
+      }
       if (res.status === 409 && attempt === 0) continue;
       // On serverless the local file is ephemeral: falling back there returns
       // a success screen, a reference and a confirmation email for a booking

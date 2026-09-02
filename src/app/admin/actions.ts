@@ -471,7 +471,7 @@ export async function addServiceArea(formData: FormData) {
   const prefix = String(formData.get("prefix") ?? "").trim().toUpperCase();
   if (!/^[A-Z]{1,2}\d{0,2}$/.test(prefix)) {
     redirect(
-      `/admin/pricing?error=${encodeURIComponent("That prefix doesn't look right — e.g. IG1 or RM6")}`
+      `/admin/pricing?error=${encodeURIComponent("That prefix doesn't look right — e.g. OX or OX4")}`
     );
   }
   await addServiceAreaPrefix(prefix);

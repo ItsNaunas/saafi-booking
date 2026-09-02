@@ -25,11 +25,48 @@ import {
   deepCleaners,
   deepElapsedHours,
   DEEP_EXTRAS,
+  DEEP_REASONS,
   deepConfig,
 } from "@/lib/deepClean";
 
 /** Which field a validation message belongs to, so it can be shown in place. */
-type FieldKey = "postcode" | "products" | "date" | "time" | "name" | "email" | "phone" | "address";
+type FieldKey =
+  | "postcode"
+  | "products"
+  | "proof"
+  | "date"
+  | "time"
+  | "name"
+  | "email"
+  | "phone"
+  | "address";
+
+/**
+ * One walkthrough file on its way to storage. The file itself goes straight
+ * from the browser to the bucket on a signed URL — only the resulting path
+ * rides along with the booking.
+ */
+type ProofFile = {
+  id: string;
+  name: string;
+  kind: "image" | "video";
+  status: "uploading" | "done" | "error";
+  path?: string;
+  error?: string;
+};
+
+/**
+ * Half-finished quotes survive a wander off to the FAQs (2026-09-01 meeting:
+ * "what if you're halfway through?"). One key, versioned so a future shape
+ * change can just abandon old drafts instead of half-parsing them.
+ */
+const DRAFT_KEY = "saafi-quote-draft-v1";
+
+/** A stored room count, only if it's a sane whole number — else the current value. */
+function clampCount(v: unknown, fallback: number, max: number): number {
+  const n = Number(v);
+  return Number.isInteger(n) && n >= 0 && n <= max ? n : fallback;
+}
 
 // Shared between submit-time validate() and the on-blur checks below, so
 // "valid" can't quietly mean two different things depending on when it runs.
@@ -107,6 +144,10 @@ export default function QuoteWizard({
   // Standard silently carried the charge over when switching to Deep.
   const [standardAddons, setStandardAddons] = useState<string[]>(initialAddons ?? []);
   const [deepAddons, setDeepAddons] = useState<string[]>([]);
+  // Deep-clean proof: walkthrough files and/or a stated reason. One of the
+  // two is compulsory on the deep tab — the server enforces the same rule.
+  const [proofFiles, setProofFiles] = useState<ProofFile[]>([]);
+  const [deepReason, setDeepReason] = useState<string | null>(null);
   const [frequency, setFrequency] = useState<Frequency>(initialFrequency ?? "one_off");
   const [preferredDate, setPreferredDate] = useState("");
   const [name, setName] = useState("");
@@ -210,6 +251,172 @@ export default function QuoteWizard({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  /* ---------- draft: half-finished quotes survive leaving the page ---------- */
+
+  // False until the mount-time restore has run — saving before that would
+  // clobber the stored draft with this render's blank defaults.
+  const draftReady = useRef(false);
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(DRAFT_KEY);
+      if (raw) {
+        const d = JSON.parse(raw) as Record<string, unknown>;
+        // Anything the landing page just handed us wins over a stored draft —
+        // the draft only fills what this visit hasn't already said.
+        if (!initialService && (d.service === "standard" || d.service === "deep"))
+          setService(d.service);
+        if (!initialPostcode && typeof d.postcode === "string") setPostcode(d.postcode);
+        if (!initialRooms && d.rooms && typeof d.rooms === "object") {
+          const r = d.rooms as Partial<RoomCounts>;
+          setRooms((cur) => ({
+            bedrooms: clampCount(r.bedrooms, cur.bedrooms, 10),
+            bathrooms: clampCount(r.bathrooms, cur.bathrooms, 6),
+            diningRooms: clampCount(r.diningRooms, cur.diningRooms, 4),
+            livingRooms: clampCount(r.livingRooms, cur.livingRooms, 4),
+          }));
+        }
+        if (typeof d.hours === "number" && Number.isFinite(d.hours)) setHours(d.hours);
+        if (typeof d.customerProvidesProducts === "boolean")
+          setCustomerProvidesProducts(d.customerProvidesProducts);
+        if (!initialAddons && Array.isArray(d.standardAddons))
+          setStandardAddons(d.standardAddons.filter((k): k is string => typeof k === "string"));
+        if (Array.isArray(d.deepAddons))
+          setDeepAddons(d.deepAddons.filter((k): k is string => typeof k === "string"));
+        if (typeof d.deepReason === "string") setDeepReason(d.deepReason);
+        if (
+          !initialFrequency &&
+          typeof d.frequency === "string" &&
+          ["one_off", "weekly", "fortnightly", "four_weekly"].includes(d.frequency)
+        )
+          setFrequency(d.frequency as Frequency);
+        // A date that has since passed would restore as an invisible error.
+        if (typeof d.preferredDate === "string" && d.preferredDate >= today)
+          setPreferredDate(d.preferredDate);
+        if (typeof d.name === "string") setName(d.name);
+        if (typeof d.email === "string") setEmail(d.email);
+        if (typeof d.phone === "string") setPhone(d.phone);
+        if (typeof d.addressLine === "string") setAddressLine(d.addressLine);
+        if (typeof d.notes === "string") setNotes(d.notes);
+      }
+    } catch {
+      // Storage blocked or the draft unparseable — a blank form is the correct fallback.
+    }
+    draftReady.current = true;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (!draftReady.current) return;
+    try {
+      localStorage.setItem(
+        DRAFT_KEY,
+        JSON.stringify({
+          service,
+          postcode,
+          rooms,
+          hours,
+          customerProvidesProducts,
+          standardAddons,
+          deepAddons,
+          deepReason,
+          frequency,
+          preferredDate,
+          name,
+          email,
+          phone,
+          addressLine,
+          notes,
+        })
+      );
+    } catch {
+      // Private mode etc. — the form still works, it just won't survive a reload.
+    }
+  }, [
+    service,
+    postcode,
+    rooms,
+    hours,
+    customerProvidesProducts,
+    standardAddons,
+    deepAddons,
+    deepReason,
+    frequency,
+    preferredDate,
+    name,
+    email,
+    phone,
+    addressLine,
+    notes,
+  ]);
+
+  /* ---------- deep-clean walkthrough uploads ---------- */
+
+  // Groups this visit's files under one folder in the bucket; the paths are
+  // handed to the booking on submit.
+  const uploadDraftId = useRef<string | null>(null);
+  const proofPaths = proofFiles.filter((f) => f.status === "done" && f.path).map((f) => f.path!);
+  const proofUploading = proofFiles.some((f) => f.status === "uploading");
+
+  function addProofFiles(list: FileList | null) {
+    if (!list?.length) return;
+    if (!uploadDraftId.current) uploadDraftId.current = crypto.randomUUID();
+    const room = 6 - proofFiles.filter((f) => f.status !== "error").length;
+    for (const file of Array.from(list).slice(0, Math.max(0, room))) {
+      const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      setProofFiles((fs) => [
+        ...fs,
+        {
+          id,
+          name: file.name,
+          kind: file.type.startsWith("video/") ? "video" : "image",
+          status: "uploading",
+        },
+      ]);
+      void uploadProof(id, file);
+    }
+    setErrors((e) => ({ ...e, proof: undefined }));
+  }
+
+  async function uploadProof(id: string, file: File) {
+    const fail = (message: string) =>
+      setProofFiles((fs) =>
+        fs.map((f) => (f.id === id ? { ...f, status: "error" as const, error: message } : f))
+      );
+    try {
+      // Ask our API for a one-shot signed URL, then PUT the file straight to
+      // storage — it must not pass through our own routes (body-size cap).
+      const res = await fetch("/api/deep-proof", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          draftId: uploadDraftId.current,
+          type: file.type,
+          size: file.size,
+        }),
+      });
+      const data = (await res.json()) as {
+        ok: boolean;
+        path?: string;
+        uploadUrl?: string;
+        error?: string;
+      };
+      if (!res.ok || !data.ok || !data.uploadUrl || !data.path) {
+        return fail(data.error ?? "Upload didn't work — try again, or pick a reason below");
+      }
+      const put = await fetch(data.uploadUrl, {
+        method: "PUT",
+        headers: { "Content-Type": file.type },
+        body: file,
+      });
+      if (!put.ok) return fail("Upload didn't work — a shorter video or a photo may do better");
+      setProofFiles((fs) =>
+        fs.map((f) => (f.id === id ? { ...f, status: "done" as const, path: data.path } : f))
+      );
+    } catch {
+      fail("Upload didn't work — check your connection and try again");
+    }
+  }
+
   /* ---------- availability ---------- */
 
   const slotKey = `${preferredDate}|${totalHours}`;
@@ -283,6 +490,12 @@ export default function QuoteWizard({
     if (!isDeep && customerProvidesProducts === null)
       found.products = "Choose who brings the cleaning products.";
 
+    if (isDeep) {
+      if (proofUploading) found.proof = "Hang on — your walkthrough is still uploading.";
+      else if (proofPaths.length === 0 && !deepReason)
+        found.proof = "Add a quick video or photo of the house, or pick the reason that fits.";
+    }
+
     if (!isValidName(name)) found.name = NAME_ERROR;
     if (!isValidEmail(email)) found.email = EMAIL_ERROR;
     if (!isValidPhone(phone)) found.phone = PHONE_ERROR;
@@ -320,6 +533,8 @@ export default function QuoteWizard({
           // question is a standard-clean concern and never shown on this tab.
           customerProvidesProducts: isDeep ? false : customerProvidesProducts,
           addons: isDeep ? deepExtras : standardAddons,
+          deepReason: isDeep ? deepReason : null,
+          proofPaths: isDeep ? proofPaths : [],
           frequency: isDeep ? "one_off" : frequency,
           name,
           email,
@@ -340,6 +555,11 @@ export default function QuoteWizard({
         return;
       }
       setReference(data.reference);
+      // The quote made it — a draft restored after this would resurrect a
+      // booking that already exists.
+      try {
+        localStorage.removeItem(DRAFT_KEY);
+      } catch {}
       setPayUrl(typeof data.payUrl === "string" ? data.payUrl : null);
       setServerPrice(typeof data.quotedPrice === "number" ? data.quotedPrice : null);
       setTimeDropped(Boolean(data.timeDropped));
@@ -474,21 +694,14 @@ export default function QuoteWizard({
         </div>
 
         {/* ---------- home + length ---------- */}
-        <Section
-          title="Your home"
-          sub={
-            isDeep
-              ? "Kitchen (with the oven), hallways and landings are always included."
-              : "Kitchen, hallways and landings are always included."
-          }
-        >
+        <Section title="Your home" sub="Postcode first, then the rooms that set your price.">
           <Field label="Postcode" error={errors.postcode} errorId="postcode-error">
             <div className="relative">
               <input
                 value={postcode}
                 onChange={(e) => setPostcode(e.target.value)}
                 onBlur={(e) => void checkPostcode(e.target.value)}
-                placeholder="e.g. IG1 1BA"
+                placeholder="e.g. OX4 2AB"
                 autoComplete="postal-code"
                 data-invalid={errors.postcode ? "true" : undefined}
                 aria-invalid={errors.postcode ? true : undefined}
@@ -548,6 +761,14 @@ export default function QuoteWizard({
               />
             </div>
           )}
+
+          {/* Under the counters, not up in the section heading, where the
+              2026-09-01 review found nobody saw it. */}
+          <p className="mt-3 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+            {isDeep
+              ? "Kitchen (with the oven), hallways and landings are always included — no need to count them."
+              : "Kitchen, hallways and landings are always included — no need to count them."}
+          </p>
 
           {/* Deep cleans derive their own time: rooms -> man-minutes -> crew
               -> hours on site. There is nothing for the customer to choose, so
@@ -750,6 +971,102 @@ export default function QuoteWizard({
             </Disclosure>
           )}
         </Section>
+
+        {/* ---------- deep-clean proof ----------
+             2026-09-01 meeting: a deep clean is never priced blind. Either a
+             quick walkthrough (video/photos, straight to private storage) or
+             a stated reason — one of the two is compulsory, and the office
+             vets it before confirming. */}
+        {isDeep && (
+          <Section
+            title="Show us the house"
+            sub="A 30-second phone video (or a few photos) lets us stand by the price — deep cleans vary too much to guess at."
+          >
+            <div data-invalid={errors.proof ? "true" : undefined} tabIndex={-1}>
+              <label className="flex cursor-pointer items-center justify-center gap-2 border-2 border-dashed border-slate-300 px-4 py-4 text-sm font-semibold text-slate-700 transition hover:border-brand-400 hover:text-brand-800">
+                📹 Add a video or photos
+                <input
+                  type="file"
+                  accept="video/*,image/*"
+                  multiple
+                  className="sr-only"
+                  onChange={(e) => {
+                    addProofFiles(e.target.files);
+                    // Same file picked twice should re-fire change.
+                    e.target.value = "";
+                  }}
+                />
+              </label>
+              <p className="mt-1.5 text-xs text-slate-400">
+                Up to 6 files, 50MB each — walk through the rooms, that&apos;s all we need.
+              </p>
+
+              {proofFiles.length > 0 && (
+                <ul className="mt-3 space-y-1.5">
+                  {proofFiles.map((f) => (
+                    <li
+                      key={f.id}
+                      className="flex items-center justify-between gap-3 bg-slate-50 px-3 py-2 text-sm"
+                    >
+                      <span className="min-w-0 truncate text-slate-700">
+                        {f.kind === "video" ? "🎬" : "🖼️"} {f.name}
+                      </span>
+                      <span className="flex shrink-0 items-center gap-2">
+                        {f.status === "uploading" && (
+                          <span className="text-xs text-slate-400">uploading…</span>
+                        )}
+                        {f.status === "done" && (
+                          <span className="text-xs font-semibold text-brand-700">✓ added</span>
+                        )}
+                        {f.status === "error" && (
+                          <span className="text-xs text-red-600">{f.error}</span>
+                        )}
+                        <button
+                          type="button"
+                          aria-label={`Remove ${f.name}`}
+                          onClick={() =>
+                            setProofFiles((fs) => fs.filter((x) => x.id !== f.id))
+                          }
+                          className="text-slate-400 transition hover:text-slate-700"
+                        >
+                          ✕
+                        </button>
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+
+              <p className="mt-4 text-sm font-medium text-slate-700">
+                Can&apos;t film right now? Tell us why it needs a deep clean:
+              </p>
+              <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                {DEEP_REASONS.map((r) => {
+                  const on = deepReason === r.key;
+                  return (
+                    <button
+                      key={r.key}
+                      type="button"
+                      aria-pressed={on}
+                      onClick={() => {
+                        setDeepReason(on ? null : r.key);
+                        setErrors((e) => ({ ...e, proof: undefined }));
+                      }}
+                      className={`border-2 px-3 py-2 text-left text-sm transition ${
+                        on
+                          ? "border-brand-500 bg-brand-50 font-semibold text-brand-800"
+                          : "border-slate-200 text-slate-700 hover:border-slate-300"
+                      }`}
+                    >
+                      {r.label}
+                    </button>
+                  );
+                })}
+              </div>
+              {errors.proof && <p className="mt-2 text-sm text-red-600">{errors.proof}</p>}
+            </div>
+          </Section>
+        )}
 
         {/* ---------- when ---------- */}
         <Section
@@ -1324,6 +1641,8 @@ function friendlyClosedReason(reason: string): string {
   if (reason.includes("cleaners are set up"))
     return "We can't show live times right now — pick the day that suits you and we'll agree a time when we call to confirm.";
   if (reason.includes("don't work that day"))
-    return "We're not out cleaning that day — could you pick another?";
+    // "Fully booked", not "we're not out cleaning" — 2026-09-01 meeting:
+    // never show the customer a message that reads like the business resting.
+    return "We're fully booked that day — could you pick another?";
   return `${reason} Try another day.`;
 }

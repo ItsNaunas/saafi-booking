@@ -29,7 +29,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import Icon from "@/components/Icon";
-import { contact, site, address } from "@/lib/business";
+import { contact, site, address, serviceAreas as businessAreas } from "@/lib/business";
 import { loadPricingAndAddons } from "@/lib/pricingServer";
 import { formatGBP, quotePrice, recommendedHours } from "@/lib/pricing";
 import { deepPrice } from "@/lib/deepClean";
@@ -137,14 +137,16 @@ const FAQS: { q: string; a: string }[] = [
   },
   {
     q: "Which areas do you cover?",
-    a: "IG1 to IG6, E11, E18, RM6 and RM7 — and we're covering more of the area all the time. Put your postcode in to start a quote and we'll confirm we can reach you when we ring to book the date.",
+    a: "Oxfordshire — any OX postcode, from Oxford itself out to Kidlington, Abingdon, Witney, Bicester and the towns between. Put your postcode in to start a quote and we'll confirm we can reach you when we ring to book the date.",
   },
 ];
 
 export default async function Home() {
   const { cfg, addons } = await loadPricingAndAddons();
 
-  const areas = cfg.serviceAreaPrefixes;
+  // The DB `service_areas` prefixes ("OX") enforce coverage; the band shows
+  // the human version of the same fact — town names, not outward codes.
+  const areas = businessAreas;
 
   // The headline example: 2 bedrooms, 1 bathroom, fortnightly, own products.
   // Computed rather than written down so it tracks the live rates.
