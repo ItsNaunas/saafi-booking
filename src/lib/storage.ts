@@ -11,7 +11,11 @@ function creds() {
   const url = process.env.SUPABASE_URL;
   const key = secret("SUPABASE_SECRET_KEY");
   if (!url || !key) throw new Error("SUPABASE_URL / SUPABASE_SECRET_KEY not configured");
-  return { url, key };
+  // BOTH headers, always: with the new sb_secret_ keys the storage API
+  // rejects a bare Authorization header ("Invalid Compact JWS") — found live
+  // 2026-09-02, when it had silently broken every storage call in production.
+  const authHeaders = { Authorization: `Bearer ${key}`, apikey: key };
+  return { url, key, authHeaders };
 }
 
 /** Upload one image. Path convention: {bookingId}/{phase}-{timestamp}.jpg */
@@ -20,11 +24,11 @@ export async function uploadJobPhoto(
   bytes: ArrayBuffer,
   contentType: string
 ): Promise<void> {
-  const { url, key } = creds();
+  const { url, authHeaders } = creds();
   const res = await fetch(`${url}/storage/v1/object/${PHOTO_BUCKET}/${path}`, {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${key}`,
+      ...authHeaders,
       "Content-Type": contentType,
       "x-upsert": "true",
     },
@@ -35,10 +39,10 @@ export async function uploadJobPhoto(
 
 /** A short-lived viewing link for the admin page. Null when signing fails. */
 export async function signedPhotoUrl(path: string, expiresInSeconds = 3600): Promise<string | null> {
-  const { url, key } = creds();
+  const { url, authHeaders } = creds();
   const res = await fetch(`${url}/storage/v1/object/sign/${PHOTO_BUCKET}/${path}`, {
     method: "POST",
-    headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+    headers: { ...authHeaders, "Content-Type": "application/json" },
     body: JSON.stringify({ expiresIn: expiresInSeconds }),
   });
   if (!res.ok) return null;
@@ -71,8 +75,8 @@ const BUCKET_MIME_TYPES = [
 let bucketCurrent = false;
 export async function ensurePhotoBucket(): Promise<void> {
   if (bucketCurrent) return;
-  const { url, key } = creds();
-  const headers = { Authorization: `Bearer ${key}`, "Content-Type": "application/json" };
+  const { url, authHeaders } = creds();
+  const headers = { ...authHeaders, "Content-Type": "application/json" };
   const config = {
     public: false,
     file_size_limit: BUCKET_LIMIT_BYTES,
@@ -110,10 +114,10 @@ export async function ensurePhotoBucket(): Promise<void> {
  * never travel through them.
  */
 export async function signedUploadUrl(path: string): Promise<string | null> {
-  const { url, key } = creds();
+  const { url, authHeaders } = creds();
   const res = await fetch(`${url}/storage/v1/object/upload/sign/${PHOTO_BUCKET}/${path}`, {
     method: "POST",
-    headers: { Authorization: `Bearer ${key}` },
+    headers: authHeaders,
   });
   if (!res.ok) {
     console.error(`[storage] signed upload ${path}: ${res.status} ${await res.text()}`);
