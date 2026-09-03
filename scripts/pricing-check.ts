@@ -148,15 +148,22 @@ if (failed) {
 }
 console.log("\nAll pricing checks passed.");
 
-/* ---------- deep clean (costing sheet, Pricing tab) ---------- */
+/* ---------- deep clean (Dulla's spec, WhatsApp 2026-09-03) ----------
+   £235 minimum (1 bed, 1 bath, kitchen, hallways), then additional room n at
+   £57 + £5n — one running sequence across every room kind. Supersedes the
+   costing sheet's per-room-type model. */
 
 const sheetExample = { bedrooms: 3, bathrooms: 1, livingRooms: 0, diningRooms: 0, additionalRooms: 0 };
-// The sheet's own worked example: 3 bed £68 + bath £58 + corridor £58 +
-// kitchen £58 + windows £58 + laundry £58 = £358.
-check("deep: sheet worked example = £358", deepPrice(sheetExample, ["windows", "laundry"]), 358);
-check("deep: 1 bed 1 bath baseline = £232", deepPrice({ bedrooms: 1, bathrooms: 1, livingRooms: 0, diningRooms: 0, additionalRooms: 0 }), 232);
-check("deep: additional room of a type is +£5", deepPrice({ bedrooms: 2, bathrooms: 1, livingRooms: 0, diningRooms: 0, additionalRooms: 0 }) - deepPrice({ bedrooms: 1, bathrooms: 1, livingRooms: 0, diningRooms: 0, additionalRooms: 0 }), 5);
-check("deep: living room prices here (unlike standard)", deepPrice({ bedrooms: 1, bathrooms: 1, livingRooms: 1, diningRooms: 0, additionalRooms: 0 }), 290);
+check("deep: 1 bed 1 bath = the £235 minimum", deepPrice({ bedrooms: 1, bathrooms: 1, livingRooms: 0, diningRooms: 0, additionalRooms: 0 }), 235);
+check("deep: studio never drops below the floor", deepPrice({ bedrooms: 0, bathrooms: 1, livingRooms: 0, diningRooms: 0, additionalRooms: 0 }), 235);
+check("deep: room 2 costs £62", deepPrice({ bedrooms: 2, bathrooms: 1, livingRooms: 0, diningRooms: 0, additionalRooms: 0 }), 297);
+check("deep: room 3 costs £67 (3 bed 1 bath = £364)", deepPrice(sheetExample), 364);
+check("deep: 3 bed 1 bath + windows + laundry = £480", deepPrice(sheetExample, ["windows", "laundry"]), 480);
+check(
+  "deep: all room kinds share one escalating sequence",
+  deepPrice({ bedrooms: 2, bathrooms: 2, livingRooms: 1, diningRooms: 0, additionalRooms: 0 }),
+  235 + 62 + 67 + 72
+);
 
 const m = deepMinutes(sheetExample, ["windows", "laundry"]);
 check("deep: sheet example = 480 man-minutes", m, 480);

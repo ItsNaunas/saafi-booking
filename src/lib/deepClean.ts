@@ -1,21 +1,29 @@
 // Deep clean pricing — a different animal to the standard clean.
 //
-// Standard is hourly: time × rate, discounted for frequency. Deep is flat-rate
-// per room type, from SAAFI's costing sheet (Pricing tab, 2026-08-27 read):
+// Standard is hourly: time × rate, discounted for frequency. Deep is a flat
+// £235 minimum with escalating per-room additions — Dulla's spec, WhatsApp
+// group 2026-09-03, which SUPERSEDES the costing sheet's per-room-type model:
 //
-//   first room of a type      £58
-//   each additional of it     +£5      (family decision 2026-08-27: intentional,
-//                                       kept although it prices below cost)
-//   extras                    £58 flat each
+//   minimum deep clean        £235     (1 bed, 1 bath, kitchen + oven,
+//                                       hallways/landings — the base house)
+//   each additional room      £57 + £5 per room already added:
+//                             room 2 = £62, room 3 = £67, room 4 = £72…
+//                             one running sequence across ALL room kinds
+//                             ("the same for kitchen living room and rest
+//                             of the toggles")
+//   extras                    £58 flat each (unchanged — not in Dulla's spec)
 //   labour                    2 cleaners at £21/hr each
 //   room time                 60 man-minutes per room
 //   3rd cleaner               when elapsed time would exceed 6 hours
 //
-// The sheet's own worked example is asserted in scripts/pricing-check.ts:
-// 3 bed, 1 bath, corridor, kitchen + windows + laundry = £358.
+// The time figures feed the diary ONLY. Dulla, same message: "The time taken
+// for a deep clean should NOT be visible for a consumer to see" — nothing
+// customer-facing may show deep-clean hours or an end time.
 //
-// Kitchen (incl. oven) and corridor/landing/common areas are always included,
-// exactly like the standard clean's baseHours.
+// Worked examples asserted in scripts/pricing-check.ts:
+//   1 bed 1 bath                     = £235
+//   3 bed 1 bath                     = £235 + 62 + 67 = £364
+//   3 bed 1 bath + windows + laundry = £480
 
 export type DeepRoomCounts = {
   bedrooms: number;
@@ -23,18 +31,20 @@ export type DeepRoomCounts = {
   /** Living and dining rooms price here — they are deep-clean only. */
   livingRooms: number;
   diningRooms: number;
-  /** Offices / studies — the sheet's "additional room". */
+  /** Offices / studies and the like. */
   additionalRooms: number;
 };
 
 export const deepConfig = {
-  /** £ for the first room of each type. */
-  firstRoomPrice: 58,
-  /** £ for every additional room of the same type. */
-  additionalRoomPrice: 5,
+  /** £ minimum — the 1 bed / 1 bath house, kitchen and hallways included. */
+  basePrice: 235,
+  /** Additional room n costs this… */
+  additionalRoomBase: 57,
+  /** …plus this × n: £62, £67, £72 and so on. */
+  additionalRoomStep: 5,
   /** £ per extra (windows, laundry, dusting, fridge) — flat, not hourly. */
   extraPrice: 58,
-  /** Man-minutes per room, flat across types (see the 60/75 note below). */
+  /** Man-minutes per room, flat across types — diary only, never billed. */
   minutesPerRoom: 60,
   /** A deep clean is always staffed in pairs. */
   baseCleaners: 2,
@@ -76,30 +86,36 @@ export const DEEP_REASON_LABEL: Record<string, string> = Object.fromEntries(
   DEEP_REASONS.map((r) => [r.key, r.label])
 );
 
-/** £ for one room type: first at £58, the rest at £5 each. Zero rooms cost zero. */
-function typePrice(count: number, cfg = deepConfig): number {
-  if (count <= 0) return 0;
-  return cfg.firstRoomPrice + (count - 1) * cfg.additionalRoomPrice;
+/**
+ * Rooms beyond the £235 base house (which already covers one bedroom, one
+ * bathroom, the kitchen and the hallways). Every kind of room joins the same
+ * escalating sequence — a 2nd bathroom and a living room cost £62 and £67,
+ * whichever order you count them in.
+ */
+function additionalRoomCount(rooms: DeepRoomCounts): number {
+  return (
+    Math.max(0, rooms.bedrooms - 1) +
+    Math.max(0, rooms.bathrooms - 1) +
+    rooms.livingRooms +
+    rooms.diningRooms +
+    rooms.additionalRooms
+  );
 }
 
 /**
- * The whole job. Kitchen and corridor are always one each — a home has them
- * whether or not the form asks.
+ * The whole job: £235 minimum, then room n at £57 + £5n (£62, £67, £72…),
+ * extras flat on top. A studio never drops below the base — £235 is a floor,
+ * not a formula.
  */
 export function deepPrice(
   rooms: DeepRoomCounts,
   extras: DeepExtraKey[] = [],
   cfg = deepConfig,
 ): number {
-  const roomTotal =
-    typePrice(rooms.bedrooms, cfg) +
-    typePrice(rooms.bathrooms, cfg) +
-    typePrice(rooms.livingRooms, cfg) +
-    typePrice(rooms.diningRooms, cfg) +
-    typePrice(rooms.additionalRooms, cfg) +
-    typePrice(1, cfg) + // kitchen + oven
-    typePrice(1, cfg); // corridor / landing / common areas
-  return roomTotal + extras.length * cfg.extraPrice;
+  const k = additionalRoomCount(rooms);
+  // Σ i=1..k of (base + step·i) = base·k + step·k(k+1)/2
+  const additions = cfg.additionalRoomBase * k + (cfg.additionalRoomStep * k * (k + 1)) / 2;
+  return cfg.basePrice + additions + extras.length * cfg.extraPrice;
 }
 
 /**

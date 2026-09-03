@@ -583,11 +583,17 @@ export default function QuoteWizard({
         <p className="mt-2 text-slate-600">
           Your reference is <span className="font-semibold text-slate-900">{reference}</span>.
           We&apos;ll call you shortly to confirm your{" "}
-          <span className="font-semibold">{totalHours}-hour clean</span> on{" "}
-          <span className="font-semibold">{humanDate(preferredDate)}</span>
+          {/* Deep hours are internal (Dulla, 2026-09-03) — the customer sees
+              the day and a start, never how long we plan to stay. */}
+          <span className="font-semibold">{isDeep ? "deep clean" : `${totalHours}-hour clean`}</span>{" "}
+          on <span className="font-semibold">{humanDate(preferredDate)}</span>
           {startTime && !timeDropped ? (
             <>
-              , <span className="font-semibold">{formatTimeRange(startTime, totalHours)}</span>.
+              ,{" "}
+              <span className="font-semibold">
+                {isDeep ? `from ${formatTime(startTime)}` : formatTimeRange(startTime, totalHours)}
+              </span>
+              .
             </>
           ) : (
             <>, and agree a time with you.</>
@@ -771,16 +777,15 @@ export default function QuoteWizard({
           </p>
 
           {/* Deep cleans derive their own time: rooms -> man-minutes -> crew
-              -> hours on site. There is nothing for the customer to choose, so
-              the whole hours apparatus gives way to a statement of what
-              arrives. */}
+              -> hours on site. The customer chooses nothing and — per Dulla,
+              2026-09-03 — is never shown the hours either: the crew stays as
+              long as the house needs. */}
           {isDeep && (
             <div className="mt-4 border-t border-slate-100 pt-4">
               <div className="flex items-center justify-between gap-3 bg-brand-50 px-3 py-2.5">
                 <p className="text-sm text-slate-700">
-                  <span className="font-semibold text-brand-800">{crew} cleaners</span>, about{" "}
-                  <span className="tnum font-semibold text-brand-800">{deepElapsed}h</span> in your
-                  home
+                  <span className="font-semibold text-brand-800">{crew} cleaners</span>, the whole
+                  house top to bottom
                 </p>
                 {crew > deepConfig.baseCleaners && (
                   <span className="text-xs text-slate-500">bigger homes get a third cleaner</span>
@@ -1330,7 +1335,7 @@ export default function QuoteWizard({
         div, not a button. Hidden on the success screen because this whole
         branch never renders there. */}
     <div className="fixed inset-x-0 bottom-0 z-40 flex h-12 items-center justify-between bg-slate-900 px-4 pb-[env(safe-area-inset-bottom)] text-white lg:hidden">
-      <span className="text-sm text-slate-300">{totalHours}h clean</span>
+      <span className="text-sm text-slate-300">{isDeep ? "Deep clean" : `${totalHours}h clean`}</span>
       <span className="tnum text-base font-bold">{formatGBP(price)}</span>
     </div>
     </>
@@ -1376,8 +1381,8 @@ function PricePanel({
       <dl className="mt-4 space-y-1.5 border-t border-brand-100 pt-3 text-sm">
         {deep ? (
           <>
-            <PanelRow k="Priced" v="per room, not by the hour" />
-            <PanelRow k="Team" v={`${deep.crew} cleaners, ~${totalHours}h`} />
+            <PanelRow k="Priced" v="by your home's size, not the hour" />
+            <PanelRow k="Team" v={`${deep.crew} cleaners`} />
             {deep.extras > 0 && (
               <PanelRow
                 k="Extras"

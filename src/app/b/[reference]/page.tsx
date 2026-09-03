@@ -8,7 +8,7 @@ import {
   paidSoFar,
   isPaidInFull,
 } from "@/lib/supabaseAdmin";
-import { formatTimeRange, londonWallClock } from "@/lib/scheduling";
+import { formatTime, formatTimeRange, londonWallClock } from "@/lib/scheduling";
 import { formatGBP, FREQUENCY_LABEL } from "@/lib/pricing";
 import { contact, site } from "@/lib/business";
 import { customerPayNow, customerCancelBooking, customerRequestReschedule } from "./actions";
@@ -135,16 +135,24 @@ export default async function CustomerBookingPage({
 
           <dl className="mt-5 space-y-2 bg-brand-50/60 p-4 text-sm">
             <Row k="Reference" v={b.reference} />
+            {/* Deep-clean hours are internal (Dulla 2026-09-03): the customer
+                sees the day and a start, never how long the crew stays. */}
             <Row
               k="When"
               v={
                 b.start_time
-                  ? `${humanDate(b.preferred_date)}, ${formatTimeRange(b.start_time, Number(b.hours))}`
+                  ? b.service_type === "deep"
+                    ? `${humanDate(b.preferred_date)}, from ${formatTime(b.start_time)}`
+                    : `${humanDate(b.preferred_date)}, ${formatTimeRange(b.start_time, Number(b.hours))}`
                   : `${humanDate(b.preferred_date)} — we'll agree the time with you`
               }
             />
             <Row k="Where" v={`${b.address_line}, ${b.postcode}`} />
-            <Row k="How long" v={`${b.hours} hours`} />
+            {b.service_type === "deep" ? (
+              <Row k="Service" v="Deep clean — the whole house, top to bottom" />
+            ) : (
+              <Row k="How long" v={`${b.hours} hours`} />
+            )}
             {b.frequency !== "one_off" && <Row k="Repeats" v={FREQUENCY_LABEL[b.frequency]} />}
             <Row k="Price" v={formatGBP(agreedPriceFor(b))} />
             {paid > 0 && <Row k="Paid" v={formatGBP(paid)} />}

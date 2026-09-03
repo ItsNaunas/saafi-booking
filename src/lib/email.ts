@@ -13,7 +13,7 @@
 import type { BookingRow } from "./supabaseAdmin";
 import { agreedPriceFor, paidSoFar } from "./money";
 import { secret } from "./env";
-import { formatTimeRange } from "@/lib/scheduling";
+import { formatTime, formatTimeRange } from "@/lib/scheduling";
 import { chargeableJourney, outcomeLabel, type OutcomeReason } from "./outcomes";
 import { site, contact } from "./business";
 import { bookingManageUrl } from "./bookingLink";
@@ -209,15 +209,24 @@ const first = (name: string) => name.split(" ")[0];
 const adminUrl = (id: string) =>
   `${process.env.NEXT_PUBLIC_SITE_URL ?? site.url}/admin/booking/${id}`;
 
-/** The visit window, or an honest admission that there isn't one yet. */
+/**
+ * The visit window, or an honest admission that there isn't one yet.
+ *
+ * Deep cleans show a start and no end — how long the crew stays is SAAFI's
+ * business, never the customer's ("time taken for a deep clean should NOT be
+ * visible", Dulla 2026-09-03). Cleaner emails share this line, but cleaners
+ * get their hours from their own rows and portal.
+ */
 function whenLine(booking: {
   preferred_date: string;
   start_time: string | null;
   hours: number | string;
+  service_type?: "standard" | "deep";
 }): string {
-  return booking.start_time
-    ? `${booking.preferred_date}, ${formatTimeRange(booking.start_time, Number(booking.hours))}`
-    : `${booking.preferred_date}, time still to be agreed`;
+  if (!booking.start_time) return `${booking.preferred_date}, time still to be agreed`;
+  if (booking.service_type === "deep")
+    return `${booking.preferred_date}, from ${formatTime(booking.start_time)}`;
+  return `${booking.preferred_date}, ${formatTimeRange(booking.start_time, Number(booking.hours))}`;
 }
 
 /* ------------------------------------------------------------------ *
@@ -235,7 +244,9 @@ export async function sendConfirmationEmail(booking: BookingRow): Promise<void> 
     rows: [
       ["When", whenLine(booking)],
       ["Where", `${booking.address_line}, ${booking.postcode}`],
-      ["Duration", `${booking.hours} hours`],
+      booking.service_type === "deep"
+        ? ["Service", "Deep clean — the whole house, top to bottom"]
+        : ["Duration", `${booking.hours} hours`],
       ["Price", `£${agreedPriceFor(booking)}`],
       ["Products", booking.customer_provides_products ? "you provide" : "we bring ours"],
     ],
@@ -266,6 +277,9 @@ export async function sendAdjustmentEmail(
   const extra = Math.round((Number(adj.to_hours) - Number(adj.from_hours)) * 100) / 100;
   const diff = Math.round((Number(adj.to_price) - Number(adj.from_price)) * 100) / 100;
   const longer = extra > 0;
+  // Deep-clean hours are internal (Dulla 2026-09-03) — the customer sees the
+  // prices moving, never the hours behind them.
+  const deep = booking.service_type === "deep";
 
   await send({
     to: booking.customer_email,
@@ -275,12 +289,16 @@ export async function sendAdjustmentEmail(
     heading: longer ? "Your total has changed" : "We've reduced your total",
     intro: [
       longer
-        ? "Your clean took a bit longer than booked, so your total has changed."
-        : "Your clean finished sooner than booked, so we've reduced your total.",
+        ? deep
+          ? "There was more to your deep clean than booked, so your total has changed."
+          : "Your clean took a bit longer than booked, so your total has changed."
+        : deep
+          ? "There was less to your deep clean than booked, so we've reduced your total."
+          : "Your clean finished sooner than booked, so we've reduced your total.",
     ],
     rows: [
-      ["Booked", `${adj.from_hours} hours — £${adj.from_price}`],
-      ["Actual", `${adj.to_hours} hours — £${adj.to_price}`],
+      ["Booked", deep ? `£${adj.from_price}` : `${adj.from_hours} hours — £${adj.from_price}`],
+      ["Actual", deep ? `£${adj.to_price}` : `${adj.to_hours} hours — £${adj.to_price}`],
       ["Reason", reasonLabel(adj.reason_code as never)],
       adj.note ? ["Note", adj.note] : null,
       [
@@ -335,9 +353,12 @@ export async function sendBookingReceivedEmail(opts: {
   addressLine: string;
   postcode: string;
   recurring: boolean;
+  /** Deep cleans show no hours anywhere a customer looks (Dulla 2026-09-03). */
+  serviceType?: "standard" | "deep";
   /** Pay-at-booking link; absent falls back to the settle-by-phone wording. */
   payUrl?: string | null;
 }): Promise<{ ok: boolean; reason?: string }> {
+  const deep = opts.serviceType === "deep";
   return send({
     to: opts.email,
     subject: `We've got your booking — ${opts.preferredDate} (${opts.reference})`,
@@ -352,11 +373,15 @@ export async function sendBookingReceivedEmail(opts: {
       [
         "When",
         opts.startTime
-          ? `${opts.preferredDate}, ${formatTimeRange(opts.startTime, opts.hours)}`
+          ? deep
+            ? `${opts.preferredDate}, from ${formatTime(opts.startTime)}`
+            : `${opts.preferredDate}, ${formatTimeRange(opts.startTime, opts.hours)}`
           : `${opts.preferredDate}, time still to be agreed`,
       ],
       ["Where", `${opts.addressLine}, ${opts.postcode}`],
-      ["How long", `${opts.hours} hours`],
+      deep
+        ? ["Service", "Deep clean — the whole house, top to bottom"]
+        : ["How long", `${opts.hours} hours`],
       ["Price", `£${opts.price}${opts.recurring ? " per clean" : ""}`],
     ],
     cta: opts.payUrl ? { label: "Pay for your clean", url: opts.payUrl } : null,
@@ -616,7 +641,9 @@ export async function sendBookingChangedEmail(
     rows: [
       ["Now", whenLine(booking)],
       ["Where", `${booking.address_line}, ${booking.postcode}`],
-      ["Duration", `${booking.hours} hours`],
+      booking.service_type === "deep"
+        ? ["Service", "Deep clean — the whole house, top to bottom"]
+        : ["Duration", `${booking.hours} hours`],
       ["Price", `£${agreedPriceFor(booking)}`],
       paidSoFar(booking) > 0 && ["Already paid", `£${paidSoFar(booking)}`],
       ...changes,

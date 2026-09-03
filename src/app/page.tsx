@@ -158,8 +158,8 @@ export default async function Home() {
     cfg,
   );
   const oneOffVisit = quotePrice(exampleHours, true, cfg, "one_off");
-  // The same 2-bed example home, deep: 2 beds £63 + bath £58 + kitchen £58 +
-  // corridor £58 = £237.
+  // The same 2-bed example home, deep (Dulla's 2026-09-03 model): £235 base
+  // + £62 for the second bedroom = £297.
   const deepVisit = deepPrice({ bedrooms: 2, bathrooms: 1, livingRooms: 0, diningRooms: 0, additionalRooms: 0 });
   const typicalVisit = quotePrice(
     recommendedHours({ bedrooms: 2, bathrooms: 1, diningRooms: 0, livingRooms: 0 }, cfg),
@@ -362,10 +362,10 @@ export default async function Home() {
             title="Deep clean"
             price={formatGBP(deepVisit)}
             unit=" a visit"
-            text="Two cleaners, top to bottom — priced per room, with the kitchen, oven and hallways always in. For when a regular clean isn't enough."
+            text="Two cleaners, top to bottom — priced by the size of your home, with the kitchen, oven and hallways always in. For when a regular clean isn't enough."
             points={[
               "Two cleaners as standard",
-              "Priced per room, not by the hour",
+              "Priced by home size, not the hour",
               "Living and dining rooms included",
             ]}
             href="/quote?service=deep"

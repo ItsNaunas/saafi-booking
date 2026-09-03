@@ -49,13 +49,19 @@ export async function GET(
     return `${ymd}T${hhmm(((mins % 1440) + 1440) % 1440)}`;
   };
 
+  // Deep-clean duration is internal (Dulla 2026-09-03): the customer's event
+  // holds an hour as a placeholder rather than revealing how long the crew is
+  // planned in for. Standard cleans block out their real length.
+  const deep = b.service_type === "deep";
+  const eventMins = deep ? 60 : Math.round(Number(b.hours) * 60);
+
   // With a time: local London wall-clock times with a TZID. All-day otherwise.
   const timing =
     startMins === null
       ? [`DTSTART;VALUE=DATE:${d}`]
       : [
           `DTSTART;TZID=Europe/London:${dateTimeAfter(b.preferred_date, startMins)}`,
-          `DTEND;TZID=Europe/London:${dateTimeAfter(b.preferred_date, startMins + Math.round(Number(b.hours) * 60))}`,
+          `DTEND;TZID=Europe/London:${dateTimeAfter(b.preferred_date, startMins + eventMins)}`,
         ];
 
   const ics = [
@@ -85,7 +91,7 @@ export async function GET(
     `UID:${b.reference}@saaficleaningservice.com`,
     `DTSTAMP:${new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "")}`,
     ...timing,
-    `SUMMARY:${esc(`SAAFI clean — ${b.hours} hours`)}`,
+    `SUMMARY:${esc(deep ? "SAAFI deep clean" : `SAAFI clean — ${b.hours} hours`)}`,
     `LOCATION:${esc(`${b.address_line}, ${b.postcode}`)}`,
     `DESCRIPTION:${esc(`Reference ${b.reference}. Questions? Reply to any of our emails.`)}`,
     "END:VEVENT",

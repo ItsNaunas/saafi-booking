@@ -339,6 +339,7 @@ export async function POST(req: NextRequest) {
     addressLine: record.addressLine,
     postcode: record.postcode,
     recurring: record.frequency !== "one_off",
+    serviceType: record.serviceType,
     payUrl,
   }).catch((e) => console.error("[bookings] customer receipt failed:", e));
 
