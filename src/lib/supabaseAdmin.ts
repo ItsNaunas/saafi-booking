@@ -249,7 +249,9 @@ export async function updateBooking(
 /* ---------- cleaners ---------- */
 
 export async function listCleaners(): Promise<CleanerRow[]> {
-  return rest<CleanerRow[]>("cleaners?select=*&order=created_at.asc");
+  // Active team first, deactivated cleaners sink to the bottom (Dulla,
+  // 2026-09-03) — within each group, oldest first as before.
+  return rest<CleanerRow[]>("cleaners?select=*&order=active.desc,created_at.asc");
 }
 
 export async function createCleaner(name: string, phone: string, email: string | null): Promise<void> {

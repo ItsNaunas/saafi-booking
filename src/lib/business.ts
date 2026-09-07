@@ -75,6 +75,17 @@ export const serviceAreas: string[] = [
 ];
 
 /**
+ * REAL — from the business card Dulla shared in the group (2026-09-03).
+ * Facebook is on the card too, but only as "Saafi" with no handle, and
+ * several unrelated companies own the obvious "Saafi" pages — so it stays
+ * off the site until the family send the exact page link.
+ */
+export const socials = [
+  { label: "Instagram", handle: "@saafi_cl", url: "https://www.instagram.com/saafi_cl" },
+  { label: "TikTok", handle: "@saafi_cl", url: "https://www.tiktok.com/@saafi_cl" },
+] as const;
+
+/**
  * INVENTED CUSTOMERS. Nobody said any of this.
  *
  * Written to sound like real people so the section reads properly in a demo,

@@ -29,7 +29,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import Icon from "@/components/Icon";
-import { contact, site, address, serviceAreas as businessAreas } from "@/lib/business";
+import { contact, site, address, serviceAreas as businessAreas, socials } from "@/lib/business";
 import { loadPricingAndAddons } from "@/lib/pricingServer";
 import { formatGBP, quotePrice, recommendedHours } from "@/lib/pricing";
 import { deepPrice } from "@/lib/deepClean";
@@ -709,6 +709,18 @@ export default async function Home() {
                   Areas we cover
                 </a>
               </li>
+              {socials.map((s) => (
+                <li key={s.label}>
+                  <a
+                    href={s.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="outline-none transition hover:text-brand-400 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-brand-300"
+                  >
+                    {s.label} · {s.handle}
+                  </a>
+                </li>
+              ))}
             </ul>
           </div>
         </div>
@@ -750,10 +762,14 @@ export default async function Home() {
               addressRegion: address.region,
               addressCountry: address.country,
             },
-            areaServed: areas.map((a) => ({
-              "@type": "PostalCodeRangeSpecification",
-              postalCodeBegin: a,
-            })),
+            // `areas` holds town names now, and the postcode rule is a single
+            // prefix — one AdministrativeArea says the same thing more honestly
+            // than a fake postcode range per town.
+            areaServed: [
+              { "@type": "AdministrativeArea", name: "Oxfordshire" },
+              ...areas.map((a) => ({ "@type": "City" as const, name: a })),
+            ],
+            sameAs: socials.map((s) => s.url),
             priceRange: "££",
             makesOffer: [
               // Priced per visit for the page's example home, matching what a
