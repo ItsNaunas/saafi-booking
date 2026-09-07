@@ -44,9 +44,9 @@ type Mail = {
 };
 
 const BRAND = {
-  ink: "#052e2c", // brand-950 — header
-  teal: "#14807b", // brand-600 — button, accents
-  tint: "#effdfb", // brand-50 — details table ground
+  ink: "#0d2a48", // brand-950 — header
+  blue: "#1273c4", // brand-600 — button, accents
+  tint: "#eff7fe", // brand-50 — details table ground
   text: "#0f172a", // slate-900
   muted: "#64748b", // slate-500
   faint: "#94a3b8", // slate-400
@@ -84,7 +84,7 @@ function renderHtml(m: Mail): string {
         <!-- header -->
         <tr><td style="background:${BRAND.ink};padding:22px 28px;">
           <span style="${font}font-size:20px;font-weight:700;letter-spacing:0.16em;color:#ffffff;">SAAFI</span>
-          <span style="${font}font-size:11px;font-weight:600;letter-spacing:0.18em;color:#6fe2da;"> &nbsp;CLEANING SERVICE</span>
+          <span style="${font}font-size:11px;font-weight:600;letter-spacing:0.18em;color:#86c5f7;"> &nbsp;CLEANING SERVICE</span>
         </td></tr>
 
         <!-- card -->
@@ -111,7 +111,7 @@ function renderHtml(m: Mail): string {
           ${
             m.cta
               ? `<table role="presentation" cellpadding="0" cellspacing="0" style="margin:4px 0 18px;">
-                  <tr><td style="background:${BRAND.teal};">
+                  <tr><td style="background:${BRAND.blue};">
                     <a href="${esc(m.cta.url)}" style="display:inline-block;padding:13px 26px;${font}font-size:15px;font-weight:600;color:#ffffff;text-decoration:none;">${esc(m.cta.label)}</a>
                   </td></tr>
                 </table>
@@ -125,7 +125,7 @@ function renderHtml(m: Mail): string {
         <!-- footer -->
         <tr><td style="padding:18px 28px;">
           <p style="margin:0 0 4px;${font}font-size:12px;line-height:1.6;color:${BRAND.faint};">
-            ${esc(site.name)} &nbsp;·&nbsp; <a href="tel:${esc(contact.phoneHref)}" style="color:${BRAND.teal};text-decoration:none;">${esc(contact.phoneDisplay)}</a> &nbsp;·&nbsp; <a href="mailto:${esc(contact.email)}" style="color:${BRAND.teal};text-decoration:none;">${esc(contact.email)}</a>
+            ${esc(site.name)} &nbsp;·&nbsp; <a href="tel:${esc(contact.phoneHref)}" style="color:${BRAND.blue};text-decoration:none;">${esc(contact.phoneDisplay)}</a> &nbsp;·&nbsp; <a href="mailto:${esc(contact.email)}" style="color:${BRAND.blue};text-decoration:none;">${esc(contact.email)}</a>
           </p>
           <p style="margin:0;${font}font-size:12px;color:${BRAND.faint};">
             ${m.reference ? `Reference ${esc(m.reference)} &nbsp;·&nbsp; ` : ""}${esc(site.url.replace("https://", ""))}

@@ -127,7 +127,7 @@ export default function PriceSteps({
         preserveAspectRatio="none"
         aria-hidden="true"
       >
-        <g fill="none" stroke="#14807b" strokeOpacity="0.1" strokeWidth="1">
+        <g fill="none" stroke="#1273c4" strokeOpacity="0.1" strokeWidth="1">
           <path d="M-20 120C60 44 140 30 196 112s118 108 176 74" />
           <path d="M-20 152C60 76 140 62 196 144s118 108 176 74" />
           <path d="M-20 184C60 108 140 94 196 176s118 108 176 74" />

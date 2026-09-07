@@ -21,7 +21,7 @@ function Contours() {
       preserveAspectRatio="xMidYMid slice"
       className="pointer-events-none absolute inset-0 -z-10 size-full"
       fill="none"
-      stroke="#14807b"
+      stroke="#1273c4"
       strokeOpacity="0.09"
       strokeWidth="1"
     >
@@ -30,8 +30,8 @@ function Contours() {
       <path d="M-40 260c110-68 205 18 320-32s175-138 310-118 255 88 340 58" />
       <path d="M-40 120c100-54 190 14 300-26s170-104 300-88 235 66 320 44" />
       <path d="M-40 80c95-52 185 12 295-28s168-102 296-86 238 64 329 42" />
-      <circle cx="250" cy="196" r="3" fill="#14807b" fillOpacity="0.18" stroke="none" />
-      <circle cx="612" cy="132" r="3" fill="#14807b" fillOpacity="0.18" stroke="none" />
+      <circle cx="250" cy="196" r="3" fill="#1273c4" fillOpacity="0.18" stroke="none" />
+      <circle cx="612" cy="132" r="3" fill="#1273c4" fillOpacity="0.18" stroke="none" />
     </svg>
   );
 }

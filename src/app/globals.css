@@ -11,18 +11,18 @@
   --font-sans: var(--font-sans);
   --font-display: var(--font-display);
 
-  /* Brand turquoise, sampled from the hero photograph (#53d3cd = brand-400). */
-  --color-brand-50: #effdfb;
-  --color-brand-100: #c9f8f3;
-  --color-brand-200: #9befe8;
-  --color-brand-300: #6fe2da;
-  --color-brand-400: #53d3cd;
-  --color-brand-500: #2bb3ae;
-  --color-brand-600: #14807b;
-  --color-brand-700: #106b67;
-  --color-brand-800: #0e5652;
-  --color-brand-900: #0d4744;
-  --color-brand-950: #052e2c;
+  /* Safi brand blue — #2291e5 (brand-500), from the family's Canva brand kit (2026-09-03). */
+  --color-brand-50: #eff7fe;
+  --color-brand-100: #d9ecfd;
+  --color-brand-200: #b6dcfb;
+  --color-brand-300: #86c5f7;
+  --color-brand-400: #52aaef;
+  --color-brand-500: #2291e5;
+  --color-brand-600: #1273c4;
+  --color-brand-700: #105d9e;
+  --color-brand-800: #114e83;
+  --color-brand-900: #14416c;
+  --color-brand-950: #0d2a48;
 }
 
 /* Cabinet Grotesk carries the display voice; General Sans carries everything
@@ -52,19 +52,19 @@ body {
    ------------------------------------------------------------------------ */
 
 ::selection {
-  background: #9befe8; /* brand-200 */
-  color: #0d4744;      /* brand-900 */
+  background: #b6dcfb; /* brand-200 */
+  color: #14416c;      /* brand-900 */
 }
 
 :root {
-  caret-color: #14807b; /* brand-600 */
-  accent-color: #14807b;
+  caret-color: #1273c4; /* brand-600 */
+  accent-color: #1273c4;
   scrollbar-color: #cbd5e1 transparent; /* slate-300 on the page ground */
 }
 
 /* Keyboard focus only — pointer users never see it, keyboard users always do. */
 :focus-visible {
-  outline: 2px solid #14807b;
+  outline: 2px solid #1273c4;
   outline-offset: 2px;
   border-radius: 4px;
 }
