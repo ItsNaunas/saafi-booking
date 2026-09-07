@@ -742,10 +742,6 @@ export async function sendNewBookingAlertEmail(opts: {
   quotedPrice: number;
   addonLabels: string[];
   notes: string;
-  /** Deep cleans: the customer's stated reason (already human-labelled), when no walkthrough came. */
-  deepReason?: string | null;
-  /** Deep cleans: how many walkthrough files they attached — view them on the booking page. */
-  proofCount?: number;
   reference: string;
 }): Promise<void> {
   await send({
@@ -771,10 +767,6 @@ export async function sendNewBookingAlertEmail(opts: {
       ["Frequency", opts.frequency.replace(/_/g, " ")],
       ["Price", `£${opts.quotedPrice}`],
       opts.addonLabels.length ? ["Extras", opts.addonLabels.join(", ")] : null,
-      opts.proofCount
-        ? ["Walkthrough", `${opts.proofCount} file${opts.proofCount === 1 ? "" : "s"} attached — vet it on the booking page before confirming`]
-        : null,
-      opts.deepReason ? ["Deep clean reason", opts.deepReason] : null,
       opts.notes ? ["Notes", opts.notes] : null,
     ],
     reference: opts.reference,

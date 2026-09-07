@@ -29,16 +29,10 @@ import { reasonLabel } from "@/lib/adjustments";
 import { outcomeLabel, chargeableJourney } from "@/lib/outcomes";
 import { ISSUE_LABEL } from "@/lib/statusLabels";
 import { signedPhotoUrl } from "@/lib/storage";
-import { DEEP_REASON_LABEL } from "@/lib/deepClean";
 import { describeCard } from "@/lib/cardOnFile";
 import { STATUS_LABEL } from "@/lib/statusLabels";
 
 export const dynamic = "force-dynamic";
-
-/** Walkthrough files are videos or photos; the extension is server-chosen at upload. */
-function isVideoPath(p: string): boolean {
-  return /\.(mp4|mov|webm|3gp)$/i.test(p);
-}
 
 export default async function BookingDetailPage({
   params,
@@ -69,8 +63,6 @@ export default async function BookingDetailPage({
       photos.map(async (ph) => ({ ...ph, url: await signedPhotoUrl(ph.path).catch(() => null) }))
     )
   ).filter((ph) => ph.url);
-  const proofUrls = photoUrls.filter((ph) => ph.phase === "proof");
-  const jobPhotoUrls = photoUrls.filter((ph) => ph.phase !== "proof");
 
   // Tolerate the card columns not existing yet (pre-migration).
   const customer = b.customer_id ? await getCustomer(b.customer_id).catch(() => null) : null;
@@ -227,9 +219,6 @@ export default async function BookingDetailPage({
             v={`Deep clean — ${b.cleaners_needed ?? 2} cleaners, priced per room`}
           />
         )}
-        {b.deep_reason && (
-          <Row k="Their reason" v={DEEP_REASON_LABEL[b.deep_reason] ?? b.deep_reason} />
-        )}
         <Row k="Address" v={`${b.address_line}, ${b.postcode}`} />
         <Row
           k="When"
@@ -284,46 +273,11 @@ export default async function BookingDetailPage({
         </div>
       )}
 
-      {/* Customer's deep-clean walkthrough first — it's what gets vetted
-          BEFORE confirming; the cleaners' before/after shots come after the
-          job. Videos get a player, images a thumbnail. */}
-      {proofUrls.length > 0 && (
-        <div className="mb-4 bg-white p-5 text-sm shadow-sm ring-1 ring-amber-200">
-          <h2 className="mb-1 font-semibold text-slate-900">Walkthrough from the customer</h2>
-          <p className="mb-3 text-xs text-amber-700">
-            Check this against the rooms they booked before confirming — refuse and refund if
-            it&apos;s not a job to send a cleaner into.
-          </p>
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-            {proofUrls.map((ph) =>
-              isVideoPath(ph.path) ? (
-                <video
-                  key={ph.id}
-                  src={ph.url!}
-                  controls
-                  preload="metadata"
-                  className="h-40 w-full bg-slate-900 object-contain ring-1 ring-slate-200"
-                />
-              ) : (
-                <a key={ph.id} href={ph.url!} target="_blank" rel="noreferrer" className="block">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={ph.url!}
-                    alt="walkthrough photo"
-                    className="h-40 w-full object-cover ring-1 ring-slate-200"
-                  />
-                </a>
-              )
-            )}
-          </div>
-        </div>
-      )}
-
-      {jobPhotoUrls.length > 0 && (
+      {photoUrls.length > 0 && (
         <div className="mb-4 bg-white p-5 text-sm shadow-sm ring-1 ring-slate-200">
           <h2 className="mb-2 font-semibold text-slate-900">Job photos</h2>
           <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
-            {jobPhotoUrls.map((ph) => (
+            {photoUrls.map((ph) => (
               <a key={ph.id} href={ph.url!} target="_blank" rel="noreferrer" className="block">
                 {/* Signed, short-lived URLs into a private bucket — next/image
                     can't optimise a URL that expires hourly. */}

@@ -25,7 +25,6 @@ import {
   deepCleaners,
   deepElapsedHours,
   DEEP_EXTRAS,
-  DEEP_REASONS,
   deepConfig,
 } from "@/lib/deepClean";
 
@@ -33,27 +32,12 @@ import {
 type FieldKey =
   | "postcode"
   | "products"
-  | "proof"
   | "date"
   | "time"
   | "name"
   | "email"
   | "phone"
   | "address";
-
-/**
- * One walkthrough file on its way to storage. The file itself goes straight
- * from the browser to the bucket on a signed URL — only the resulting path
- * rides along with the booking.
- */
-type ProofFile = {
-  id: string;
-  name: string;
-  kind: "image" | "video";
-  status: "uploading" | "done" | "error";
-  path?: string;
-  error?: string;
-};
 
 /**
  * Half-finished quotes survive a wander off to the FAQs (2026-09-01 meeting:
@@ -144,10 +128,6 @@ export default function QuoteWizard({
   // Standard silently carried the charge over when switching to Deep.
   const [standardAddons, setStandardAddons] = useState<string[]>(initialAddons ?? []);
   const [deepAddons, setDeepAddons] = useState<string[]>([]);
-  // Deep-clean proof: walkthrough files and/or a stated reason. One of the
-  // two is compulsory on the deep tab — the server enforces the same rule.
-  const [proofFiles, setProofFiles] = useState<ProofFile[]>([]);
-  const [deepReason, setDeepReason] = useState<string | null>(null);
   const [frequency, setFrequency] = useState<Frequency>(initialFrequency ?? "one_off");
   const [preferredDate, setPreferredDate] = useState("");
   const [name, setName] = useState("");
@@ -282,7 +262,6 @@ export default function QuoteWizard({
           setStandardAddons(d.standardAddons.filter((k): k is string => typeof k === "string"));
         if (Array.isArray(d.deepAddons))
           setDeepAddons(d.deepAddons.filter((k): k is string => typeof k === "string"));
-        if (typeof d.deepReason === "string") setDeepReason(d.deepReason);
         if (
           !initialFrequency &&
           typeof d.frequency === "string" &&
@@ -318,7 +297,6 @@ export default function QuoteWizard({
           customerProvidesProducts,
           standardAddons,
           deepAddons,
-          deepReason,
           frequency,
           preferredDate,
           name,
@@ -339,7 +317,6 @@ export default function QuoteWizard({
     customerProvidesProducts,
     standardAddons,
     deepAddons,
-    deepReason,
     frequency,
     preferredDate,
     name,
@@ -348,74 +325,6 @@ export default function QuoteWizard({
     addressLine,
     notes,
   ]);
-
-  /* ---------- deep-clean walkthrough uploads ---------- */
-
-  // Groups this visit's files under one folder in the bucket; the paths are
-  // handed to the booking on submit.
-  const uploadDraftId = useRef<string | null>(null);
-  const proofPaths = proofFiles.filter((f) => f.status === "done" && f.path).map((f) => f.path!);
-  const proofUploading = proofFiles.some((f) => f.status === "uploading");
-
-  function addProofFiles(list: FileList | null) {
-    if (!list?.length) return;
-    if (!uploadDraftId.current) uploadDraftId.current = crypto.randomUUID();
-    const room = 6 - proofFiles.filter((f) => f.status !== "error").length;
-    for (const file of Array.from(list).slice(0, Math.max(0, room))) {
-      const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-      setProofFiles((fs) => [
-        ...fs,
-        {
-          id,
-          name: file.name,
-          kind: file.type.startsWith("video/") ? "video" : "image",
-          status: "uploading",
-        },
-      ]);
-      void uploadProof(id, file);
-    }
-    setErrors((e) => ({ ...e, proof: undefined }));
-  }
-
-  async function uploadProof(id: string, file: File) {
-    const fail = (message: string) =>
-      setProofFiles((fs) =>
-        fs.map((f) => (f.id === id ? { ...f, status: "error" as const, error: message } : f))
-      );
-    try {
-      // Ask our API for a one-shot signed URL, then PUT the file straight to
-      // storage — it must not pass through our own routes (body-size cap).
-      const res = await fetch("/api/deep-proof", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          draftId: uploadDraftId.current,
-          type: file.type,
-          size: file.size,
-        }),
-      });
-      const data = (await res.json()) as {
-        ok: boolean;
-        path?: string;
-        uploadUrl?: string;
-        error?: string;
-      };
-      if (!res.ok || !data.ok || !data.uploadUrl || !data.path) {
-        return fail(data.error ?? "Upload didn't work — try again, or pick a reason below");
-      }
-      const put = await fetch(data.uploadUrl, {
-        method: "PUT",
-        headers: { "Content-Type": file.type },
-        body: file,
-      });
-      if (!put.ok) return fail("Upload didn't work — a shorter video or a photo may do better");
-      setProofFiles((fs) =>
-        fs.map((f) => (f.id === id ? { ...f, status: "done" as const, path: data.path } : f))
-      );
-    } catch {
-      fail("Upload didn't work — check your connection and try again");
-    }
-  }
 
   /* ---------- availability ---------- */
 
@@ -490,12 +399,6 @@ export default function QuoteWizard({
     if (!isDeep && customerProvidesProducts === null)
       found.products = "Choose who brings the cleaning products.";
 
-    if (isDeep) {
-      if (proofUploading) found.proof = "Hang on — your walkthrough is still uploading.";
-      else if (proofPaths.length === 0 && !deepReason)
-        found.proof = "Add a quick video or photo of the house, or pick the reason that fits.";
-    }
-
     if (!isValidName(name)) found.name = NAME_ERROR;
     if (!isValidEmail(email)) found.email = EMAIL_ERROR;
     if (!isValidPhone(phone)) found.phone = PHONE_ERROR;
@@ -533,8 +436,6 @@ export default function QuoteWizard({
           // question is a standard-clean concern and never shown on this tab.
           customerProvidesProducts: isDeep ? false : customerProvidesProducts,
           addons: isDeep ? deepExtras : standardAddons,
-          deepReason: isDeep ? deepReason : null,
-          proofPaths: isDeep ? proofPaths : [],
           frequency: isDeep ? "one_off" : frequency,
           name,
           email,
@@ -976,102 +877,6 @@ export default function QuoteWizard({
             </Disclosure>
           )}
         </Section>
-
-        {/* ---------- deep-clean proof ----------
-             2026-09-01 meeting: a deep clean is never priced blind. Either a
-             quick walkthrough (video/photos, straight to private storage) or
-             a stated reason — one of the two is compulsory, and the office
-             vets it before confirming. */}
-        {isDeep && (
-          <Section
-            title="Show us the house"
-            sub="A 30-second phone video (or a few photos) lets us stand by the price — deep cleans vary too much to guess at."
-          >
-            <div data-invalid={errors.proof ? "true" : undefined} tabIndex={-1}>
-              <label className="flex cursor-pointer items-center justify-center gap-2 border-2 border-dashed border-slate-300 px-4 py-4 text-sm font-semibold text-slate-700 transition hover:border-brand-400 hover:text-brand-800">
-                📹 Add a video or photos
-                <input
-                  type="file"
-                  accept="video/*,image/*"
-                  multiple
-                  className="sr-only"
-                  onChange={(e) => {
-                    addProofFiles(e.target.files);
-                    // Same file picked twice should re-fire change.
-                    e.target.value = "";
-                  }}
-                />
-              </label>
-              <p className="mt-1.5 text-xs text-slate-400">
-                Up to 6 files, 50MB each — walk through the rooms, that&apos;s all we need.
-              </p>
-
-              {proofFiles.length > 0 && (
-                <ul className="mt-3 space-y-1.5">
-                  {proofFiles.map((f) => (
-                    <li
-                      key={f.id}
-                      className="flex items-center justify-between gap-3 bg-slate-50 px-3 py-2 text-sm"
-                    >
-                      <span className="min-w-0 truncate text-slate-700">
-                        {f.kind === "video" ? "🎬" : "🖼️"} {f.name}
-                      </span>
-                      <span className="flex shrink-0 items-center gap-2">
-                        {f.status === "uploading" && (
-                          <span className="text-xs text-slate-400">uploading…</span>
-                        )}
-                        {f.status === "done" && (
-                          <span className="text-xs font-semibold text-brand-700">✓ added</span>
-                        )}
-                        {f.status === "error" && (
-                          <span className="text-xs text-red-600">{f.error}</span>
-                        )}
-                        <button
-                          type="button"
-                          aria-label={`Remove ${f.name}`}
-                          onClick={() =>
-                            setProofFiles((fs) => fs.filter((x) => x.id !== f.id))
-                          }
-                          className="text-slate-400 transition hover:text-slate-700"
-                        >
-                          ✕
-                        </button>
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-
-              <p className="mt-4 text-sm font-medium text-slate-700">
-                Can&apos;t film right now? Tell us why it needs a deep clean:
-              </p>
-              <div className="mt-2 grid gap-2 sm:grid-cols-2">
-                {DEEP_REASONS.map((r) => {
-                  const on = deepReason === r.key;
-                  return (
-                    <button
-                      key={r.key}
-                      type="button"
-                      aria-pressed={on}
-                      onClick={() => {
-                        setDeepReason(on ? null : r.key);
-                        setErrors((e) => ({ ...e, proof: undefined }));
-                      }}
-                      className={`border-2 px-3 py-2 text-left text-sm transition ${
-                        on
-                          ? "border-brand-500 bg-brand-50 font-semibold text-brand-800"
-                          : "border-slate-200 text-slate-700 hover:border-slate-300"
-                      }`}
-                    >
-                      {r.label}
-                    </button>
-                  );
-                })}
-              </div>
-              {errors.proof && <p className="mt-2 text-sm text-red-600">{errors.proof}</p>}
-            </div>
-          </Section>
-        )}
 
         {/* ---------- when ---------- */}
         <Section

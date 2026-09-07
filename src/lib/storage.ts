@@ -50,79 +50,25 @@ export async function signedPhotoUrl(path: string, expiresInSeconds = 3600): Pro
   return data.signedURL ? `${url}/storage/v1${data.signedURL}` : null;
 }
 
-// The bucket's own limits, enforced by Supabase on every upload — including
-// the signed-URL uploads that never pass through our servers. 50MB covers a
-// ~1-minute 1080p phone walkthrough; the videos are deep-clean proof
-// (2026-09-01 meeting), the images are the cleaners' before/after shots.
-const BUCKET_LIMIT_BYTES = 50 * 1024 * 1024;
-const BUCKET_MIME_TYPES = [
-  "image/jpeg",
-  "image/png",
-  "image/webp",
-  "image/heic",
-  "video/mp4",
-  "video/quicktime",
-  "video/webm",
-  "video/3gpp",
-];
-
 /**
- * Ensure the private bucket exists with the current limits — idempotent,
- * called from the upload paths so the feature self-provisions. An existing
- * bucket (created back when it was images-only at 10MB) gets its limits
- * updated in place, once per server process.
+ * Ensure the private bucket exists — idempotent, called from the upload path
+ * so the feature self-provisions the first time a photo is taken.
  */
-let bucketCurrent = false;
 export async function ensurePhotoBucket(): Promise<void> {
-  if (bucketCurrent) return;
   const { url, authHeaders } = creds();
-  const headers = { ...authHeaders, "Content-Type": "application/json" };
-  const config = {
-    public: false,
-    file_size_limit: BUCKET_LIMIT_BYTES,
-    allowed_mime_types: BUCKET_MIME_TYPES,
-  };
   const res = await fetch(`${url}/storage/v1/bucket`, {
     method: "POST",
-    headers,
-    body: JSON.stringify({ id: PHOTO_BUCKET, name: PHOTO_BUCKET, ...config }),
+    headers: { ...authHeaders, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      id: PHOTO_BUCKET,
+      name: PHOTO_BUCKET,
+      public: false,
+      file_size_limit: 10 * 1024 * 1024,
+      allowed_mime_types: ["image/jpeg", "image/png", "image/webp", "image/heic"],
+    }),
   });
-  if (res.ok) {
-    bucketCurrent = true;
-    return;
+  // 400/409 = already exists; anything else the caller's try/catch reports.
+  if (!res.ok && res.status !== 400 && res.status !== 409) {
+    throw new Error(`storage bucket: ${res.status} ${await res.text()}`);
   }
-  // 400/409 = already exists — bring its limits up to date instead.
-  if (res.status === 400 || res.status === 409) {
-    const upd = await fetch(`${url}/storage/v1/bucket/${PHOTO_BUCKET}`, {
-      method: "PUT",
-      headers,
-      body: JSON.stringify(config),
-    });
-    if (upd.ok) bucketCurrent = true;
-    // A failed update is not fatal for images — the old limits still allow
-    // them — so don't throw; video uploads will surface it as their own error.
-    else console.error(`[storage] bucket update failed: ${upd.status} ${await upd.text()}`);
-    return;
-  }
-  throw new Error(`storage bucket: ${res.status} ${await res.text()}`);
-}
-
-/**
- * Mint a one-shot signed upload URL so the browser can PUT a file straight to
- * Supabase Storage. Exists for the deep-clean walkthrough: a phone video blows
- * straight past the request-body cap on our own API routes, so the file must
- * never travel through them.
- */
-export async function signedUploadUrl(path: string): Promise<string | null> {
-  const { url, authHeaders } = creds();
-  const res = await fetch(`${url}/storage/v1/object/upload/sign/${PHOTO_BUCKET}/${path}`, {
-    method: "POST",
-    headers: authHeaders,
-  });
-  if (!res.ok) {
-    console.error(`[storage] signed upload ${path}: ${res.status} ${await res.text()}`);
-    return null;
-  }
-  const data = (await res.json()) as { url?: string };
-  return data.url ? `${url}/storage/v1${data.url}` : null;
 }
