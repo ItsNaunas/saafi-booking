@@ -16,8 +16,14 @@ Replace them with SAAFI's own photography when it exists.
 | `room-floors.jpg` | Vitaly Gariev | [unsplash.com/photos/…b10f36fd4ddd](https://unsplash.com/photos/b10f36fd4ddd) | "Every room, every visit" — Floors |
 | `family-light.jpg` | Pratik Gupta | [unsplash.com/photos/…b12076b15215](https://unsplash.com/photos/b12076b15215) | "The people behind it" — brand disc |
 
-`hero-cleaner.jpg` predates this file and its source is unrecorded. Worth
-confirming SAAFI have the right to use it before launch.
+`living-room-hero.jpg` is AI-generated (ChatGPT, 2026-09-09), commissioned by
+SAAFI to replace the previous hero — so there is no third-party licence to
+confirm. 1672×941, saved from the 2.2MB PNG at JPEG q86.
+
+`hero-cleaner.jpg` predates this file and its source is unrecorded. No longer
+the hero as of 2026-09-09, but still used by the "Hallways & landings" card,
+so the rights question stands for that one use. Replacing it retires the
+question entirely.
 
 ## "What you can count on" panel grounds
 

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import type { StaticImageData } from "next/image";
 import Image from "next/image";
 import heroCleaner from "../../public/hero-cleaner.jpg";
+import livingRoomHero from "../../public/living-room-hero.jpg";
 import roomKitchen from "../../public/room-kitchen.jpg";
 import roomBathroom from "../../public/room-bathroom.jpg";
 import roomFloors from "../../public/room-floors.jpg";
@@ -192,7 +193,7 @@ export default async function Home() {
             element. As an <Image preload> it ships ~100KB of AVIF instead of
             500KB of JPEG and gets a <link rel=preload> in the head. */}
         <Image
-          src={heroCleaner}
+          src={livingRoomHero}
           alt=""
           aria-hidden="true"
           fill
@@ -200,7 +201,9 @@ export default async function Home() {
           sizes="100vw"
           placeholder="blur"
           className="-z-10 object-cover"
-          style={{ objectPosition: "center 18%" }}
+          // A room, not a flat backdrop: anchored mid-frame so the sofa and
+          // fireplace read, rather than the ceiling the old 18% crop showed.
+          style={{ objectPosition: "center 50%" }}
         />
         {/* scrim — keeps the copy legible whatever the photo does */}
         <div className="absolute inset-0 -z-10 bg-gradient-to-b from-black/55 via-black/35 to-black/65" />
