@@ -86,13 +86,11 @@ export const socials = [
 ] as const;
 
 /**
- * INVENTED CUSTOMERS. Nobody said any of this.
- *
- * Written to sound like real people so the section reads properly in a demo,
- * which is exactly what makes them unsafe to index — see DEMO_CONTENT above.
- * Replace with things real customers actually said, with their permission, or
- * empty the array: the section renders nothing at all when it is empty, so
- * deleting is always a safe way to ship.
+ * EMPTY until real customers say something, with their permission. The three
+ * placeholder quotes that lived here were live and publicly readable, and
+ * publishing invented reviews is a banned practice under the DMCC Act — so
+ * they came out on 2026-09-10. The section renders nothing while this is
+ * empty; the review-request feature is what fills it honestly.
  */
 export type Review = {
   quote: string;
@@ -102,29 +100,7 @@ export type Review = {
   plan: string;
 };
 
-export const reviews: Review[] = [
-  {
-    quote:
-      "I put off getting a cleaner for two years because I didn't like the idea of someone in the house while I was at work. Six months in and I've stopped thinking about it. I come home on a Thursday and the place is just done.",
-    name: "Priya S.",
-    area: "Headington",
-    plan: "Fortnightly clean",
-  },
-  {
-    quote:
-      "What sold me was being given a price before anyone came round. Everywhere else I rang wanted to pop by and quote first.",
-    name: "Daniel O.",
-    area: "Cowley",
-    plan: "Weekly clean",
-  },
-  {
-    quote:
-      "Booked them at the end of a tenancy and expected a fight about the deposit. The landlord signed it off the same day.",
-    name: "Hannah M.",
-    area: "Summertown",
-    plan: "One-off clean",
-  },
-];
+export const reviews: Review[] = [];
 
 /**
  * INVENTED CLAIMS, and the most consequential invention in this file.

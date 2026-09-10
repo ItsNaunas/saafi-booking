@@ -131,6 +131,10 @@ export async function POST(req: NextRequest) {
   const addressLine = String(body.addressLine ?? "").trim();
   const preferredDate = String(body.preferredDate ?? "").trim();
   const notes = String(body.notes ?? "").trim();
+  // Soft opt-in (PECR reg 22): the form offers a clear way to refuse marketing
+  // where the email is collected. Only an explicit true counts — a cached form
+  // that never showed the choice sends nothing, and that has to read as no.
+  const marketingOk = body.marketingOk === true;
 
   // Honeypot: a field no human ever sees. Bots that fill everything get a
   // quiet success and cost us nothing — no row, no Stripe objects, no email.
@@ -230,6 +234,7 @@ export async function POST(req: NextRequest) {
     preferredDate,
     startTime,
     notes,
+    marketingOk,
     quotedPrice,
     status: "requested",
     createdAt: new Date().toISOString(),
@@ -325,11 +330,14 @@ async function storeBooking(
     process.env.SUPABASE_SERVICE_ROLE_KEY ||
     process.env.SUPABASE_PUBLISHABLE_KEY;
   let reference = newReference();
+  // Flipped when the DB reports marketing_ok missing (migration not pasted
+  // yet) — the retry omits it rather than losing the booking over a flag.
+  let skipMarketingColumn = false;
 
   if (url && key) {
     // A 409 on the unique reference is a same-millisecond collision, not a
     // reason to fail the customer — retry once with a fresh reference.
-    for (let attempt = 0; attempt < 2; attempt++) {
+    for (let attempt = 0; attempt < 3; attempt++) {
       if (attempt > 0) reference = newReference();
     try {
       const res = await fetch(`${url}/rest/v1/bookings`, {
@@ -369,13 +377,19 @@ async function storeBooking(
         preferred_date: record.preferredDate,
         start_time: record.startTime,
         notes: record.notes || null,
+        ...(skipMarketingColumn ? {} : { marketing_ok: record.marketingOk }),
         quoted_price: record.quotedPrice,
         status: "requested",
       }),
       });
       if (res.ok) return { ok: true, reference };
-      console.error("[bookings] supabase insert failed:", res.status, await res.text());
-      if (res.status === 409 && attempt === 0) continue;
+      const errText = await res.text();
+      console.error("[bookings] supabase insert failed:", res.status, errText);
+      if (errText.includes("marketing_ok") && !skipMarketingColumn) {
+        skipMarketingColumn = true;
+        continue;
+      }
+      if (res.status === 409 && attempt < 2) continue;
       // On serverless the local file is ephemeral: falling back there returns
       // a success screen, a reference and a confirmation email for a booking
       // nobody will ever see. Every service type fails loudly in production —

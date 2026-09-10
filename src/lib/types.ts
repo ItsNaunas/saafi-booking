@@ -17,6 +17,8 @@ export type BookingRequest = {
   /** "09:30". Optional — an unscheduled booking is a request SAAFI slots by phone. */
   startTime?: string | null;
   notes?: string;
+  /** Left ticked on the form = may receive marketing email (soft opt-in). */
+  marketingOk?: boolean;
 };
 
 export type BookingRecord = Omit<BookingRequest, "addons"> & {

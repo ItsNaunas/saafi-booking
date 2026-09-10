@@ -190,7 +190,9 @@ async function send(mail: Mail): Promise<{ ok: boolean; reason?: string }> {
     body: JSON.stringify({
       from: `SAAFI Cleaning Service <${from}>`,
       to: [mail.to],
-      ...(mail.replyTo ? { reply_to: mail.replyTo } : {}),
+      // Replies go to the address on the business card, which someone reads —
+      // not the sending address, which may not be a real mailbox at all.
+      reply_to: mail.replyTo ?? contact.email,
       subject: mail.subject,
       html: renderHtml(mail),
       text: renderText(mail),

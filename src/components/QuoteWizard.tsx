@@ -135,6 +135,9 @@ export default function QuoteWizard({
   const [phone, setPhone] = useState("");
   const [addressLine, setAddressLine] = useState("");
   const [notes, setNotes] = useState("");
+  // Pre-ticked with a plain way to untick: the "opportunity to refuse" that
+  // the soft opt-in needs, offered at the moment the email is collected.
+  const [marketingOk, setMarketingOk] = useState(true);
   const [reference, setReference] = useState<string | null>(null);
   const [payUrl, setPayUrl] = useState<string | null>(null);
   // The server's answer is the one Stripe charges — the client figure is only
@@ -444,6 +447,7 @@ export default function QuoteWizard({
           preferredDate,
           startTime,
           notes,
+          marketingOk,
           website: honeypot.current?.value ?? "",
         }),
       });
@@ -1115,6 +1119,19 @@ export default function QuoteWizard({
             />
           </Disclosure>
         </Section>
+
+        <label className="flex cursor-pointer items-start gap-3 text-sm text-slate-600">
+          <input
+            type="checkbox"
+            checked={marketingOk}
+            onChange={(e) => setMarketingOk(e.target.checked)}
+            className="mt-0.5 h-4 w-4 shrink-0 accent-brand-600"
+          />
+          <span>
+            We&apos;ll occasionally email you offers on our cleans. Untick if you&apos;d
+            rather not &mdash; every email has an unsubscribe link too.
+          </span>
+        </label>
 
         {formError && (
           <p role="alert" className="bg-red-50 px-3 py-2 text-sm font-medium text-red-700">
