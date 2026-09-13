@@ -743,6 +743,8 @@ export async function sendNewBookingAlertEmail(opts: {
   frequency: string;
   quotedPrice: number;
   addonLabels: string[];
+  /** Deep cleans: the customer's stated reason, already human-labelled. */
+  deepReason?: string | null;
   notes: string;
   reference: string;
 }): Promise<void> {
@@ -769,6 +771,7 @@ export async function sendNewBookingAlertEmail(opts: {
       ["Frequency", opts.frequency.replace(/_/g, " ")],
       ["Price", `£${opts.quotedPrice}`],
       opts.addonLabels.length ? ["Extras", opts.addonLabels.join(", ")] : null,
+      opts.deepReason ? ["Why a deep clean", opts.deepReason] : null,
       opts.notes ? ["Notes", opts.notes] : null,
     ],
     reference: opts.reference,

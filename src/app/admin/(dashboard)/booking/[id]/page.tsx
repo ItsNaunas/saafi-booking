@@ -29,6 +29,7 @@ import { reasonLabel } from "@/lib/adjustments";
 import { outcomeLabel, chargeableJourney } from "@/lib/outcomes";
 import { ISSUE_LABEL } from "@/lib/statusLabels";
 import { signedPhotoUrl } from "@/lib/storage";
+import { DEEP_REASON_LABEL } from "@/lib/deepClean";
 import { describeCard } from "@/lib/cardOnFile";
 import { STATUS_LABEL } from "@/lib/statusLabels";
 
@@ -217,6 +218,12 @@ export default async function BookingDetailPage({
           <Row
             k="Service"
             v={`Deep clean — ${b.cleaners_needed ?? 2} cleaners, priced per room`}
+          />
+        )}
+        {b.deep_reason && (
+          <Row
+            k="Why a deep clean"
+            v={DEEP_REASON_LABEL[b.deep_reason] ?? b.deep_reason}
           />
         )}
         <Row k="Address" v={`${b.address_line}, ${b.postcode}`} />

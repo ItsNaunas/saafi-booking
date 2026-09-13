@@ -68,6 +68,29 @@ export const DEEP_EXTRAS = [
 export type DeepExtraKey = (typeof DEEP_EXTRAS)[number]["key"];
 
 /**
+ * Why the house needs a deep clean — compulsory on the deep tab (family
+ * request, 2026-09-13). It is the one thing that tells the office what they
+ * are sending a pair of cleaners into before they confirm it, on a job priced
+ * by room count rather than by the state of the place.
+ *
+ * Keys are what the DB stores; labels are what the customer and the office
+ * both read, so the two can never drift apart.
+ */
+export const DEEP_REASONS = [
+  { key: "end_of_tenancy", label: "Moving out — end of tenancy" },
+  { key: "moving_in", label: "Just moved in" },
+  { key: "post_renovation", label: "After building or decorating work" },
+  { key: "needs_reset", label: "It's been a while — needs a proper going-over" },
+  { key: "other", label: "Something else" },
+] as const;
+
+export type DeepReasonKey = (typeof DEEP_REASONS)[number]["key"];
+
+export const DEEP_REASON_LABEL: Record<string, string> = Object.fromEntries(
+  DEEP_REASONS.map((r) => [r.key, r.label])
+);
+
+/**
  * Rooms beyond the £235 base house (which already covers one bedroom, one
  * bathroom, the kitchen and the hallways). Every kind of room joins the same
  * escalating sequence — a 2nd bathroom and a living room cost £62 and £67,

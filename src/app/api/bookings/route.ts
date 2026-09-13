@@ -20,6 +20,7 @@ import {
   deepCleaners,
   deepElapsedHours,
   DEEP_EXTRAS,
+  DEEP_REASON_LABEL,
   type DeepExtraKey,
 } from "@/lib/deepClean";
 import {
@@ -135,6 +136,17 @@ export async function POST(req: NextRequest) {
   // where the email is collected. Only an explicit true counts — a cached form
   // that never showed the choice sends nothing, and that has to read as no.
   const marketingOk = body.marketingOk === true;
+  // A deep clean is priced by room count, not by the state of the house, so
+  // the office needs to know which it is before they confirm and send a pair
+  // of cleaners. Required on the deep tab; only keys the form offers count.
+  const deepReason =
+    serviceType === "deep" &&
+    typeof body.deepReason === "string" &&
+    DEEP_REASON_LABEL[body.deepReason]
+      ? body.deepReason
+      : null;
+  if (serviceType === "deep" && !deepReason)
+    return bad("Please tell us why the house needs a deep clean");
 
   // Honeypot: a field no human ever sees. Bots that fill everything get a
   // quiet success and cost us nothing — no row, no Stripe objects, no email.
@@ -235,6 +247,7 @@ export async function POST(req: NextRequest) {
     startTime,
     notes,
     marketingOk,
+    deepReason,
     quotedPrice,
     status: "requested",
     createdAt: new Date().toISOString(),
@@ -288,6 +301,9 @@ export async function POST(req: NextRequest) {
     frequency: record.frequency,
     quotedPrice: record.quotedPrice,
     addonLabels: record.addons.map((a) => a.label),
+    deepReason: record.deepReason
+      ? DEEP_REASON_LABEL[record.deepReason] ?? record.deepReason
+      : null,
     notes: record.notes ?? "",
     reference: stored.reference,
   }).catch((e) => console.error("[bookings] alert email failed:", e));
@@ -333,11 +349,13 @@ async function storeBooking(
   // Flipped when the DB reports marketing_ok missing (migration not pasted
   // yet) — the retry omits it rather than losing the booking over a flag.
   let skipMarketingColumn = false;
+  // Same for deep_reason, pre-2026-09-13-deep-reason.sql.
+  let skipDeepReasonColumn = false;
 
   if (url && key) {
     // A 409 on the unique reference is a same-millisecond collision, not a
     // reason to fail the customer — retry once with a fresh reference.
-    for (let attempt = 0; attempt < 3; attempt++) {
+    for (let attempt = 0; attempt < 4; attempt++) {
       if (attempt > 0) reference = newReference();
     try {
       const res = await fetch(`${url}/rest/v1/bookings`, {
@@ -367,7 +385,11 @@ async function storeBooking(
         // standard bookings stay insertable even before
         // supabase/2026-08-27-deep-clean.sql has run. Deep bookings need it.
         ...(record.serviceType === "deep"
-          ? { service_type: "deep", cleaners_needed: record.cleanersNeeded }
+          ? {
+              service_type: "deep",
+              cleaners_needed: record.cleanersNeeded,
+              ...(skipDeepReasonColumn ? {} : { deep_reason: record.deepReason }),
+            }
           : {}),
         frequency: record.frequency,
         customer_name: record.name,
@@ -387,6 +409,10 @@ async function storeBooking(
       console.error("[bookings] supabase insert failed:", res.status, errText);
       if (errText.includes("marketing_ok") && !skipMarketingColumn) {
         skipMarketingColumn = true;
+        continue;
+      }
+      if (errText.includes("deep_reason") && !skipDeepReasonColumn) {
+        skipDeepReasonColumn = true;
         continue;
       }
       if (res.status === 409 && attempt < 2) continue;

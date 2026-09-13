@@ -19,6 +19,8 @@ export type BookingRequest = {
   notes?: string;
   /** Left ticked on the form = may receive marketing email (soft opt-in). */
   marketingOk?: boolean;
+  /** Deep cleans only, and required there: why the house needs one. */
+  deepReason?: string | null;
 };
 
 export type BookingRecord = Omit<BookingRequest, "addons"> & {

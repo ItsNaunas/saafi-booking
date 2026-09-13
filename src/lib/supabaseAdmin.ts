@@ -38,6 +38,8 @@ export type BookingRow = {
   /** 'standard' | 'deep' — optional so the app runs before the migration lands. */
   service_type?: "standard" | "deep";
   cleaners_needed?: number;
+  /** Deep cleans only: why the customer says the house needs one. */
+  deep_reason?: string | null;
   /** One GPS fix at start and finish — a stamp, not a track. */
   started_lat?: number | null;
   started_lng?: number | null;

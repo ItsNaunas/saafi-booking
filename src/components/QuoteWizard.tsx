@@ -25,6 +25,7 @@ import {
   deepCleaners,
   deepElapsedHours,
   DEEP_EXTRAS,
+  DEEP_REASONS,
   deepConfig,
 } from "@/lib/deepClean";
 
@@ -32,6 +33,7 @@ import {
 type FieldKey =
   | "postcode"
   | "products"
+  | "deepReason"
   | "date"
   | "time"
   | "name"
@@ -128,6 +130,8 @@ export default function QuoteWizard({
   // Standard silently carried the charge over when switching to Deep.
   const [standardAddons, setStandardAddons] = useState<string[]>(initialAddons ?? []);
   const [deepAddons, setDeepAddons] = useState<string[]>([]);
+  // Compulsory on the deep tab: the office reads it before confirming.
+  const [deepReason, setDeepReason] = useState<string | null>(null);
   const [frequency, setFrequency] = useState<Frequency>(initialFrequency ?? "one_off");
   const [preferredDate, setPreferredDate] = useState("");
   const [name, setName] = useState("");
@@ -402,6 +406,9 @@ export default function QuoteWizard({
     if (!isDeep && customerProvidesProducts === null)
       found.products = "Choose who brings the cleaning products.";
 
+    if (isDeep && !deepReason)
+      found.deepReason = "Tell us why the house needs a deep clean.";
+
     if (!isValidName(name)) found.name = NAME_ERROR;
     if (!isValidEmail(email)) found.email = EMAIL_ERROR;
     if (!isValidPhone(phone)) found.phone = PHONE_ERROR;
@@ -439,6 +446,7 @@ export default function QuoteWizard({
           // question is a standard-clean concern and never shown on this tab.
           customerProvidesProducts: isDeep ? false : customerProvidesProducts,
           addons: isDeep ? deepExtras : standardAddons,
+          deepReason: isDeep ? deepReason : null,
           frequency: isDeep ? "one_off" : frequency,
           name,
           email,
@@ -696,6 +704,48 @@ export default function QuoteWizard({
                   <span className="text-xs text-slate-500">bigger homes get a third cleaner</span>
                 )}
               </div>
+            </div>
+          )}
+
+          {isDeep && (
+            <div
+              className="mt-4"
+              data-invalid={errors.deepReason ? "true" : undefined}
+              tabIndex={-1}
+            >
+              <p className="text-sm font-medium text-slate-700">
+                Why does it need a deep clean?
+              </p>
+              <p className="mt-0.5 text-xs text-slate-500">
+                A deep clean is priced by the size of your home, so this tells us
+                what we&apos;re coming to before we confirm.
+              </p>
+              <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                {DEEP_REASONS.map((r) => {
+                  const on = deepReason === r.key;
+                  return (
+                    <button
+                      key={r.key}
+                      type="button"
+                      aria-pressed={on}
+                      onClick={() => {
+                        setDeepReason(on ? null : r.key);
+                        setErrors((e) => ({ ...e, deepReason: undefined }));
+                      }}
+                      className={`border-2 px-3 py-2 text-left text-sm transition ${
+                        on
+                          ? "border-brand-500 bg-brand-50 font-semibold text-brand-800"
+                          : "border-slate-200 text-slate-700 hover:border-slate-300"
+                      }`}
+                    >
+                      {r.label}
+                    </button>
+                  );
+                })}
+              </div>
+              {errors.deepReason && (
+                <p className="mt-1.5 text-sm text-red-600">{errors.deepReason}</p>
+              )}
             </div>
           )}
 
