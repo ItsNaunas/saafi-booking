@@ -497,6 +497,31 @@ export async function sendCleanerAssignedEmail(
 }
 
 /**
+ * The day-before chase for a job nobody has tapped "Got it" on. The pipeline's
+ * "not seen yet" chip only helps if someone acts on it; this acts on it.
+ */
+export async function sendCleanerNudgeEmail(
+  cleaner: { name: string; email: string | null; token: string },
+  booking: BookingRow,
+): Promise<void> {
+  if (!cleaner.email) return;
+  const base = process.env.NEXT_PUBLIC_SITE_URL ?? site.url;
+  await send({
+    to: cleaner.email,
+    subject: `Tomorrow: ${whenLine(booking)} — please confirm you've seen it`,
+    greeting: first(cleaner.name),
+    heading: "You're on a job tomorrow",
+    intro: ["It's still showing as not seen — one tap on your jobs page tells the office you're on it."],
+    rows: [
+      ["When", whenLine(booking)],
+      ["Where", `${booking.address_line}, ${booking.postcode}`],
+      ["Job", `${booking.hours} hours`],
+    ],
+    cta: { label: "Open your jobs page and press Got it", url: `${base}/c/${cleaner.token}` },
+  }).catch(() => {});
+}
+
+/**
  * A cleaner is standing outside a job that cannot happen.
  *
  * Goes to the office immediately rather than waiting to be noticed: there may
@@ -868,12 +893,16 @@ export async function sendCronReportEmail(opts: {
   daySheets: number;
   /** Bookings the Stripe sweep found paid on Stripe but not marked here. */
   reconciled?: number;
+  /** Tomorrow's jobs chased because the cleaner hadn't tapped "Got it". */
+  nudges?: number;
+  unseen?: string[];
   errors: string[];
 }): Promise<void> {
   const reconciled = opts.reconciled ?? 0;
+  const nudges = opts.nudges ?? 0;
   // Quiet days stay quiet: a daily "0/0/0 all fine" trains people to delete
   // the report unread. Send only when something happened or something broke.
-  if (opts.reminders + opts.chases + opts.daySheets + reconciled === 0 && opts.errors.length === 0)
+  if (opts.reminders + opts.chases + opts.daySheets + reconciled + nudges === 0 && opts.errors.length === 0)
     return;
   await send({
     to: officeAddress(),
@@ -886,6 +915,8 @@ export async function sendCronReportEmail(opts: {
       ["Payment nudges", String(opts.chases)],
       ["Cleaner day-sheets", String(opts.daySheets)],
       reconciled > 0 && ["Payments repaired", String(reconciled)],
+      nudges > 0 && ["Cleaners chased (job not seen yet)", String(nudges)],
+      ...(opts.unseen ?? []).map((u, i): Row => [`Not seen ${i + 1}`, u]),
       ...opts.errors.map((e, i): Row => [`Problem ${i + 1}`, e]),
     ],
   }).catch(() => {});

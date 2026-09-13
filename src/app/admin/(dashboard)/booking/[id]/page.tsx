@@ -302,10 +302,20 @@ export default async function BookingDetailPage({
         )}
         {b.status === "confirmed" && b.cleaner_id && (
           <Row
-            k="Cleaner seen it"
+            k={b.second_cleaner_id ? "1st cleaner seen it" : "Cleaner seen it"}
             v={
               b.acknowledged_at
                 ? `Yes — ${new Date(b.acknowledged_at).toLocaleString("en-GB")}`
+                : "Not yet — no proof they know about this job"
+            }
+          />
+        )}
+        {b.status === "confirmed" && b.second_cleaner_id && (
+          <Row
+            k="2nd cleaner seen it"
+            v={
+              b.second_acknowledged_at
+                ? `Yes — ${new Date(b.second_acknowledged_at).toLocaleString("en-GB")}`
                 : "Not yet — no proof they know about this job"
             }
           />

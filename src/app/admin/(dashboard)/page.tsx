@@ -314,8 +314,16 @@ function BookingCard({
 }) {
   const next = NEXT_ACTION[b.status];
   const isRecurring = b.frequency !== "one_off";
-  const needsCleaner = !b.cleaner_id && (b.status === "requested" || b.status === "confirmed");
+  const open = b.status === "requested" || b.status === "confirmed";
+  const needsCleaner = !b.cleaner_id && open;
   const cleaner = b.cleaner_id ? cleaners.find((c) => c.id === b.cleaner_id) : null;
+  // A deep clean is two people's job; one assigned is half done.
+  const isDeep = b.service_type === "deep";
+  const second = b.second_cleaner_id ? cleaners.find((c) => c.id === b.second_cleaner_id) : null;
+  const needsSecond = isDeep && open && !!b.cleaner_id && !b.second_cleaner_id;
+  const crewLine = cleaner
+    ? `${cleaner.name.split(" ")[0]}${second ? ` + ${second.name.split(" ")[0]}` : ""}`
+    : null;
   return (
     <details className="group border border-slate-200 bg-white text-sm shadow-sm open:ring-1 open:ring-brand-200">
       {/* collapsed row: everything you triage at a glance */}
@@ -328,12 +336,17 @@ function BookingCard({
                 needs cleaner
               </span>
             )}
+            {needsSecond && (
+              <span className="shrink-0 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800">
+                needs 2nd cleaner
+              </span>
+            )}
           </div>
           <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs text-slate-500">
             <span>
               {b.preferred_date}
               {b.start_time && ` · ${b.start_time.slice(0, 5)}`} · {b.hours}h · {b.postcode}
-              {cleaner && ` · ${cleaner.name.split(" ")[0]}`}
+              {crewLine && ` · ${crewLine}`}
             </span>
             {b.service_type === "deep" && (
               <span className="rounded-full bg-indigo-100 px-1.5 py-0.5 text-[10px] font-semibold text-indigo-800">
@@ -393,7 +406,12 @@ function BookingCard({
           <a href={`tel:${b.customer_phone}`} className="text-brand-700 hover:underline">
             {b.customer_phone}
           </a>
-          {cleaner && <span className="text-slate-500"> · {cleaner.name}</span>}
+          {cleaner && (
+            <span className="text-slate-500">
+              {" "}· {cleaner.name}
+              {second && ` + ${second.name}`}
+            </span>
+          )}
         </div>
         {b.notes && <p className="mt-1 bg-slate-50 px-2 py-1 text-xs text-slate-500">{b.notes}</p>}
 
@@ -413,6 +431,22 @@ function BookingCard({
               </option>
             ))}
           </select>
+          {isDeep && (
+            <select
+              name="second_cleaner_id"
+              defaultValue={b.second_cleaner_id ?? ""}
+              aria-label="Second cleaner"
+              className="w-full border border-slate-200 px-2 py-1 text-xs text-slate-600"
+            >
+              <option value="">2nd cleaner</option>
+              {cleaners.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                  {FIT_SUFFIX[fit.get(c.id) ?? "free"]}
+                </option>
+              ))}
+            </select>
+          )}
           <PendingButton
             pendingLabel="Saving…"
             className="bg-slate-100 px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-200"

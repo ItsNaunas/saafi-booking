@@ -12,10 +12,12 @@ import {
   type BookingRow,
 } from "@/lib/supabaseAdmin";
 import { reconcileStripePayments } from "@/lib/reconcile";
+import { smsConfigured, smsCustomerReminder, smsCleanerDaySheet, smsCleanerNudge } from "@/lib/sms";
 import {
   sendDayBeforeReminderEmail,
   sendPaymentChaseEmail,
   sendCleanerDaySheetEmail,
+  sendCleanerNudgeEmail,
   sendCronReportEmail,
   sendOpsAlertEmail,
 } from "@/lib/email";
@@ -58,6 +60,8 @@ export async function GET(req: NextRequest) {
   let reminders = 0;
   let chases = 0;
   let daySheets = 0;
+  let nudges = 0;
+  const unseen: string[] = [];
   let reconciled = 0;
 
   try {
@@ -72,6 +76,7 @@ export async function GET(req: NextRequest) {
           // is the cheaper failure.
           await markReminderSent(b.id);
           await sendDayBeforeReminderEmail(b);
+          await smsCustomerReminder(b).catch(() => {});
           reminders++;
         } catch (e) {
           errors.push(`reminder ${b.reference}: ${String(e).slice(0, 120)}`);
@@ -103,14 +108,18 @@ export async function GET(req: NextRequest) {
         const cleaners = await listCleaners();
         const byCleaner = new Map<string, BookingRow[]>();
         for (const j of jobs) {
-          if (!j.cleaner_id) continue;
-          byCleaner.set(j.cleaner_id, [...(byCleaner.get(j.cleaner_id) ?? []), j]);
+          // A deep clean is on two people's sheets.
+          for (const cid of [j.cleaner_id, j.second_cleaner_id ?? null]) {
+            if (cid) byCleaner.set(cid, [...(byCleaner.get(cid) ?? []), j]);
+          }
         }
         for (const [cleanerId, theirJobs] of byCleaner) {
           const cleaner = cleaners.find((c) => c.id === cleanerId);
-          if (!cleaner?.email) continue;
+          if (!cleaner) continue;
+          if (!cleaner.email && !smsConfigured()) continue;
           try {
             await sendCleanerDaySheetEmail(cleaner, theirJobs);
+            await smsCleanerDaySheet(cleaner, theirJobs).catch(() => {});
             daySheets++;
           } catch (e) {
             errors.push(`day-sheet ${cleaner.name}: ${String(e).slice(0, 120)}`);
@@ -119,6 +128,37 @@ export async function GET(req: NextRequest) {
       }
     } catch (e) {
       errors.push(`day-sheets: ${String(e).slice(0, 140)}`);
+    }
+
+    // ---- 3b. tomorrow's jobs nobody has tapped "Got it" on ----
+    // The pipeline's "not seen yet" chip is only useful if someone acts on
+    // it. The day before, chase the cleaner directly — and name them in the
+    // report so the office can ring if the chase goes unanswered too.
+    try {
+      const tomorrowJobs = await listAssignedJobsOn(tomorrow);
+      if (tomorrowJobs.length > 0) {
+        const cleaners = await listCleaners();
+        for (const j of tomorrowJobs) {
+          const pending = [
+            !j.acknowledged_at ? cleaners.find((c) => c.id === j.cleaner_id) : undefined,
+            j.second_cleaner_id && !j.second_acknowledged_at
+              ? cleaners.find((c) => c.id === j.second_cleaner_id)
+              : undefined,
+          ].filter((c): c is NonNullable<typeof c> => Boolean(c));
+          for (const cleaner of pending) {
+            try {
+              await sendCleanerNudgeEmail(cleaner, j);
+              await smsCleanerNudge(cleaner, j).catch(() => {});
+              nudges++;
+              unseen.push(`${j.reference} · ${cleaner.name} · ${j.start_time?.slice(0, 5) ?? "TBC"} ${j.postcode}`);
+            } catch (e) {
+              errors.push(`nudge ${j.reference}: ${String(e).slice(0, 120)}`);
+            }
+          }
+        }
+      }
+    } catch (e) {
+      errors.push(`nudges: ${String(e).slice(0, 140)}`);
     }
 
     // ---- 4. Stripe reconciliation ----
@@ -143,7 +183,7 @@ export async function GET(req: NextRequest) {
       errors.push(`reconcile: ${String(e).slice(0, 140)}`);
     }
   } finally {
-    await sendCronReportEmail({ date: today, reminders, chases, daySheets, reconciled, errors }).catch(
+    await sendCronReportEmail({ date: today, reminders, chases, daySheets, reconciled, nudges, unseen, errors }).catch(
       () => {}
     );
   }
@@ -154,6 +194,7 @@ export async function GET(req: NextRequest) {
     reminders,
     chases,
     daySheets,
+    nudges,
     reconciled,
     errors,
   });

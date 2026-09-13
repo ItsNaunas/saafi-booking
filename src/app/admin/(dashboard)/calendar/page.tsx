@@ -50,7 +50,8 @@ export default async function CalendarPage({
   const cleaner = cParam ?? "";
   let bookings = allBookings.filter((b) => b.status !== "cancelled");
   if (cleaner === "none") bookings = bookings.filter((b) => !b.cleaner_id);
-  else if (cleaner) bookings = bookings.filter((b) => b.cleaner_id === cleaner);
+  else if (cleaner)
+    bookings = bookings.filter((b) => b.cleaner_id === cleaner || b.second_cleaner_id === cleaner);
 
   // Preserve the cleaner filter across month navigation, and vice-versa. Never
   // carries the day-agenda param forward — a new month or cleaner dismisses it.

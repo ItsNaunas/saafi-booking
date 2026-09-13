@@ -15,6 +15,8 @@ import {
   createCleaner,
   listCleaners,
   setCleanerActive,
+  setCleanerToken,
+  updateCleanerEmail,
   updateCleanerHours,
   getBooking,
   getCustomer,
@@ -50,7 +52,18 @@ import { quotePrice, type Frequency } from "@/lib/pricing";
 import { newReference, spawnNextOccurrence, ensureSeriesHorizon } from "@/lib/recurring";
 import { settleBookingWithSavedCard, createCardSetupLink } from "@/lib/cardOnFile";
 import { toMinutes, toHHMM, londonWallClock } from "@/lib/scheduling";
+import { smsCleanerAssigned, smsCleanerJobChanged } from "@/lib/sms";
 import { ALLOWED_TRANSITIONS as ALLOWED } from "@/lib/statusFlow";
+
+/** The people on a job: the cleaner, and on a deep clean the second one. */
+async function assignedCleaners(b: BookingRow) {
+  const ids = [b.cleaner_id, b.second_cleaner_id ?? null].filter((x): x is string => Boolean(x));
+  if (ids.length === 0) return [];
+  const all = await listCleaners();
+  return ids
+    .map((id) => all.find((c) => c.id === id))
+    .filter((c): c is NonNullable<typeof c> => Boolean(c));
+}
 
 export async function setBookingStatus(formData: FormData) {
   const id = String(formData.get("id") ?? "");
@@ -106,13 +119,11 @@ export async function setBookingStatus(formData: FormData) {
     );
     // A live payable link for a clean that won't happen stays payable forever.
     await deactivatePaymentLink(updated).catch(() => {});
-    if (updated.cleaner_id) {
-      const cleaner = (await listCleaners()).find((c) => c.id === updated.cleaner_id);
-      if (cleaner) {
-        await sendCleanerJobChangedEmail(cleaner, updated, "cancelled").catch((e) =>
-          console.error("[admin] cleaner cancellation email failed:", e)
-        );
-      }
+    for (const cleaner of await assignedCleaners(updated)) {
+      await sendCleanerJobChangedEmail(cleaner, updated, "cancelled").catch((e) =>
+        console.error("[admin] cleaner cancellation email failed:", e)
+      );
+      await smsCleanerJobChanged(cleaner, updated, "cancelled").catch(() => {});
     }
   }
   // Completing a recurring clean books the next one automatically.
@@ -140,31 +151,49 @@ export async function stopRecurring(formData: FormData) {
 
 export async function assignCleaner(formData: FormData) {
   const id = String(formData.get("id") ?? "");
-  const cleanerId = String(formData.get("cleaner_id") ?? "");
+  const cleanerId = String(formData.get("cleaner_id") ?? "") || null;
+  // Only the deep-clean form posts a second cleaner; a standard clean's form
+  // doesn't, and "absent" there rightly means none.
+  const secondRaw = String(formData.get("second_cleaner_id") ?? "") || null;
+  const secondId = secondRaw && secondRaw !== cleanerId ? secondRaw : null;
   if (!id) return;
   const before = await getBooking(id);
-  const updated = await updateBooking(id, { cleaner_id: cleanerId || null });
+  if (!before) return;
 
-  // Reassignment: the cleaner who just lost the job used to find out by
-  // opening their link and noticing it gone — or worse, by both turning up.
-  if (updated && before?.cleaner_id && before.cleaner_id !== (cleanerId || null)) {
-    const old = (await listCleaners()).find((c) => c.id === before.cleaner_id);
-    if (old) {
-      await sendCleanerJobChangedEmail(old, updated, "reassigned").catch((e) =>
-        console.error("[admin] cleaner reassignment email failed:", e)
-      );
-    }
+  let updated: BookingRow | null;
+  try {
+    updated = await updateBooking(id, { cleaner_id: cleanerId, second_cleaner_id: secondId });
+  } catch (e) {
+    // Ahead of supabase/2026-09-13-second-cleaner.sql the column isn't there:
+    // save the first cleaner rather than nobody.
+    if (!String(e).includes("second_cleaner_id")) throw e;
+    updated = await updateBooking(id, { cleaner_id: cleanerId });
   }
+  if (!updated) return;
 
-  // Tell them. Until this existed a cleaner found out they had a job only by
-  // opening their link and noticing something new sitting there.
-  if (updated && cleanerId) {
-    const cleaner = (await listCleaners()).find((c) => c.id === cleanerId);
-    if (cleaner) {
-      await sendCleanerAssignedEmail(cleaner, updated).catch((e) =>
-        console.error("[admin] cleaner assignment email failed:", e)
-      );
-    }
+  const all = await listCleaners();
+  const byId = (cid: string | null | undefined) => (cid ? all.find((c) => c.id === cid) : undefined);
+  const was = [before.cleaner_id, before.second_cleaner_id ?? null];
+  const now = [updated.cleaner_id, updated.second_cleaner_id ?? null];
+
+  // Anyone who was on it and isn't now: used to find out by opening their
+  // link and noticing it gone — or worse, by both turning up.
+  for (const cid of was) {
+    const old = cid && !now.includes(cid) ? byId(cid) : undefined;
+    if (!old) continue;
+    await sendCleanerJobChangedEmail(old, updated, "reassigned").catch((e) =>
+      console.error("[admin] cleaner reassignment email failed:", e)
+    );
+    await smsCleanerJobChanged(old, updated, "reassigned").catch(() => {});
+  }
+  // Anyone on it now who wasn't: tell them, by email and by text.
+  for (const cid of now) {
+    const c = cid && !was.includes(cid) ? byId(cid) : undefined;
+    if (!c) continue;
+    await sendCleanerAssignedEmail(c, updated).catch((e) =>
+      console.error("[admin] cleaner assignment email failed:", e)
+    );
+    await smsCleanerAssigned(c, updated).catch(() => {});
   }
 
   revalidatePath("/admin");
@@ -172,7 +201,6 @@ export async function assignCleaner(formData: FormData) {
   revalidatePath(`/admin/booking/${id}`);
 }
 
-/** Approve or deny a cleaner's time-off request; approved days leave the rota. */
 export async function decideTimeOff(formData: FormData) {
   const id = String(formData.get("id") ?? "");
   const decision = String(formData.get("decision") ?? "");
@@ -207,6 +235,25 @@ export async function toggleCleaner(formData: FormData) {
   const active = String(formData.get("active") ?? "") === "true";
   if (!id) return;
   await setCleanerActive(id, active);
+  revalidatePath("/admin/cleaners");
+}
+
+export async function updateCleanerContact(formData: FormData) {
+  const id = String(formData.get("id") ?? "");
+  const email = String(formData.get("email") ?? "").trim().toLowerCase() || null;
+  if (!id) return;
+  if (email && !/^\S+@\S+\.\S+$/.test(email)) {
+    redirect(`/admin/cleaners?error=${encodeURIComponent("That email doesn't look right")}`);
+  }
+  await updateCleanerEmail(id, email);
+  revalidatePath("/admin/cleaners");
+}
+
+/** A lost phone is a live link in the wrong hands. New link now; the old one stops working. */
+export async function regenerateCleanerLink(formData: FormData) {
+  const id = String(formData.get("id") ?? "");
+  if (!id) return;
+  await setCleanerToken(id, crypto.randomUUID());
   revalidatePath("/admin/cleaners");
 }
 
@@ -389,12 +436,12 @@ export async function editBooking(formData: FormData) {
       );
 
       // A cleaner planning their day around the old slot needs the new one.
-      if (moved && updated.cleaner_id && updated.status === "confirmed") {
-        const cleaner = (await listCleaners()).find((c) => c.id === updated.cleaner_id);
-        if (cleaner) {
+      if (moved && updated.status === "confirmed") {
+        for (const cleaner of await assignedCleaners(updated)) {
           await sendCleanerJobChangedEmail(cleaner, updated, "moved").catch((e) =>
             console.error("[admin] cleaner moved email failed:", e)
           );
+          await smsCleanerJobChanged(cleaner, updated, "moved").catch(() => {});
         }
       }
     }

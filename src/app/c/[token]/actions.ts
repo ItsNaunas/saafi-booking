@@ -32,13 +32,19 @@ import {
 } from "@/lib/adjustments";
 import { isOutcomeReason } from "@/lib/outcomes";
 import { settleBookingWithSavedCard } from "@/lib/cardOnFile";
+import { smsCustomerRunningLate } from "@/lib/sms";
+import type { BookingRow } from "@/lib/supabaseAdmin";
+
+/** On the job as the cleaner, or as the second cleaner on a deep clean. */
+const isOnJob = (b: BookingRow, cleanerId: string) =>
+  b.cleaner_id === cleanerId || b.second_cleaner_id === cleanerId;
 
 /** Booking the cleaner is allowed to touch right now, or null. */
 async function ownConfirmedJob(token: string, bookingId: string) {
   const cleaner = await getCleanerByToken(token);
   if (!cleaner || !bookingId) return null;
   const booking = await getBooking(bookingId);
-  if (!booking || booking.cleaner_id !== cleaner.id || booking.status !== "confirmed") return null;
+  if (!booking || !isOnJob(booking, cleaner.id) || booking.status !== "confirmed") return null;
   return { cleaner, booking };
 }
 
@@ -254,7 +260,7 @@ async function ownJob(token: string, bookingId: string, allowed: string[]) {
   const cleaner = await getCleanerByToken(token);
   if (!cleaner || !bookingId) return null;
   const booking = await getBooking(bookingId);
-  if (!booking || booking.cleaner_id !== cleaner.id || !allowed.includes(booking.status)) return null;
+  if (!booking || !isOnJob(booking, cleaner.id) || !allowed.includes(booking.status)) return null;
   return { cleaner, booking };
 }
 
@@ -265,7 +271,9 @@ export async function cleanerAcknowledgeJob(formData: FormData) {
   const found = await ownJob(token, bookingId, ["confirmed"]);
   if (!found) return;
   // Best-effort pre-migration: a missing column must not break the button.
-  await markBookingAcknowledged(bookingId).catch((e) =>
+  // Two cleaners, two taps: record this one's, not the other's.
+  const who = found.booking.cleaner_id === found.cleaner.id ? "primary" : "second";
+  await markBookingAcknowledged(bookingId, who).catch((e) =>
     console.error("[cleaner] could not record acknowledgment:", e)
   );
   revalidatePath(`/c/${token}`);
@@ -285,6 +293,8 @@ export async function cleanerRunningLate(formData: FormData) {
   await sendRunningLateEmails(found.booking, found.cleaner.name, minutes).catch((e) =>
     console.error("[cleaner] running-late emails failed:", e)
   );
+  // The customer is watching the clock, not their inbox.
+  await smsCustomerRunningLate(found.booking, found.cleaner.name, minutes).catch(() => {});
   revalidatePath(`/c/${token}`);
 }
 

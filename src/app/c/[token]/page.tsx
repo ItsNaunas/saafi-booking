@@ -80,7 +80,10 @@ export default async function CleanerJobsPage({
   const cleaner = await getCleanerByToken(token);
   if (!cleaner) notFound();
 
-  const jobs = await listBookingsForCleaner(cleaner.id);
+  // Two cleaners, two "Got it"s: this viewer sees their own, not the other's.
+  const jobs = (await listBookingsForCleaner(cleaner.id)).map((j) =>
+    j.cleaner_id === cleaner.id ? j : { ...j, acknowledged_at: j.second_acknowledged_at ?? null }
+  );
   // London wall clock, not UTC: during BST the first hour after midnight used
   // to show the cleaner yesterday as "today".
   const { date: today } = londonWallClock(new Date());

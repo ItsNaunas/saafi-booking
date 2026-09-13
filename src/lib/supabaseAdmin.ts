@@ -51,6 +51,9 @@ export type BookingRow = {
   series_id: string | null;
   recurring_active: boolean;
   cleaner_id: string | null;
+  /** Deep cleans: the second person on the job (2026-09-13 migration). */
+  second_cleaner_id?: string | null;
+  second_acknowledged_at?: string | null;
   quoted_price: number;
   preferred_date: string;
   /** "09:30:00" local. Null on bookings taken before scheduling existed. */
@@ -243,6 +246,7 @@ export async function updateBooking(
       | "notes"
       | "status"
       | "cleaner_id"
+      | "second_cleaner_id"
       | "frequency"
       // Contact details, editable per booking: a customer correcting a phone
       // number or a move mid-series edits the job, not history. The customers
@@ -287,6 +291,21 @@ export async function createCleaner(name: string, phone: string, email: string |
   await rest("cleaners", { method: "POST", body: JSON.stringify({ name, phone, email }) });
 }
 
+export async function updateCleanerEmail(id: string, email: string | null): Promise<void> {
+  await rest(`cleaners?id=eq.${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: JSON.stringify({ email }),
+  });
+}
+
+/** A lost phone means a live link in the wrong hands — mint a new one; the old stops working. */
+export async function setCleanerToken(id: string, token: string): Promise<void> {
+  await rest(`cleaners?id=eq.${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: JSON.stringify({ token }),
+  });
+}
+
 export async function setCleanerActive(id: string, active: boolean): Promise<void> {
   await rest(`cleaners?id=eq.${encodeURIComponent(id)}`, {
     method: "PATCH",
@@ -305,9 +324,17 @@ export async function getCleanerByToken(token: string): Promise<CleanerRow | nul
 export async function listBookingsForCleaner(cleanerId: string): Promise<BookingRow[]> {
   // no_access included so a reported wasted journey doesn't just vanish from
   // the cleaner's portal — they get a receipt that the office has it.
-  return rest<BookingRow[]>(
-    `bookings?cleaner_id=eq.${encodeURIComponent(cleanerId)}&status=in.(confirmed,completed,no_access)&select=*&order=preferred_date.asc,start_time.asc.nullslast`
-  );
+  const id = encodeURIComponent(cleanerId);
+  const tail = `&status=in.(confirmed,completed,no_access)&select=*&order=preferred_date.asc,start_time.asc.nullslast`;
+  try {
+    // Primary or second cleaner — a deep clean is two people's job.
+    return await rest<BookingRow[]>(`bookings?or=(cleaner_id.eq.${id},second_cleaner_id.eq.${id})${tail}`);
+  } catch (e) {
+    // Ahead of supabase/2026-09-13-second-cleaner.sql the column doesn't
+    // exist and PostgREST rejects the filter — the portal must still open.
+    if (!String(e).includes("second_cleaner_id")) throw e;
+    return rest<BookingRow[]>(`bookings?cleaner_id=eq.${id}${tail}`);
+  }
 }
 
 export async function updateCleanerHours(
@@ -349,15 +376,26 @@ export async function busyBlocksForDate(
   date: string,
   excludeBookingId?: string
 ): Promise<BusyBlock[]> {
-  const rows = await rest<Pick<BookingRow, "id" | "cleaner_id" | "start_time" | "hours">[]>(
-    `bookings?preferred_date=eq.${encodeURIComponent(date)}` +
-      `&status=in.(requested,confirmed,completed,paid)` +
-      `&select=id,cleaner_id,start_time,hours`
-  );
-  return rows
-    .filter((r) => r.id !== excludeBookingId)
-    .map(busyFromBooking)
-    .filter((b): b is BusyBlock => b !== null);
+  type Row = Pick<BookingRow, "id" | "cleaner_id" | "second_cleaner_id" | "start_time" | "hours">;
+  const where = `bookings?preferred_date=eq.${encodeURIComponent(date)}&status=in.(requested,confirmed,completed,paid)`;
+  let rows: Row[];
+  try {
+    rows = await rest<Row[]>(`${where}&select=id,cleaner_id,second_cleaner_id,start_time,hours`);
+  } catch (e) {
+    // Pre-migration: the column isn't there yet; availability must not die.
+    if (!String(e).includes("second_cleaner_id")) throw e;
+    rows = await rest<Row[]>(`${where}&select=id,cleaner_id,start_time,hours`);
+  }
+  const blocks: BusyBlock[] = [];
+  for (const r of rows) {
+    if (r.id === excludeBookingId) continue;
+    const primary = busyFromBooking(r);
+    if (!primary) continue;
+    blocks.push(primary);
+    // The second cleaner on a deep clean is booked for the same window.
+    if (r.second_cleaner_id) blocks.push({ ...primary, cleanerId: r.second_cleaner_id });
+  }
+  return blocks;
 }
 
 /* ---------- add-ons (extras) ---------- */
@@ -787,10 +825,11 @@ export type PhotoRow = {
 };
 
 /** The cleaner has seen the job. Best-effort pre-migration: failure is fine. */
-export async function markBookingAcknowledged(id: string): Promise<void> {
+export async function markBookingAcknowledged(id: string, who: "primary" | "second" = "primary"): Promise<void> {
+  const column = who === "second" ? "second_acknowledged_at" : "acknowledged_at";
   await rest(`bookings?id=eq.${encodeURIComponent(id)}`, {
     method: "PATCH",
-    body: JSON.stringify({ acknowledged_at: new Date().toISOString() }),
+    body: JSON.stringify({ [column]: new Date().toISOString() }),
   });
 }
 

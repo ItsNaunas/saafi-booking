@@ -1,6 +1,14 @@
 import { listCleaners, listPendingTimeOff, type CleanerRow } from "@/lib/supabaseAdmin";
 import { site } from "@/lib/business";
-import { addCleaner, toggleCleaner, updateCleanerSchedule, decideTimeOff } from "@/app/admin/actions";
+import {
+  addCleaner,
+  toggleCleaner,
+  updateCleanerSchedule,
+  decideTimeOff,
+  updateCleanerContact,
+  regenerateCleanerLink,
+} from "@/app/admin/actions";
+import { smsConfigured } from "@/lib/sms";
 import PendingButton from "@/components/PendingButton";
 import CopyLink from "./CopyLink";
 
@@ -145,6 +153,40 @@ export default async function CleanersPage({
             </div>
             {c.active && <Schedule c={c} />}
 
+            {/* Where job alerts go. Two of the three real cleaners were added
+                with no email, which silently switched every "you've got a
+                job" message off — so the gap is said out loud here. */}
+            {c.active && (
+              <form action={updateCleanerContact} className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+                <input type="hidden" name="id" value={c.id} />
+                <label htmlFor={`email-${c.id}`} className="text-slate-500">
+                  Email
+                </label>
+                <input
+                  id={`email-${c.id}`}
+                  name="email"
+                  type="email"
+                  defaultValue={c.email ?? ""}
+                  placeholder="for job alerts"
+                  className="min-w-52 border border-slate-300 px-2 py-1 text-xs"
+                />
+                <button className="bg-slate-100 px-2 py-1 font-medium text-slate-600 hover:bg-slate-200">
+                  Save
+                </button>
+                {!c.email && !smsConfigured() && (
+                  <span className="basis-full font-medium text-amber-700">
+                    No email, and texts aren&apos;t set up yet &mdash; {c.name.split(" ")[0]} won&apos;t
+                    be told about jobs until one is added.
+                  </span>
+                )}
+                {!c.email && smsConfigured() && (
+                  <span className="basis-full text-slate-500">
+                    No email &mdash; job alerts go by text to {c.phone}.
+                  </span>
+                )}
+              </form>
+            )}
+
             {c.active && (
               <div className="mt-2 flex flex-wrap items-center gap-1 bg-slate-50 px-3 py-2 text-xs text-slate-500">
                 Job link:{" "}
@@ -152,6 +194,15 @@ export default async function CleanersPage({
                   {base}/c/{c.token}
                 </code>
                 <CopyLink url={`${base}/c/${c.token}`} phone={c.phone} />
+                <form action={regenerateCleanerLink} className="ml-auto">
+                  <input type="hidden" name="id" value={c.id} />
+                  <button
+                    className="text-slate-400 hover:text-red-600"
+                    title="Use this if their phone is lost or the link was shared. The old link stops working the moment you click."
+                  >
+                    New link
+                  </button>
+                </form>
               </div>
             )}
           </div>
