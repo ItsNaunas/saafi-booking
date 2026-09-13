@@ -1,5 +1,4 @@
 import type { Instrumentation } from "next";
-import { sendOpsAlertEmail } from "@/lib/email";
 
 // Server errors reach a human. Until this existed, a crash on a cleaner's
 // link (Supabase 504, 2026-09-13) lived only in Vercel's logs — Dulla found
@@ -19,6 +18,13 @@ const lastSent = new Map<string, number>();
 const CONTROL_FLOW = /NEXT_REDIRECT|NEXT_NOT_FOUND|NEXT_HTTP_ERROR_FALLBACK/;
 
 export const onRequestError: Instrumentation.onRequestError = async (err, request, context) => {
+  // This file is bundled for the edge runtime too (proxy.ts runs there), and
+  // the mailer pulls in Node-only modules — so the import stays dynamic and
+  // the edge copy simply steps aside. The Node runtime handles every page,
+  // route and action, which is where the errors that matter come from.
+  if (process.env.NEXT_RUNTIME !== "nodejs") return;
+  const { sendOpsAlertEmail } = await import("@/lib/email");
+
   const message = err instanceof Error ? err.message : String(err);
   if (CONTROL_FLOW.test(message)) return;
 
