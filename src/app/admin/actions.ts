@@ -49,21 +49,8 @@ import { invalidatePricingCache, loadPricingConfig } from "@/lib/pricingServer";
 import { quotePrice, type Frequency } from "@/lib/pricing";
 import { newReference, spawnNextOccurrence, ensureSeriesHorizon } from "@/lib/recurring";
 import { settleBookingWithSavedCard, createCardSetupLink } from "@/lib/cardOnFile";
-import { toMinutes, toHHMM } from "@/lib/scheduling";
-
-const ALLOWED: Record<BookingStatus, BookingStatus[]> = {
-  requested: ["confirmed", "cancelled"],
-  confirmed: ["completed", "cancelled", "no_access"],
-  completed: ["paid"],
-  // Escape hatch for a booking that reached `paid` while the work was still
-  // outstanding (the pre-2026-08-28 webhook did this to every prepaid
-  // booking): push it back into the flow. Its money survives in amount_paid.
-  paid: ["confirmed"],
-  cancelled: ["requested"], // allow re-opening a cancelled request
-  // A wasted journey is unresolved, not finished. The office decides which it
-  // becomes: cancelled and nobody pays, or completed and something is charged.
-  no_access: ["cancelled", "completed", "confirmed"],
-};
+import { toMinutes, toHHMM, londonWallClock } from "@/lib/scheduling";
+import { ALLOWED_TRANSITIONS as ALLOWED } from "@/lib/statusFlow";
 
 export async function setBookingStatus(formData: FormData) {
   const id = String(formData.get("id") ?? "");
@@ -81,6 +68,19 @@ export async function setBookingStatus(formData: FormData) {
     // payment deserves its refund conversation as much as a full one.
     if (current && paidSoFar(current) > 0 && !current.refunded_at) {
       redirect(`/admin/booking/${id}?refund=needed`);
+    }
+  }
+
+  // A job can't be finished before it has happened. "Complete" on a future
+  // date used to go through — and from there "Mark paid" — leaving a booking
+  // that looked done, vanished from the cleaner's list and calendar (both
+  // show confirmed jobs only), and hid the assign control. Same-day is fine:
+  // the office closes jobs out in the evening.
+  if (to === "completed" || to === "paid") {
+    const current = await getBooking(id);
+    const { date: today } = londonWallClock(new Date());
+    if (current && current.preferred_date > today) {
+      redirect(`/admin/booking/${id}?status_error=early`);
     }
   }
 

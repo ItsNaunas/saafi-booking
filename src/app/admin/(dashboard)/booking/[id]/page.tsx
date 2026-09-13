@@ -32,6 +32,7 @@ import { signedPhotoUrl } from "@/lib/storage";
 import { DEEP_REASON_LABEL } from "@/lib/deepClean";
 import { describeCard } from "@/lib/cardOnFile";
 import { STATUS_LABEL } from "@/lib/statusLabels";
+import { ALLOWED_TRANSITIONS } from "@/lib/statusFlow";
 
 export const dynamic = "force-dynamic";
 
@@ -47,6 +48,7 @@ export default async function BookingDetailPage({
     url?: string;
     saved?: string;
     refund?: string;
+    status_error?: string;
   }>;
 }) {
   const [{ id }, sendResult] = await Promise.all([params, searchParams]);
@@ -180,6 +182,54 @@ export default async function BookingDetailPage({
       )}
 
       <Adjustments rows={adjustments} />
+
+      {sendResult.status_error === "early" && (
+        <div className="mb-4 bg-amber-50 p-4 text-sm ring-1 ring-amber-300">
+          <p className="font-semibold text-amber-900">
+            That job hasn&apos;t happened yet &mdash; it&apos;s booked for {b.preferred_date}.
+          </p>
+          <p className="mt-1 text-amber-800">
+            Mark it complete on the day or after. Marking it done early takes it off the
+            cleaner&apos;s list and calendar and stops anyone being assigned to it.
+          </p>
+        </div>
+      )}
+
+      {/* ---------- status, by hand ----------
+          The flow moves this on its own (Confirm, the cleaner's Finish tap,
+          the payment webhook), but the office can also set it directly —
+          same transition table, same emails, same guards as the buttons. */}
+      {ALLOWED_TRANSITIONS[b.status].length > 0 && (
+        <form
+          action={setBookingStatus}
+          className="mb-4 flex flex-wrap items-center gap-2 bg-white p-4 text-sm shadow-sm ring-1 ring-slate-200"
+        >
+          <input type="hidden" name="id" value={b.id} />
+          <input type="hidden" name="from" value={b.status} />
+          <label htmlFor="status-to" className="font-semibold text-slate-900">
+            Change status
+          </label>
+          <select
+            id="status-to"
+            name="to"
+            defaultValue={ALLOWED_TRANSITIONS[b.status][0]}
+            className="border border-slate-300 px-2 py-1.5 text-sm text-slate-700"
+          >
+            {ALLOWED_TRANSITIONS[b.status].map((s) => (
+              <option key={s} value={s}>
+                {STATUS_LABEL[s]}
+              </option>
+            ))}
+          </select>
+          <button className="bg-brand-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-brand-700">
+            Set
+          </button>
+          <span className="basis-full text-xs text-slate-500">
+            Currently <b>{STATUS_LABEL[b.status]}</b>. Cancelling a paid booking goes through
+            the refund instead; completing a job before its date is blocked.
+          </span>
+        </form>
+      )}
 
       {/* ---------- booking facts ---------- */}
       <div className="mb-4 bg-white p-5 text-sm shadow-sm ring-1 ring-slate-200">

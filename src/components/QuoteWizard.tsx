@@ -238,11 +238,26 @@ export default function QuoteWizard({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // London wall-clock date, whatever the visitor's device thinks: the server
+  // validates against Europe/London, so the picker must offer the same days.
+  const today = useMemo(
+    () => new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/London" }).format(new Date()),
+    []
+  );
+  const maxDate = useMemo(() => {
+    const d = new Date(`${today}T12:00:00Z`);
+    d.setUTCDate(d.getUTCDate() + cfg.scheduling.maxDaysAhead);
+    return d.toISOString().slice(0, 10);
+  }, [today, cfg.scheduling.maxDaysAhead]);
+
   /* ---------- draft: half-finished quotes survive leaving the page ---------- */
 
   // False until the mount-time restore has run — saving before that would
   // clobber the stored draft with this render's blank defaults.
   const draftReady = useRef(false);
+  /* eslint-disable react-hooks/set-state-in-effect -- the draft lives in
+     localStorage, which only exists after mount; reading it during render
+     would make the client's first paint disagree with the server's HTML. */
   useEffect(() => {
     try {
       const raw = localStorage.getItem(DRAFT_KEY);
@@ -290,6 +305,7 @@ export default function QuoteWizard({
     draftReady.current = true;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   useEffect(() => {
     if (!draftReady.current) return;
@@ -367,18 +383,6 @@ export default function QuoteWizard({
   const startTime = pickedSlot?.key === slotKey ? pickedSlot.time : null;
   const anyTimeChosen = anyTime?.key === slotKey;
   const anySlotFree = (slots ?? []).some((s) => s.available);
-
-  // London wall-clock date, whatever the visitor's device thinks: the server
-  // validates against Europe/London, so the picker must offer the same days.
-  const today = useMemo(
-    () => new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/London" }).format(new Date()),
-    []
-  );
-  const maxDate = useMemo(() => {
-    const d = new Date(`${today}T12:00:00Z`);
-    d.setUTCDate(d.getUTCDate() + cfg.scheduling.maxDaysAhead);
-    return d.toISOString().slice(0, 10);
-  }, [today, cfg.scheduling.maxDaysAhead]);
 
   /* ---------- submit ---------- */
 

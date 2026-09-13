@@ -130,20 +130,49 @@ function creds() {
   return { url, key };
 }
 
-async function rest<T>(path: string, init?: RequestInit): Promise<T> {
+// Retry on the failures that are the platform's, not ours: a 502/503/504 from
+// the gateway (free-tier Supabase does this on a cold path — it took the
+// cleaner portal down twice on 2026-09-13), a dropped connection, a timeout.
+// Never on POST: an insert that actually landed would land twice. PATCH and
+// DELETE here are idempotent by construction (filtered by id, fixed body).
+const RETRYABLE_STATUS = new Set([502, 503, 504]);
+const REST_TIMEOUT_MS = 12_000;
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+async function rest<T>(path: string, init?: RequestInit, attempt = 0): Promise<T> {
   const { url, key } = creds();
-  const res = await fetch(`${url}/rest/v1/${path}`, {
-    ...init,
-    headers: {
-      apikey: key,
-      Authorization: `Bearer ${key}`,
-      "Content-Type": "application/json",
-      Prefer: "return=representation",
-      ...(init?.headers ?? {}),
-    },
-    cache: "no-store",
-  });
-  if (!res.ok) throw new Error(`Supabase ${path}: ${res.status} ${await res.text()}`);
+  const method = (init?.method ?? "GET").toUpperCase();
+  const canRetry = method !== "POST" && attempt < 2;
+  const backoff = () => sleep(400 * 2 ** attempt);
+
+  let res: Response;
+  try {
+    res = await fetch(`${url}/rest/v1/${path}`, {
+      ...init,
+      headers: {
+        apikey: key,
+        Authorization: `Bearer ${key}`,
+        "Content-Type": "application/json",
+        Prefer: "return=representation",
+        ...(init?.headers ?? {}),
+      },
+      cache: "no-store",
+      signal: AbortSignal.timeout(REST_TIMEOUT_MS),
+    });
+  } catch (e) {
+    if (canRetry) {
+      await backoff();
+      return rest<T>(path, init, attempt + 1);
+    }
+    throw e;
+  }
+  if (!res.ok) {
+    if (RETRYABLE_STATUS.has(res.status) && canRetry) {
+      await backoff();
+      return rest<T>(path, init, attempt + 1);
+    }
+    throw new Error(`Supabase ${path}: ${res.status} ${await res.text()}`);
+  }
   const text = await res.text();
   return (text ? JSON.parse(text) : null) as T;
 }

@@ -298,6 +298,10 @@ export default async function CleanerJobsPage({
             </a>
           </p>
           <p>
+            Phone calendars only check for new jobs once a day or so &mdash; this page is
+            always up to date, so trust it over the calendar for anything booked today.
+          </p>
+          <p>
             Tip: add this page to your home screen (Share → &ldquo;Add to Home Screen&rdquo;) and it
             opens like an app.
           </p>
