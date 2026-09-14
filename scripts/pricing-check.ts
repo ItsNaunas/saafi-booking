@@ -148,22 +148,22 @@ if (failed) {
 }
 console.log("\nAll pricing checks passed.");
 
-/* ---------- deep clean (Dulla's spec, WhatsApp 2026-09-03) ----------
-   £235 minimum (1 bed, 1 bath, kitchen, hallways), then additional room n at
-   £57 + £5n — one running sequence across every room kind. Supersedes the
-   costing sheet's per-room-type model. */
+/* ---------- deep clean (Dulla's spec, WhatsApp 2026-09-14) ----------
+   £235 for the base house (1 bed, 1 bath, 1 living, 1 dining, kitchen,
+   hallways), then a flat £58 for every room beyond it, whatever kind.
+   Supersedes the escalating £62/£67/£72 model of 2026-09-03. */
 
 const sheetExample = { bedrooms: 3, bathrooms: 1, livingRooms: 0, diningRooms: 0, additionalRooms: 0 };
-check("deep: 1 bed 1 bath = the £235 minimum", deepPrice({ bedrooms: 1, bathrooms: 1, livingRooms: 0, diningRooms: 0, additionalRooms: 0 }), 235);
-check("deep: studio never drops below the floor", deepPrice({ bedrooms: 0, bathrooms: 1, livingRooms: 0, diningRooms: 0, additionalRooms: 0 }), 235);
-check("deep: room 2 costs £62", deepPrice({ bedrooms: 2, bathrooms: 1, livingRooms: 0, diningRooms: 0, additionalRooms: 0 }), 297);
-check("deep: room 3 costs £67 (3 bed 1 bath = £364)", deepPrice(sheetExample), 364);
-check("deep: 3 bed 1 bath + windows + laundry = £480", deepPrice(sheetExample, ["windows", "laundry"]), 480);
-check(
-  "deep: all room kinds share one escalating sequence",
-  deepPrice({ bedrooms: 2, bathrooms: 2, livingRooms: 1, diningRooms: 0, additionalRooms: 0 }),
-  235 + 62 + 67 + 72
-);
+const r = (bedrooms: number, bathrooms: number, livingRooms = 0, diningRooms = 0) =>
+  ({ bedrooms, bathrooms, livingRooms, diningRooms, additionalRooms: 0 });
+check("deep: 1 bed 1 bath = the £235 base", deepPrice(r(1, 1)), 235);
+check("deep: Dulla's screenshot case, 1/1/1/1 = £235 not £364", deepPrice(r(1, 1, 1, 1)), 235);
+check("deep: studio never drops below the floor", deepPrice(r(0, 1)), 235);
+check("deep: one extra bedroom = +£58", deepPrice(r(2, 1)), 293);
+check("deep: 3 bed 1 bath = £351", deepPrice(sheetExample), 351);
+check("deep: 3 bed 1 bath + windows + laundry = £467", deepPrice(sheetExample, ["windows", "laundry"]), 467);
+check("deep: second living room and second dining room each +£58", deepPrice(r(1, 1, 2, 2)), 351);
+check("deep: every room kind is the same flat £58", deepPrice(r(2, 2, 2, 2)), 235 + 4 * 58);
 
 const m = deepMinutes(sheetExample, ["windows", "laundry"]);
 check("deep: sheet example = 480 man-minutes", m, 480);

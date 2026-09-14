@@ -689,7 +689,7 @@ export default function QuoteWizard({
               2026-09-01 review found nobody saw it. */}
           <p className="mt-3 bg-slate-50 px-3 py-2 text-xs text-slate-600">
             {isDeep
-              ? "Kitchen (with the oven), hallways and landings are always included — no need to count them."
+              ? "Kitchen (with the oven), hallways and landings are always in — and so are your first living room and dining room."
               : "Kitchen, hallways and landings are always included — no need to count them."}
           </p>
 

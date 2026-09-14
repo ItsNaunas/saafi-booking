@@ -1,29 +1,25 @@
 // Deep clean pricing — a different animal to the standard clean.
 //
-// Standard is hourly: time × rate, discounted for frequency. Deep is a flat
-// £235 minimum with escalating per-room additions — Dulla's spec, WhatsApp
-// group 2026-09-03, which SUPERSEDES the costing sheet's per-room-type model:
+// Standard is hourly: time x rate, discounted for frequency. Deep is a flat
+// £235 base plus £58 per additional room — Dulla's spec, WhatsApp group
+// 2026-09-14, which SUPERSEDES the escalating model of 2026-09-03:
 //
-//   minimum deep clean        £235     (1 bed, 1 bath, kitchen + oven,
-//                                       hallways/landings — the base house)
-//   each additional room      £57 + £5 per room already added:
-//                             room 2 = £62, room 3 = £67, room 4 = £72…
-//                             one running sequence across ALL room kinds
-//                             ("the same for kitchen living room and rest
-//                             of the toggles")
-//   extras                    £58 flat each (unchanged — not in Dulla's spec)
+//   base deep clean           £235     1 bed, 1 bath, 1 living room, 1 dining
+//                                       room, kitchen + oven, hallways/landings
+//   each additional room      +£58     flat, whatever kind of room it is
+//   extras                    £58 flat each (windows, laundry, dusting, fridge)
 //   labour                    2 cleaners at £21/hr each
 //   room time                 60 man-minutes per room
 //   3rd cleaner               when elapsed time would exceed 6 hours
 //
-// The time figures feed the diary ONLY. Dulla, same message: "The time taken
+// The time figures feed the diary ONLY. Dulla, 2026-09-03: "The time taken
 // for a deep clean should NOT be visible for a consumer to see" — nothing
 // customer-facing may show deep-clean hours or an end time.
 //
 // Worked examples asserted in scripts/pricing-check.ts:
-//   1 bed 1 bath                     = £235
-//   3 bed 1 bath                     = £235 + 62 + 67 = £364
-//   3 bed 1 bath + windows + laundry = £480
+//   1 bed 1 bath 1 living 1 dining     = £235   (Dulla's own screenshot case)
+//   3 bed 1 bath                       = £235 + 58 + 58 = £351
+//   3 bed 1 bath + windows + laundry   = £467
 
 export type DeepRoomCounts = {
   bedrooms: number;
@@ -36,12 +32,10 @@ export type DeepRoomCounts = {
 };
 
 export const deepConfig = {
-  /** £ minimum — the 1 bed / 1 bath house, kitchen and hallways included. */
+  /** £ for the base house: 1 bed, 1 bath, 1 living, 1 dining, kitchen, hallways. */
   basePrice: 235,
-  /** Additional room n costs this… */
-  additionalRoomBase: 57,
-  /** …plus this × n: £62, £67, £72 and so on. */
-  additionalRoomStep: 5,
+  /** £ for every room beyond the base, whatever kind it is. */
+  additionalRoomPrice: 58,
   /** £ per extra (windows, laundry, dusting, fridge) — flat, not hourly. */
   extraPrice: 58,
   /** Man-minutes per room, flat across types — diary only, never billed. */
@@ -50,7 +44,7 @@ export const deepConfig = {
   baseCleaners: 2,
   /** A job that would keep the pair longer than this gains a third cleaner. */
   maxElapsedHours: 6,
-};
+}
 
 /**
  * Deep extras. Deliberately NOT the standard addons table: these bill flat at
@@ -91,34 +85,31 @@ export const DEEP_REASON_LABEL: Record<string, string> = Object.fromEntries(
 );
 
 /**
- * Rooms beyond the £235 base house (which already covers one bedroom, one
- * bathroom, the kitchen and the hallways). Every kind of room joins the same
- * escalating sequence — a 2nd bathroom and a living room cost £62 and £67,
- * whichever order you count them in.
+ * Rooms beyond the base house, which already covers one bedroom, one
+ * bathroom, one living room, one dining room, the kitchen and the hallways.
+ * Every kind of room beyond that counts once.
  */
 function additionalRoomCount(rooms: DeepRoomCounts): number {
   return (
     Math.max(0, rooms.bedrooms - 1) +
     Math.max(0, rooms.bathrooms - 1) +
-    rooms.livingRooms +
-    rooms.diningRooms +
+    Math.max(0, rooms.livingRooms - 1) +
+    Math.max(0, rooms.diningRooms - 1) +
     rooms.additionalRooms
   );
 }
 
 /**
- * The whole job: £235 minimum, then room n at £57 + £5n (£62, £67, £72…),
- * extras flat on top. A studio never drops below the base — £235 is a floor,
- * not a formula.
+ * The whole job: £235 for the base house, £58 for every room beyond it,
+ * extras flat on top. A studio never drops below the base — £235 is a
+ * floor, not a formula.
  */
 export function deepPrice(
   rooms: DeepRoomCounts,
   extras: DeepExtraKey[] = [],
   cfg = deepConfig,
 ): number {
-  const k = additionalRoomCount(rooms);
-  // Σ i=1..k of (base + step·i) = base·k + step·k(k+1)/2
-  const additions = cfg.additionalRoomBase * k + (cfg.additionalRoomStep * k * (k + 1)) / 2;
+  const additions = additionalRoomCount(rooms) * cfg.additionalRoomPrice;
   return cfg.basePrice + additions + extras.length * cfg.extraPrice;
 }
 

@@ -159,8 +159,8 @@ export default async function Home() {
     cfg,
   );
   const oneOffVisit = quotePrice(exampleHours, true, cfg, "one_off");
-  // The same 2-bed example home, deep (Dulla's 2026-09-03 model): £235 base
-  // + £62 for the second bedroom = £297.
+  // The same 2-bed example home, deep (Dulla's 2026-09-14 model): £235 base
+  // + £58 for the second bedroom = £293.
   const deepVisit = deepPrice({ bedrooms: 2, bathrooms: 1, livingRooms: 0, diningRooms: 0, additionalRooms: 0 });
   const typicalVisit = quotePrice(
     recommendedHours({ bedrooms: 2, bathrooms: 1, diningRooms: 0, livingRooms: 0 }, cfg),
