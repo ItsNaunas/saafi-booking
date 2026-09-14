@@ -284,6 +284,12 @@ export default function QuoteWizard({
           setStandardAddons(d.standardAddons.filter((k): k is string => typeof k === "string"));
         if (Array.isArray(d.deepAddons))
           setDeepAddons(d.deepAddons.filter((k): k is string => typeof k === "string"));
+        // Required on the deep tab, so losing it leaves the restored form
+        // blocked on a question they already answered.
+        if (typeof d.deepReason === "string") setDeepReason(d.deepReason);
+        // Consent: this defaults to ticked, so NOT restoring a deliberate
+        // untick would silently re-tick it on the way back from the FAQs.
+        if (typeof d.marketingOk === "boolean") setMarketingOk(d.marketingOk);
         if (
           !initialFrequency &&
           typeof d.frequency === "string" &&
@@ -320,6 +326,8 @@ export default function QuoteWizard({
           customerProvidesProducts,
           standardAddons,
           deepAddons,
+          deepReason,
+          marketingOk,
           frequency,
           preferredDate,
           name,
@@ -340,6 +348,8 @@ export default function QuoteWizard({
     customerProvidesProducts,
     standardAddons,
     deepAddons,
+    deepReason,
+    marketingOk,
     frequency,
     preferredDate,
     name,
