@@ -25,6 +25,8 @@ import { ISSUE_LABEL } from "@/lib/statusLabels";
 import { CLEANER_HOURLY, workedSplit, type WorkedSplit } from "@/lib/cleanerPay";
 import JobClock from "./JobClock";
 import ActualHoursField from "./ActualHoursField";
+import JobChecklist from "./JobChecklist";
+import { checklistFor } from "@/lib/checklist";
 import LocationStamp from "./LocationStamp";
 import PendingButton from "@/components/PendingButton";
 import { REASONS, elapsedHours } from "@/lib/adjustments";
@@ -491,6 +493,12 @@ function JobCard({
         <form action={cleanerFinishJob} className="mt-3 bg-slate-50 p-3 ring-1 ring-slate-200">
           <input type="hidden" name="token" value={token} />
           <input type="hidden" name="booking_id" value={j.id} />
+
+          {/* Inside the Finish form on purpose: the hidden field it renders
+              posts with the rest, so the ticks need no wiring of their own.
+              Collapsed by default — it is long, and the clock and hours are
+              what the cleaner opens this card for. */}
+          <JobChecklist bookingId={j.id} sections={checklistFor(j)} />
 
           {/* The live tracker: ticks every second while the job runs. The
               static line beneath survives without JS. */}

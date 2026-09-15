@@ -14,6 +14,7 @@ import {
   insertTimeOffRequest,
   insertBookingPhoto,
   voidOpenAdjustments,
+  saveBookingChecklist,
   paidSoFar,
   type IssueCategory,
 } from "@/lib/supabaseAdmin";
@@ -31,6 +32,7 @@ import {
   type ReasonCode,
 } from "@/lib/adjustments";
 import { isOutcomeReason } from "@/lib/outcomes";
+import { checklistFor, checklistTotal } from "@/lib/checklist";
 import { settleBookingWithSavedCard } from "@/lib/cardOnFile";
 import { smsCustomerRunningLate } from "@/lib/sms";
 import type { BookingRow } from "@/lib/supabaseAdmin";
@@ -160,6 +162,29 @@ export async function cleanerFinishJob(formData: FormData) {
         cleaner.name
       ).catch((e) => console.error("[cleaner] approval alert failed:", e));
     }
+  }
+
+  // The SOP checklist the cleaner ticked on their phone. Best-effort and
+  // after the fact: the job is already finished, and a checklist that fails
+  // to save must not undo that.
+  try {
+    const raw = String(formData.get("checklist") ?? "");
+    if (raw) {
+      const parsed = JSON.parse(raw) as unknown;
+      if (Array.isArray(parsed)) {
+        const sections = checklistFor(booking);
+        const valid = new Set(sections.flatMap((sec) => sec.items.map((i) => i.key)));
+        const doneKeys = parsed.filter((k): k is string => typeof k === "string" && valid.has(k));
+        await saveBookingChecklist(bookingId, {
+          v: 1,
+          done: doneKeys,
+          total: checklistTotal(sections),
+          at: finishedAt,
+        });
+      }
+    }
+  } catch (e) {
+    console.error("[cleaner] checklist parse failed:", e);
   }
 
   // The series carries on from the original quote, not from today's actuals.

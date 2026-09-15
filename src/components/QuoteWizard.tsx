@@ -113,11 +113,16 @@ export default function QuoteWizard({
   const [postcode, setPostcode] = useState(initialPostcode);
   const [postcodeState, setPostcodeState] = useState<"idle" | "checking" | "ok" | "unknown">("idle");
   const [rooms, setRooms] = useState<RoomCounts>({
-    bedrooms: 2,
-    bathrooms: 1,
+    bedrooms: initialRooms?.bedrooms ?? 2,
+    bathrooms: initialRooms?.bathrooms ?? 1,
     diningRooms: 0,
     livingRooms: 0,
-    ...initialRooms,
+    // These counts belong exclusively to a deep clean. Keep the standard
+    // room model zeroed so switching tabs can never re-price it.
+  });
+  const [deepRoomCounts, setDeepRoomCounts] = useState({
+    diningRooms: initialRooms?.diningRooms ?? 0,
+    livingRooms: initialRooms?.livingRooms ?? 0,
   });
   const [hours, setHours] = useState<number | null>(null); // null = follow the recommendation
   // null until the customer answers — the 2026-08-25 review made this
@@ -181,11 +186,11 @@ export default function QuoteWizard({
     () => ({
       bedrooms: rooms.bedrooms,
       bathrooms: rooms.bathrooms,
-      livingRooms: rooms.livingRooms,
-      diningRooms: rooms.diningRooms,
+      livingRooms: deepRoomCounts.livingRooms,
+      diningRooms: deepRoomCounts.diningRooms,
       additionalRooms: 0,
     }),
-    [rooms]
+    [rooms.bedrooms, rooms.bathrooms, deepRoomCounts]
   );
   const deepExtras = useMemo(
     () => DEEP_EXTRAS.filter((e) => deepAddons.includes(e.key)).map((e) => e.key),
@@ -273,8 +278,18 @@ export default function QuoteWizard({
           setRooms((cur) => ({
             bedrooms: clampCount(r.bedrooms, cur.bedrooms, 10),
             bathrooms: clampCount(r.bathrooms, cur.bathrooms, 6),
-            diningRooms: clampCount(r.diningRooms, cur.diningRooms, 4),
-            livingRooms: clampCount(r.livingRooms, cur.livingRooms, 4),
+            diningRooms: 0,
+            livingRooms: 0,
+          }));
+          // Backwards compatibility for drafts saved before deep-only room
+          // counts had their own state.
+          const savedDeep =
+            d.deepRoomCounts && typeof d.deepRoomCounts === "object"
+              ? (d.deepRoomCounts as Partial<RoomCounts>)
+              : r;
+          setDeepRoomCounts((cur) => ({
+            diningRooms: clampCount(savedDeep.diningRooms, cur.diningRooms, 4),
+            livingRooms: clampCount(savedDeep.livingRooms, cur.livingRooms, 4),
           }));
         }
         if (typeof d.hours === "number" && Number.isFinite(d.hours)) setHours(d.hours);
@@ -322,6 +337,7 @@ export default function QuoteWizard({
           service,
           postcode,
           rooms,
+          deepRoomCounts,
           hours,
           customerProvidesProducts,
           standardAddons,
@@ -344,6 +360,7 @@ export default function QuoteWizard({
     service,
     postcode,
     rooms,
+    deepRoomCounts,
     hours,
     customerProvidesProducts,
     standardAddons,
@@ -454,7 +471,9 @@ export default function QuoteWizard({
         body: JSON.stringify({
           postcode,
           serviceType: service,
-          rooms,
+          // Standard cleans must never receive deep-only living/dining
+          // counts. Deep cleans get those counts from their isolated state.
+          rooms: isDeep ? deepRooms : rooms,
           hours: chosenHours,
           // A deep clean is two cleaners arriving fully kitted — the products
           // question is a standard-clean concern and never shown on this tab.
@@ -682,15 +701,15 @@ export default function QuoteWizard({
             <div className="mt-3 grid gap-x-6 gap-y-3 sm:grid-cols-2">
               <Counter
                 label="Living rooms"
-                value={rooms.livingRooms}
+                value={deepRoomCounts.livingRooms}
                 max={4}
-                onChange={(v) => setRooms({ ...rooms, livingRooms: v })}
+                onChange={(v) => setDeepRoomCounts({ ...deepRoomCounts, livingRooms: v })}
               />
               <Counter
                 label="Dining rooms"
-                value={rooms.diningRooms}
+                value={deepRoomCounts.diningRooms}
                 max={4}
-                onChange={(v) => setRooms({ ...rooms, diningRooms: v })}
+                onChange={(v) => setDeepRoomCounts({ ...deepRoomCounts, diningRooms: v })}
               />
             </div>
           )}

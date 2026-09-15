@@ -5,6 +5,7 @@ import { secret } from "./env";
 import type { ReasonCode } from "./adjustments";
 import { busyFromBooking, type BusyBlock, type SchedulableCleaner } from "./scheduling";
 import type { OutcomeReason } from "./outcomes";
+import type { ChecklistRecord } from "./checklist";
 
 export type BookingStatus =
   | "requested"
@@ -40,6 +41,8 @@ export type BookingRow = {
   cleaners_needed?: number;
   /** Deep cleans only: why the customer says the house needs one. */
   deep_reason?: string | null;
+  /** SOP checklist as saved at Finish (2026-09-15 migration). */
+  checklist?: ChecklistRecord | null;
   /** One GPS fix at start and finish — a stamp, not a track. */
   started_lat?: number | null;
   started_lng?: number | null;
@@ -704,6 +707,18 @@ export async function listAssignedJobsOn(date: string): Promise<BookingRow[]> {
       `bookings?status=eq.confirmed&preferred_date=eq.${date}&cleaner_id=not.is.null&select=*&order=start_time.asc.nullslast`
     )) ?? []
   );
+}
+
+/**
+ * The SOP checklist, written after the job is already marked finished.
+ * Deliberately its own call: losing a checklist must never lose a Finish,
+ * and the column may not exist yet.
+ */
+export async function saveBookingChecklist(id: string, record: ChecklistRecord): Promise<void> {
+  await rest(`bookings?id=eq.${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: JSON.stringify({ checklist: record }),
+  }).catch((e) => console.error("[checklist] not saved:", e));
 }
 
 export async function markReminderSent(id: string): Promise<void> {

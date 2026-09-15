@@ -30,6 +30,7 @@ import { outcomeLabel, chargeableJourney } from "@/lib/outcomes";
 import { ISSUE_LABEL } from "@/lib/statusLabels";
 import { signedPhotoUrl } from "@/lib/storage";
 import { DEEP_REASON_LABEL } from "@/lib/deepClean";
+import { checklistFor, missingLabels } from "@/lib/checklist";
 import { describeCard } from "@/lib/cardOnFile";
 import { STATUS_LABEL } from "@/lib/statusLabels";
 import { ALLOWED_TRANSITIONS } from "@/lib/statusFlow";
@@ -66,6 +67,9 @@ export default async function BookingDetailPage({
       photos.map(async (ph) => ({ ...ph, url: await signedPhotoUrl(ph.path).catch(() => null) }))
     )
   ).filter((ph) => ph.url);
+
+  // What the cleaner ticked off, and — the useful half — what they didn't.
+  const checklistMissing = b.checklist ? missingLabels(checklistFor(b), b.checklist) : [];
 
   // Tolerate the card columns not existing yet (pre-migration).
   const customer = b.customer_id ? await getCustomer(b.customer_id).catch(() => null) : null;
@@ -337,6 +341,32 @@ export default async function BookingDetailPage({
               </li>
             ))}
           </ul>
+        </div>
+      )}
+
+      {b.checklist && (
+        <div className="mb-4 bg-white p-5 text-sm shadow-sm ring-1 ring-slate-200">
+          <h2 className="mb-2 font-semibold text-slate-900">
+            Checklist &mdash;{" "}
+            <span className="tnum">
+              {b.checklist.done.length} of {b.checklist.total}
+            </span>{" "}
+            ticked
+          </h2>
+          {checklistMissing.length === 0 ? (
+            <p className="text-brand-800">Every item on the SOP list was ticked off.</p>
+          ) : (
+            <>
+              <p className="mb-2 text-slate-600">Not ticked:</p>
+              <ul className="space-y-1">
+                {checklistMissing.map((m) => (
+                  <li key={m} className="border-l-2 border-amber-300 pl-3 text-slate-600">
+                    {m}
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
         </div>
       )}
 
