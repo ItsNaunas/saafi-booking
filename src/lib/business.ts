@@ -36,9 +36,9 @@ export const site = {
 
 export const contact = {
   email: "info@saaficleaningservice.com",
-  /** REAL — the business number, supplied 2026-09-02. */
-  phoneDisplay: "07835 532920",
-  phoneHref: "+447835532920",
+  /** REAL — the business number, updated 2026-09-16. */
+  phoneDisplay: "07864 161387",
+  phoneHref: "+447864161387",
   /** INVENTED — confirm the hours someone actually answers. */
   hours: "Mon to Sat, 8am to 6pm",
 } as const;

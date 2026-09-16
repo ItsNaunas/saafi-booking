@@ -18,7 +18,7 @@
 // this file.
 
 import { secret } from "./env";
-import { site } from "./business";
+import { contact, site } from "./business";
 import { formatTime } from "./scheduling";
 import type { BookingRow } from "./supabaseAdmin";
 
@@ -29,8 +29,8 @@ export function smsConfigured(): boolean {
 }
 
 /**
- * UK numbers as people type them ("07835 532920", "07835532920",
- * "+44 7835 532920", "447835532920") to E.164. Anything that isn't
+ * UK numbers as people type them ("07864 161387", "07864161387",
+ * "+44 7864 161387", "447864161387") to E.164. Anything that isn't
  * recognisably a UK mobile is returned null rather than guessed at.
  */
 export function toE164Uk(raw: string): string | null {
@@ -136,7 +136,7 @@ export async function smsCustomerReminder(b: BookingRow): Promise<void> {
   if (!smsConfigured()) return;
   await sendSms(
     b.customer_phone,
-    `SAAFI Cleaning: we're coming tomorrow, ${when(b)}. Please make sure we can get in as agreed. Need to change it? Ring 07835 532920.`
+    `SAAFI Cleaning: we're coming tomorrow, ${when(b)}. Please make sure we can get in as agreed. Need to change it? Ring ${contact.phoneDisplay}.`
   );
 }
 
