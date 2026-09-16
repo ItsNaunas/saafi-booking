@@ -144,30 +144,33 @@ export default async function CleanerJobsPage({
     });
   }
 
-  return (
-    <main className="min-h-screen bg-slate-50 px-4 py-8">
-      <div className="mx-auto max-w-lg">
-        <p className="text-xs font-bold tracking-[0.2em] text-brand-800">SAAFI CLEANING</p>
-        <h1 className="text-2xl font-bold text-slate-900">
-          Hi {cleaner.name.split(" ")[0]} 👋
-        </h1>
-        <p className="mb-6 text-sm text-slate-500">Your SAAFI jobs</p>
+  // The one job being worked on right now. While it exists the page is about
+  // that job and nothing else: a cleaner mid-clean was scrolling past two
+  // other jobs, their hours and their time off to reach Finish.
+  const activeJob =
+    [...overdue, ...todaysJobs].find((j) => j.started_at && j.status === "confirmed") ?? null;
+  const restToday = todaysJobs.filter((j) => j.id !== activeJob?.id);
+  const restOverdue = overdue.filter((j) => j.id !== activeJob?.id);
 
-        {overdue.length > 0 && (
-          <Section title={`Still open (${overdue.length})`}>
+  const otherSections = (
+    <>
+        {restOverdue.length > 0 && (
+          <Section title={`Still open (${restOverdue.length})`}>
             <p className="mb-2 text-xs text-amber-700">
               These jobs are past their date but never finished — tap finish if the clean
               happened, or ring the office if it didn&apos;t.
             </p>
-            {overdue.map((j) => (
+            {restOverdue.map((j) => (
               <JobCard key={j.id} j={j} token={token} live photos={photoCounts.get(j.id)} />
             ))}
           </Section>
         )}
 
-        <Section title={`Today (${todaysJobs.length})`}>
-          {todaysJobs.length === 0 && <Empty text="No jobs today." />}
-          {todaysJobs.map((j) => (
+        <Section title={`Today (${restToday.length})`}>
+          {restToday.length === 0 && (
+            <Empty text={activeJob ? "Nothing else today." : "No jobs today."} />
+          )}
+          {restToday.map((j) => (
             <JobCard key={j.id} j={j} token={token} live photos={photoCounts.get(j.id)} />
           ))}
         </Section>
@@ -296,6 +299,44 @@ export default async function CleanerJobsPage({
           </Section>
         )}
 
+    </>
+  );
+
+  return (
+    <main
+      className={`min-h-screen bg-slate-50 px-4 py-8 ${activeJob ? "pb-28" : ""}`}
+    >
+      <div className="mx-auto max-w-lg">
+        <p className="text-xs font-bold tracking-[0.2em] text-brand-800">SAAFI CLEANING</p>
+        <h1 className="text-2xl font-bold text-slate-900">
+          {activeJob ? "You're on a job" : `Hi ${cleaner.name.split(" ")[0]} 👋`}
+        </h1>
+        <p className="mb-6 text-sm text-slate-500">
+          {activeJob
+            ? `${activeJob.address_line}, ${activeJob.postcode}`
+            : "Your SAAFI jobs"}
+        </p>
+
+        {activeJob ? (
+          <>
+            <JobCard
+              j={activeJob}
+              token={token}
+              live
+              photos={photoCounts.get(activeJob.id)}
+            />
+            {/* Everything else is still one tap away, just not in the way. */}
+            <details className="mt-6 border-t border-slate-200 pt-4">
+              <summary className="cursor-pointer list-none py-2 text-sm font-semibold text-slate-500">
+                Your other jobs and hours &rsaquo;
+              </summary>
+              <div className="mt-2">{otherSections}</div>
+            </details>
+          </>
+        ) : (
+          otherSections
+        )}
+
         <div className="mt-8 space-y-2 border-t border-slate-200 pt-4 text-center text-xs text-slate-500">
           <p>
             <a href={`/c/${token}/calendar.ics`} className="font-semibold text-brand-700 underline underline-offset-2">
@@ -312,6 +353,29 @@ export default async function CleanerJobsPage({
           </p>
         </div>
       </div>
+
+      {/* The primary action, pinned. Finish used to sit below the hours, the
+          reason, the note and — since the SOP list landed — up to 43 tick
+          boxes. The button is outside the form and reaches it by id, which
+          HTML allows; pressing it twice is harmless because the action
+          refuses a job that is no longer 'confirmed'. */}
+      {activeJob && (
+        <div className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white/95 px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur">
+          <div className="mx-auto flex max-w-lg items-center justify-between gap-3">
+            <div className="min-w-0">
+              <p className="truncate text-xs text-slate-500">On site at {activeJob.postcode}</p>
+              <JobClock startedAt={activeJob.started_at as string} compact />
+            </div>
+            <button
+              type="submit"
+              form={`finish-${activeJob.id}`}
+              className="shrink-0 rounded-full bg-brand-600 px-6 py-3 text-base font-bold text-white hover:bg-brand-700"
+            >
+              ✓ Finish job
+            </button>
+          </div>
+        </div>
+      )}
     </main>
   );
 
@@ -490,7 +554,11 @@ function JobCard({
       )}
 
       {running && (
-        <form action={cleanerFinishJob} className="mt-3 bg-slate-50 p-3 ring-1 ring-slate-200">
+        <form
+          id={`finish-${j.id}`}
+          action={cleanerFinishJob}
+          className="mt-3 bg-slate-50 p-3 ring-1 ring-slate-200"
+        >
           <input type="hidden" name="token" value={token} />
           <input type="hidden" name="booking_id" value={j.id} />
 

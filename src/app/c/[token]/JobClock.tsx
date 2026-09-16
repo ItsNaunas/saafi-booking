@@ -8,7 +8,14 @@
 
 import { useEffect, useRef } from "react";
 
-export default function JobClock({ startedAt }: { startedAt: string }) {
+export default function JobClock({
+  startedAt,
+  compact = false,
+}: {
+  startedAt: string;
+  /** Sticky-bar size: the card above is already showing the big one. */
+  compact?: boolean;
+}) {
   const big = useRef<HTMLSpanElement>(null);
   const small = useRef<HTMLSpanElement>(null);
 
@@ -29,9 +36,17 @@ export default function JobClock({ startedAt }: { startedAt: string }) {
   return (
     // Empty until the effect's first tick — the static started-at line below
     // carries the information for no-JS clients.
-    <p className="tnum text-3xl font-bold tracking-tight text-slate-900" aria-hidden="true">
+    <p
+      className={`tnum font-bold tracking-tight text-slate-900 ${
+        compact ? "text-lg" : "text-3xl"
+      }`}
+      aria-hidden="true"
+    >
       <span ref={big} />
-      <span ref={small} className="text-lg font-medium text-slate-400" />
+      <span
+        ref={small}
+        className={`font-medium text-slate-400 ${compact ? "text-xs" : "text-lg"}`}
+      />
     </p>
   );
 }
