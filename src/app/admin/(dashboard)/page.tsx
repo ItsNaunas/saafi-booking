@@ -4,6 +4,7 @@ import {
   listBookings,
   listCleaners,
   listPendingAdjustments,
+  countRecentMailFailures,
   isPaidInFull,
   type BookingRow,
   type BookingStatus,
@@ -58,11 +59,14 @@ export default async function PipelinePage({
   searchParams: Promise<{ q?: string }>;
 }) {
   const { q } = await searchParams;
-  const [allBookings, cleaners, pendingAdjustments] = await Promise.all([
+  const [allBookings, cleaners, pendingAdjustments, mailFailures] = await Promise.all([
     listBookings(),
     listCleaners(),
     // Tolerate the table not existing yet (pre-migration).
     listPendingAdjustments().catch(() => []),
+    // Emails the provider refused in the last 24h. -1 = can't tell (the table
+    // isn't there yet), which shows nothing rather than a false all-clear.
+    countRecentMailFailures(24).catch(() => -1),
   ]);
   const activeCleaners = cleaners.filter((c) => c.active);
 
@@ -178,6 +182,20 @@ export default async function PipelinePage({
               </li>
             ))}
           </ul>
+        </div>
+      )}
+
+      {mailFailures > 0 && (
+        <div className="mb-4 bg-amber-50 p-4 ring-1 ring-amber-300">
+          <h2 className="font-semibold text-amber-900">
+            {mailFailures} email{mailFailures === 1 ? "" : "s"} couldn&apos;t be sent in the last 24
+            hours
+          </h2>
+          <p className="mt-1 text-sm text-amber-900">
+            The mail provider turned them down — usually the free daily limit. Confirmations,
+            reminders and payment links may not be reaching people. Nothing is lost from the
+            bookings themselves.
+          </p>
         </div>
       )}
 
