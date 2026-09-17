@@ -939,3 +939,122 @@ export async function recordChargeAttempt(id: string, error: string | null): Pro
     body: JSON.stringify({ charge_attempted_at: new Date().toISOString(), charge_error: error }),
   });
 }
+
+/* ---------- ops events: mail failures + the office digest queue ---------- *
+ *  supabase/2026-09-17-ops-events.sql. Every function here degrades to a
+ *  no-op if that migration hasn't been pasted yet — none of it is allowed to
+ *  break a booking, a payment or a cleaner's day.
+ * ------------------------------------------------------------------------ */
+
+export type OfficeNotice = {
+  id: number;
+  at: string;
+  title: string;
+  detail: string | null;
+  booking_id: string | null;
+};
+
+/**
+ * Record a rejected send.
+ *
+ * Deliberately silent: this runs from inside the mailer's own failure path,
+ * and a failure logger that can itself throw would turn one undelivered email
+ * into a failed booking.
+ */
+export async function recordEmailFailure(f: {
+  provider: string;
+  status?: number | null;
+  subject?: string | null;
+  detail?: string | null;
+}): Promise<void> {
+  try {
+    await rest("ops_email_failures", {
+      method: "POST",
+      headers: { Prefer: "return=minimal" },
+      body: JSON.stringify({
+        provider: f.provider,
+        status: f.status ?? null,
+        subject: (f.subject ?? "").slice(0, 200) || null,
+        detail: (f.detail ?? "").slice(0, 500) || null,
+      }),
+    });
+  } catch {
+    /* pre-migration, or the database is down too — nothing useful left to do */
+  }
+}
+
+/** Cap on what a count query will read back. A number at the cap means "at least". */
+export const FAILURE_COUNT_CAP = 500;
+
+/**
+ * Provider-side send failures in the last `hours` — rate limits (429), server
+ * errors (5xx) and requests that never got a reply at all.
+ *
+ * 4xx is excluded on purpose: a bad address or a malformed payload is our
+ * fault and is not fixed by anyone looking at a dashboard at 7am. What this
+ * counts is "the mail provider is refusing us", which is the capped-out case
+ * this whole table exists for.
+ *
+ * The cutoff is computed here rather than passed in, so callers — including
+ * server components, where reading the clock during render is impure — can
+ * just ask for a window.
+ *
+ * Returns -1 when the count cannot be read, so callers can tell "nothing
+ * wrong" from "no idea" — they must never render -1 as zero failures.
+ */
+export async function countRecentMailFailures(hours = 24): Promise<number> {
+  try {
+    const since = new Date(Date.now() - hours * 60 * 60 * 1000).toISOString();
+    const rows = await rest<{ id: number }[]>(
+      `ops_email_failures?at=gte.${encodeURIComponent(since)}` +
+        `&or=(status.eq.429,status.gte.500,status.is.null)` +
+        `&select=id&limit=${FAILURE_COUNT_CAP}`
+    );
+    return rows.length;
+  } catch {
+    return -1;
+  }
+}
+
+/**
+ * Park an FYI for the next office digest. False when it could not be parked —
+ * the caller then sends it the old way, because losing an office notice is
+ * worse than sending one email too many.
+ */
+export async function queueOfficeNotice(n: {
+  title: string;
+  detail?: string | null;
+  bookingId?: string | null;
+}): Promise<boolean> {
+  try {
+    await rest("ops_office_queue", {
+      method: "POST",
+      headers: { Prefer: "return=minimal" },
+      body: JSON.stringify({
+        title: n.title.slice(0, 300),
+        detail: (n.detail ?? "").slice(0, 1000) || null,
+        booking_id: n.bookingId ?? null,
+      }),
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Everything parked and not yet digested, oldest first. */
+export async function listQueuedOfficeNotices(): Promise<OfficeNotice[]> {
+  return rest<OfficeNotice[]>(
+    "ops_office_queue?sent_at=is.null&select=id,at,title,detail,booking_id&order=at.asc&limit=200"
+  );
+}
+
+/** Mark notices as digested. Only called once the digest has actually sent. */
+export async function markOfficeNoticesSent(ids: number[]): Promise<void> {
+  if (ids.length === 0) return;
+  await rest(`ops_office_queue?id=in.(${ids.map((n) => Number(n)).join(",")})`, {
+    method: "PATCH",
+    headers: { Prefer: "return=minimal" },
+    body: JSON.stringify({ sent_at: new Date().toISOString() }),
+  });
+}

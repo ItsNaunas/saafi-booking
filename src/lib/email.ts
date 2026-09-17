@@ -1,4 +1,5 @@
-// Customer-facing emails via Resend. No-ops silently until RESEND_API_KEY is set.
+// Customer-facing emails via Resend, falling back to Brevo. No-ops silently
+// until at least one provider key is set.
 //
 // Every email is built from ONE template: dark header with the wordmark, a
 // white card with the message, a key/value table for the details, one button
@@ -11,6 +12,7 @@
 // styles, system fonts, no external assets. Square corners, per the site.
 
 import type { BookingRow } from "./supabaseAdmin";
+import { recordEmailFailure, queueOfficeNotice } from "./supabaseAdmin";
 import { agreedPriceFor, paidSoFar } from "./money";
 import { secret } from "./env";
 import { formatTime, formatTimeRange } from "@/lib/scheduling";
@@ -178,17 +180,19 @@ function manageLine(reference: string): string | null {
   return url ? `View, pay for, or change this booking any time: ${url}` : null;
 }
 
-async function send(mail: Mail): Promise<{ ok: boolean; reason?: string }> {
-  const key = secret("RESEND_API_KEY");
-  if (!key) return { ok: false, reason: "email isn't configured" };
-  if (!looksLikeARealAddress(mail.to)) return { ok: false, reason: "no real email address" };
+type SendResult = { ok: boolean; reason?: string };
+type Attempt = { ok: boolean; status: number; detail: string };
 
-  const from = process.env.ALERT_EMAIL_FROM ?? "bookings@saaficleaningservice.com";
+const FROM_NAME = "SAAFI Cleaning Service";
+const fromAddress = () =>
+  process.env.ALERT_EMAIL_FROM ?? "bookings@saaficleaningservice.com";
+
+async function viaResend(mail: Mail, key: string): Promise<Attempt> {
   const res = await fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
     body: JSON.stringify({
-      from: `SAAFI Cleaning Service <${from}>`,
+      from: `${FROM_NAME} <${fromAddress()}>`,
       to: [mail.to],
       // Replies go to the address on the business card, which someone reads —
       // not the sending address, which may not be a real mailbox at all.
@@ -198,12 +202,137 @@ async function send(mail: Mail): Promise<{ ok: boolean; reason?: string }> {
       text: renderText(mail),
     }),
   });
+  return { ok: res.ok, status: res.status, detail: res.ok ? "" : (await res.text()).slice(0, 500) };
+}
 
-  if (!res.ok) {
-    console.error(`[email] "${mail.subject}" rejected:`, res.status, await res.text());
-    return { ok: false, reason: `provider returned ${res.status}` };
+/** Same message, Brevo's shape. Their transactional endpoint, not SMTP. */
+async function viaBrevo(mail: Mail, key: string): Promise<Attempt> {
+  const res = await fetch("https://api.brevo.com/v3/smtp/email", {
+    method: "POST",
+    headers: { "api-key": key, "content-type": "application/json", accept: "application/json" },
+    body: JSON.stringify({
+      sender: { name: FROM_NAME, email: fromAddress() },
+      to: [{ email: mail.to }],
+      replyTo: { email: mail.replyTo ?? contact.email },
+      subject: mail.subject,
+      htmlContent: renderHtml(mail),
+      textContent: renderText(mail),
+    }),
+  });
+  return { ok: res.ok, status: res.status, detail: res.ok ? "" : (await res.text()).slice(0, 500) };
+}
+
+/**
+ * One message, through whichever provider will take it.
+ *
+ * Resend's free tier stops at 100 a day and 3,000 a month. Every send in this
+ * file is best-effort by design, so hitting either cap fails silently — the
+ * first anyone would know is a customer ringing about a confirmation that
+ * never arrived. Two changes fix that without spending anything:
+ *
+ *   1. A second provider picks up a 429 or a 5xx. Brevo's free tier is 300 a
+ *      day with no monthly ceiling, so the two stacked are ~400 a day for £0.
+ *      BREVO_API_KEY unset is the normal state and simply means one provider,
+ *      exactly as Resend and Twilio were dormant before their keys existed.
+ *   2. Every refusal is recorded where /api/health can see it, so a monitor
+ *      outside this system can alarm — the alert path must not run through
+ *      the mail provider that is the thing failing.
+ *
+ * A 4xx that isn't a rate limit stops the chain: a bad address or a malformed
+ * payload is our fault, and the second provider would only reject it too and
+ * burn its quota doing so.
+ */
+export function shouldTryNextProvider(status: number): boolean {
+  // 0 = the request never got a reply (DNS, TLS, timeout). Worth another door.
+  if (status === 0) return true;
+  // The whole point: out of quota here does not mean out of quota there.
+  if (status === 429) return true;
+  // Their fault, and probably transient.
+  if (status >= 500) return true;
+  // Any other 4xx is the message itself — a bad address, a malformed payload,
+  // a rejected sender. Another provider rejects it too, for free quota it
+  // then no longer has.
+  return false;
+}
+
+async function send(mail: Mail): Promise<SendResult> {
+  if (!looksLikeARealAddress(mail.to)) return { ok: false, reason: "no real email address" };
+
+  const resendKey = secret("RESEND_API_KEY");
+  const brevoKey = secret("BREVO_API_KEY");
+
+  const providers = [
+    resendKey ? { name: "resend", run: () => viaResend(mail, resendKey) } : null,
+    brevoKey ? { name: "brevo", run: () => viaBrevo(mail, brevoKey) } : null,
+  ].filter((p): p is { name: string; run: () => Promise<Attempt> } => p !== null);
+
+  if (providers.length === 0) return { ok: false, reason: "email isn't configured" };
+
+  let last = { provider: "none", status: 0 };
+
+  for (const p of providers) {
+    let attempt: Attempt;
+    try {
+      attempt = await p.run();
+    } catch (e) {
+      // Never got a reply at all — DNS, TLS, timeout. Recorded with a null
+      // status so the health count still treats it as the provider's side.
+      console.error(`[email] "${mail.subject}" threw at ${p.name}:`, e);
+      await recordEmailFailure({
+        provider: p.name,
+        status: null,
+        subject: mail.subject,
+        detail: String(e).slice(0, 500),
+      });
+      last = { provider: p.name, status: 0 };
+      continue;
+    }
+
+    if (attempt.ok) return { ok: true };
+
+    console.error(`[email] "${mail.subject}" rejected by ${p.name}:`, attempt.status, attempt.detail);
+    await recordEmailFailure({
+      provider: p.name,
+      status: attempt.status,
+      subject: mail.subject,
+      detail: attempt.detail,
+    });
+    last = { provider: p.name, status: attempt.status };
+
+    if (!shouldTryNextProvider(attempt.status)) break;
   }
-  return { ok: true };
+
+  return { ok: false, reason: `${last.provider} returned ${last.status || "no reply"}` };
+}
+
+/**
+ * An FYI for the office, parked for the 07:00 digest instead of sent now.
+ *
+ * Nine of this file's sends went to one inbox, and the two that grow with the
+ * business — a booking arriving, a payment landing — are also the two nobody
+ * has to act on the moment they happen: both are already on the pipeline the
+ * office is logged into. Batching them is most of the daily send volume, for
+ * free, and leaves that inbox readable.
+ *
+ * Deliberately NOT for anything a human must act on now. A wasted journey, an
+ * approval, a money mismatch and a cleaner reporting a problem all still send
+ * the moment they happen — see the other callers of officeAddress().
+ *
+ * If the queue can't take it (migration not pasted, database unreachable) the
+ * notice is sent the old way rather than dropped.
+ */
+async function officeFyi(
+  notice: { title: string; detail?: string | null; bookingId?: string | null },
+  immediate: () => Mail
+): Promise<void> {
+  // No office address configured: queueing would pile up notices that can
+  // never be delivered. Drop it, which is exactly what send() did with an
+  // empty recipient before any of this existed.
+  if (!officeAddress()) return;
+
+  const queued = await queueOfficeNotice(notice);
+  if (queued) return;
+  await send(immediate()).catch(() => {});
 }
 
 const officeAddress = () => process.env.ALERT_EMAIL_TO ?? "";
@@ -459,16 +588,25 @@ export async function sendPaymentReceivedEmails(
     reference: booking.reference,
   }).catch(() => {});
 
-  await send({
-    to: officeAddress(),
-    subject: `Paid — ${booking.customer_name}, £${amount} (${booking.reference})`,
-    heading: `${booking.customer_name} has paid £${amount}`,
-    rows: [
-      ["Clean", whenLine(booking)],
-      ["Where", `${booking.address_line}, ${booking.postcode}`],
-    ],
-    reference: booking.reference,
-  }).catch(() => {});
+  // The office copy is pure FYI — Stripe has already told them, and the
+  // booking has already flipped on the pipeline. Morning digest.
+  await officeFyi(
+    {
+      title: `Paid — ${booking.customer_name}, £${amount} (${booking.reference})`,
+      detail: `${whenLine(booking)} · ${booking.address_line}, ${booking.postcode}`,
+      bookingId: booking.id,
+    },
+    () => ({
+      to: officeAddress(),
+      subject: `Paid — ${booking.customer_name}, £${amount} (${booking.reference})`,
+      heading: `${booking.customer_name} has paid £${amount}`,
+      rows: [
+        ["Clean", whenLine(booking)],
+        ["Where", `${booking.address_line}, ${booking.postcode}`],
+      ],
+      reference: booking.reference,
+    })
+  );
 }
 
 /**
@@ -773,7 +911,7 @@ export async function sendNewBookingAlertEmail(opts: {
   notes: string;
   reference: string;
 }): Promise<void> {
-  await send({
+  const mail = (): Mail => ({
     to: officeAddress(),
     subject: `New booking request — ${opts.name}, ${opts.preferredDate} (£${opts.quotedPrice})`,
     heading: `New booking — ${opts.name}`,
@@ -800,7 +938,31 @@ export async function sendNewBookingAlertEmail(opts: {
       opts.notes ? ["Notes", opts.notes] : null,
     ],
     reference: opts.reference,
-  }).catch(() => {});
+  });
+
+  // A request sits in the pipeline until someone confirms it — there is
+  // nothing to do about it in the ninety seconds after it lands, and it is
+  // already the first card on the dashboard. Goes in the morning digest.
+  await officeFyi(
+    {
+      title: `New booking — ${opts.name}, ${opts.preferredDate} (£${opts.quotedPrice})`,
+      detail: [
+        `${opts.addressLine}, ${opts.postcode}`,
+        opts.startTime
+          ? `${opts.preferredDate}, ${formatTimeRange(opts.startTime, opts.hours)}`
+          : `${opts.preferredDate} — NO TIME SET, agree one on the call`,
+        opts.serviceType === "deep"
+          ? `Deep clean — ${opts.cleanersNeeded} cleaners, ${opts.hours}h`
+          : `Standard, ${opts.hours}h`,
+        `${opts.frequency.replace(/_/g, " ")} · ${opts.phone}`,
+        opts.addonLabels.length ? `Extras: ${opts.addonLabels.join(", ")}` : "",
+        `Ref ${opts.reference}`,
+      ]
+        .filter(Boolean)
+        .join(" · "),
+    },
+    mail
+  );
 }
 
 /* ------------------------------------------------------------------ *
@@ -896,13 +1058,24 @@ export async function sendCronReportEmail(opts: {
   /** Tomorrow's jobs chased because the cleaner hadn't tapped "Got it". */
   nudges?: number;
   unseen?: string[];
+  /** Notices drained from the office queue into this morning's digest. */
+  digested?: number;
+  /** Provider-side send failures in the last 24h. -1 = could not be read. */
+  mailFailures?: number;
   errors: string[];
 }): Promise<void> {
   const reconciled = opts.reconciled ?? 0;
   const nudges = opts.nudges ?? 0;
+  const digested = opts.digested ?? 0;
+  const mailFailures = opts.mailFailures ?? 0;
   // Quiet days stay quiet: a daily "0/0/0 all fine" trains people to delete
   // the report unread. Send only when something happened or something broke.
-  if (opts.reminders + opts.chases + opts.daySheets + reconciled + nudges === 0 && opts.errors.length === 0)
+  // A day the mailer was being refused is never quiet, whatever else it did.
+  if (
+    opts.reminders + opts.chases + opts.daySheets + reconciled + nudges + digested === 0 &&
+    opts.errors.length === 0 &&
+    mailFailures <= 0
+  )
     return;
   await send({
     to: officeAddress(),
@@ -916,10 +1089,57 @@ export async function sendCronReportEmail(opts: {
       ["Cleaner day-sheets", String(opts.daySheets)],
       reconciled > 0 && ["Payments repaired", String(reconciled)],
       nudges > 0 && ["Cleaners chased (job not seen yet)", String(nudges)],
+      digested > 0 && ["Office notices in the digest", String(digested)],
+      // Surfaced here as well as on /api/health, because the quota resets at
+      // midnight UTC and this runs at 07:00 London — so the report about
+      // yesterday's refusals is itself very likely to get through.
+      mailFailures > 0 && [
+        "⚠ Emails refused by the provider (24h)",
+        `${mailFailures} — check the send quota`,
+      ],
       ...(opts.unseen ?? []).map((u, i): Row => [`Not seen ${i + 1}`, u]),
       ...opts.errors.map((e, i): Row => [`Problem ${i + 1}`, e]),
     ],
   }).catch(() => {});
+}
+
+/**
+ * The office digest: everything parked since the last one, in a single email.
+ *
+ * Sent straight through send() rather than queued, for the obvious reason.
+ */
+export async function sendOfficeDigestEmail(
+  notices: { at: string; title: string; detail: string | null }[]
+): Promise<{ ok: boolean; reason?: string }> {
+  if (notices.length === 0) return { ok: true };
+  // Nowhere to send it and nothing anyone can do about that here. Reported as
+  // ok so the caller marks the notices done rather than re-queueing them for
+  // every morning from now until somebody sets ALERT_EMAIL_TO.
+  if (!officeAddress()) return { ok: true };
+
+  const time = (iso: string) => {
+    const d = new Date(iso);
+    return Number.isNaN(d.getTime())
+      ? ""
+      : d.toLocaleTimeString("en-GB", { timeZone: "Europe/London", hour: "2-digit", minute: "2-digit" });
+  };
+
+  // Paragraphs, not the details table: that table's label column is
+  // white-space:nowrap and sized for "Customer" and "Where", so a notice
+  // title in it would stretch the email sideways on a phone.
+  return send({
+    to: officeAddress(),
+    subject: `Overnight: ${notices.length} thing${notices.length === 1 ? "" : "s"} to know`,
+    heading: `${notices.length} thing${notices.length === 1 ? "" : "s"} happened since yesterday`,
+    intro: [
+      "None of these needed you at the time — anything that did was emailed the moment it happened.",
+      ...notices.map((n) =>
+        [[time(n.at), n.title].filter(Boolean).join(" · "), n.detail]
+          .filter(Boolean)
+          .join(" — ")
+      ),
+    ],
+  });
 }
 
 /**
@@ -1012,20 +1232,30 @@ export async function sendTimeOffRequestEmail(
   toDate: string,
   note: string | null,
 ): Promise<void> {
-  await send({
-    to: officeAddress(),
-    subject: `Time off requested — ${cleanerName}`,
-    heading: `${first(cleanerName)} has asked for time off`,
-    rows: [
-      ["Who", cleanerName],
-      ["From", fromDate],
-      ["To", toDate],
-    ],
-    intro: note ? [`"${note}"`] : undefined,
-    outro: [
-      "Approve or decline it from the Cleaners page. Approved days disappear from what customers can book.",
-    ],
-  }).catch(() => {});
+  // Leave is asked for days or weeks ahead; it has never needed to interrupt
+  // an afternoon. Morning digest.
+  await officeFyi(
+    {
+      title: `Time off requested — ${cleanerName}`,
+      detail: [`${fromDate} to ${toDate}`, note ? `"${note}"` : "", "Decide on the Cleaners page"]
+        .filter(Boolean)
+        .join(" · "),
+    },
+    () => ({
+      to: officeAddress(),
+      subject: `Time off requested — ${cleanerName}`,
+      heading: `${first(cleanerName)} has asked for time off`,
+      rows: [
+        ["Who", cleanerName],
+        ["From", fromDate],
+        ["To", toDate],
+      ],
+      intro: note ? [`"${note}"`] : undefined,
+      outro: [
+        "Approve or decline it from the Cleaners page. Approved days disappear from what customers can book.",
+      ],
+    })
+  );
 }
 
 /** The office decided — the cleaner hears it in writing, not by silence. */

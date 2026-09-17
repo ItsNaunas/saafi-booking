@@ -9,6 +9,9 @@ import {
   markReminderSent,
   markPaymentChased,
   amountDueFor,
+  listQueuedOfficeNotices,
+  markOfficeNoticesSent,
+  countRecentMailFailures,
   type BookingRow,
 } from "@/lib/supabaseAdmin";
 import { reconcileStripePayments } from "@/lib/reconcile";
@@ -20,6 +23,7 @@ import {
   sendCleanerNudgeEmail,
   sendCronReportEmail,
   sendOpsAlertEmail,
+  sendOfficeDigestEmail,
 } from "@/lib/email";
 
 export const runtime = "nodejs";
@@ -35,11 +39,13 @@ export const maxDuration = 300;
  * anything else with the secret — n8n, curl, a person — can call it too, and
  * the sent-markers make every re-run safe.
  *
- * Four jobs, in the order money cares about least to most:
+ * Six jobs, in the order money cares about least to most:
  *   1. day-before reminders    — tomorrow's confirmed cleans
  *   2. unpaid-link nudges      — completed, link 3+ days old, never chased
  *   3. cleaner day-sheets      — today's assigned jobs, one email per cleaner
  *   4. Stripe reconciliation   — money Stripe took that no booking shows
+ *   5. office digest           — everything parked since yesterday, in one
+ *   6. mailer health           — how many sends the provider refused in 24h
  *
  * Each section is best-effort and isolated: a Resend hiccup on reminders must
  * not kill the day-sheets. Whatever happens is reported to the office — from a
@@ -63,6 +69,8 @@ export async function GET(req: NextRequest) {
   let nudges = 0;
   const unseen: string[] = [];
   let reconciled = 0;
+  let digested = 0;
+  let mailFailures = 0;
 
   try {
     // ---- 1. day-before reminders ----
@@ -182,10 +190,47 @@ export async function GET(req: NextRequest) {
     } catch (e) {
       errors.push(`reconcile: ${String(e).slice(0, 140)}`);
     }
+
+    // ---- 5. the office digest ----
+    // Everything parked since the last run, as one email instead of one each.
+    // Marked sent only after the digest actually leaves: a failed send leaves
+    // the notices queued, so tomorrow's digest carries them rather than the
+    // office silently never hearing about them.
+    try {
+      const notices = await listQueuedOfficeNotices();
+      if (notices.length > 0) {
+        const sent = await sendOfficeDigestEmail(notices);
+        if (sent.ok) {
+          await markOfficeNoticesSent(notices.map((n) => n.id));
+          digested = notices.length;
+        } else {
+          errors.push(`office digest: ${sent.reason ?? "not sent"}`);
+        }
+      }
+    } catch (e) {
+      errors.push(`office digest: ${String(e).slice(0, 140)}`);
+    }
+
+    // ---- 6. how the mailer itself has been doing ----
+    // Read last, so the count includes anything this run just hit.
+    try {
+      mailFailures = Math.max(0, await countRecentMailFailures(24));
+    } catch {
+      /* the report is still worth sending without it */
+    }
   } finally {
-    await sendCronReportEmail({ date: today, reminders, chases, daySheets, reconciled, nudges, unseen, errors }).catch(
-      () => {}
-    );
+    await sendCronReportEmail({
+      date: today,
+      reminders,
+      chases,
+      daySheets,
+      reconciled,
+      nudges,
+      unseen,
+      digested,
+      mailFailures,
+      errors,
+    }).catch(() => {});
   }
 
   return NextResponse.json({
@@ -196,6 +241,8 @@ export async function GET(req: NextRequest) {
     daySheets,
     nudges,
     reconciled,
+    digested,
+    mailFailures,
     errors,
   });
 }

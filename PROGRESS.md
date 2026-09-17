@@ -1,8 +1,19 @@
 # PROGRESS — SAAFI Booking CRM
 
-*Updated: 2026-08-28 (full functionality audit + fixes: money path, self-serve, hardening)*
+*Updated: 2026-09-17 (mail failover + office digest + health-visible send failures)*
 
 **State: LIVE at https://saaficleaningservice.com.**
+
+**2026-09-17 — the mailer stops being able to fail silently, and stops shouting.**
+- **The problem.** Every send in `lib/email.ts` is best-effort by design — right, and it meant a capped-out provider looked exactly like a quiet day. Resend's free tier is **100/day and 3,000/month**, and nine of the file's twenty sends went to one office inbox, two of them (a booking arriving, a payment landing) growing with the business. The natural alarm, `sendOpsAlertEmail`, is itself an email, so the warning that email has stopped could not send.
+- **Provider failover.** `send()` now tries Resend, then Brevo, on a 429, a 5xx or no reply at all. A 4xx that isn't a rate limit stops the chain — a bad address is ours to fix and would only burn the second provider's quota too. The rule is a pure `shouldTryNextProvider()` with **10/10 checks** in `scripts/mail-failover-check.ts`. `BREVO_API_KEY` unset is the normal state and simply means one provider, exactly as Resend and Twilio were dormant before their keys existed. Brevo's free tier is 300/day with no monthly cap, so the two stacked are **~400/day for £0**.
+- **Every refusal is recorded** in `ops_email_failures`, and **`/api/health` reports it** — `mail.failures24h`, and 503 once provider-side failures cross `EMAIL_FAILURE_ALERT_THRESHOLD` (default 5). The alert path deliberately does not run through the provider that is failing: point a free monitor (UptimeRobot, BetterStack, Cronitor) at it. 4xx is excluded from the count on purpose; it measures "the provider is refusing us", not "someone typed their address wrong".
+- **Office FYIs are batched.** New booking, payment received and time-off requests are parked in `ops_office_queue` and drained into one **digest at 07:00** (cron section 5). Anything a human must act on *now* still sends the moment it happens — wasted journey, adjustment approval, ops/money alert, cleaner issue report. If the queue can't take a notice it is sent the old way rather than dropped; with no `ALERT_EMAIL_TO` it is never queued, so nothing accumulates undeliverably.
+- **The office can see it too**: amber banner on the pipeline when sends were refused in the last 24h, and a row in the daily cron report — which works because the quota resets at midnight UTC and the report goes at 07:00 London.
+- **Migration to paste: `supabase/2026-09-17-ops-events.sql`.** Until it is, all of this degrades to a no-op: failures go unrecorded, health reports `mail.status: "unknown"`, and office notices send immediately exactly as before.
+- Build, typecheck and lint clean; 56/56 pricing + 59/59 scheduling + 10/10 failover checks pass.
+- **Still open:** cleaner comms are still email (SMS costs ~4p a text; web push to the portal would be free but needs a home-screen install on iOS), and nobody has created the Brevo account yet — the code path is live and dormant.
+
 
 **2026-09-01 — second audit acted on end-to-end** (commits 3f7051d, 50d6465, 4c0cb41; orchestrated build — money-path corrections done directly, design/UX batches fanned out to parallel agents with file-level specs, then integrated, built, deployed and smoke-tested):
 - **Money model**: gross vs net paid split in lib/money.ts (refunds finally subtract), paid-transition gated on money covering the price (a part payment can no longer settle a bill), payment idempotent by intent identity, extra/short/over payments all alert the office, refund records what Stripe actually returned + shortfall alert, Stripe links capped at one completed session, card settle refuses unfinished work, cleaner hours field live-syncs to the clock (ActualHoursField — the stale default was silently billing booked hours), savePricing blank-field zero-wipe fixed, emails lowercased everywhere, per-booking cron error isolation.
