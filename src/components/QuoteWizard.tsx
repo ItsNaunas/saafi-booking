@@ -1298,7 +1298,10 @@ function PricePanel({
           </>
         ) : (
           <>
-        <PanelRow k="Rate" v={`${formatGBP(cfg.hourlyRate)}/h`} />
+        {/* No hourly rate here. The landing page dropped it for the same
+            reason — an "/h" figure beside a total reads as the price of the
+            whole clean, and invites arithmetic against the total rather than
+            a decision. The duration below is what the customer chose. */}
         <PanelRow
           k="Duration"
           v={
