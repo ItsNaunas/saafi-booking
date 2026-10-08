@@ -1,8 +1,23 @@
 # PROGRESS — SAAFI Booking CRM
 
-*Updated: 2026-08-28 (full functionality audit + fixes: money path, self-serve, hardening)*
+*Updated: 2026-10-08 (site opened to search engines; Sept work recorded from git history)*
 
-**State: LIVE at https://saaficleaningservice.com.**
+**State: LIVE at https://saaficleaningservice.com — and indexable as of 2026-10-08.**
+
+**2026-10-08 — open to Google** (commit 72c1825, deployed to prod via CLI — pushes do not auto-deploy this project).
+- Every fact in `lib/business.ts` confirmed real by Naunas: hours (Mon–Sat 8am–6pm), Oxford as the base locality, and all four trust claims (ID/right-to-work checks, references, public liability insurance — purchased, not just budgeted — and training). This supersedes the 08-24 note below that vetting/insurance were deliberately absent.
+- `DEMO_CONTENT` → false, so `robots.txt` now allows crawling (disallows `/admin`, `/c/`, `/b/`, `/paid`, `/api/`) and points at `sitemap.xml`. Verified live.
+- `layout.tsx` emits `google-site-verification` from the `GOOGLE_SITE_VERIFICATION` env var when set (not set yet).
+- **Still open:** Search Console + Google Business Profile, both under SAAFI's own Google account (family's clicks; they send the HTML-tag code, we set the env var + redeploy). `www` serves 200 rather than redirecting to the apex — canonical covers it, but set the redirect in Vercel → Domains.
+
+**2026-09-02 → 09-24 — recorded from git, not written up at the time:**
+- 09-01 meeting round (7807991): OX-only service area enforced, real business number, cleaner balance.
+- **Deep clean built** as a service type, repriced twice to Dulla's spec — 09-03 (£235 floor + £62/£67/£72 rooms) then 09-14 (base covers 1/1/1/1, then flat £58 a room); deep cleans must state a reason; walkthrough/proof requirement removed 09-07.
+- Re-themed to SAAFI brand blue (#2291e5), real living-room hero, real favicon, socials (@saafi_cl) in footer + schema.
+- Placeholder reviews removed 09-10 (DMCC Act); marketing opt-out added; replies go to info@.
+- Production hardening 09-13: errors reach a human, `/api/health`, security headers.
+- Cleaner portal: texts, second cleaner on deep cleans, nudges, link rotation, SOP checklist recorded at Finish, page follows the active job.
+- Business number 07864 161387 everywhere (09-16); hourly rate dropped from the quote panel (09-24).
 
 **2026-09-01 — second audit acted on end-to-end** (commits 3f7051d, 50d6465, 4c0cb41; orchestrated build — money-path corrections done directly, design/UX batches fanned out to parallel agents with file-level specs, then integrated, built, deployed and smoke-tested):
 - **Money model**: gross vs net paid split in lib/money.ts (refunds finally subtract), paid-transition gated on money covering the price (a part payment can no longer settle a bill), payment idempotent by intent identity, extra/short/over payments all alert the office, refund records what Stripe actually returned + shortfall alert, Stripe links capped at one completed session, card settle refuses unfinished work, cleaner hours field live-syncs to the clock (ActualHoursField — the stale default was silently billing booked hours), savePricing blank-field zero-wipe fixed, emails lowercased everywhere, per-booking cron error isolation.
@@ -97,10 +112,11 @@
 **Deploy: LIVE (2026-07-19).** Vercel project `saafi-booking` (itsnaunas-projects, Hobby), production at **https://saafi-booking.vercel.app**. Env (`SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`) set on Production. Prod smoke test passed: booking submitted on the live site landed in the London Supabase (then deleted).
 
 **Next steps:**
-1. **Run both migrations** in SAAFI's Supabase SQL editor, then deploy: `2026-08-20-price-adjustments.sql` (adjustment columns) and `2026-08-21-costing-sheet-rates.sql` (the real rates). Until then the live site keeps quoting the old £25/h numbers.
-2. Ask SAAFI (spec-doc open items): Deep Clean pricing (£300 flat vs hourly?) -> then build it as a service type; minimum contract for recurring; product surcharge amount; keep four-weekly?
+0. **Search Console + Google Business Profile** under SAAFI's Google account (see 2026-10-08). Then the `www` → apex redirect in Vercel.
+1. ~~Run both migrations~~ ✅ verified applied 2026-08-24 (see correction above).
+2. ~~Deep Clean pricing -> build it~~ ✅ built 09-03, repriced 09-14. Still to ask SAAFI: minimum contract for recurring; keep four-weekly?
 3. Revoke the temporary Supabase PAT (supabase.com/dashboard/account/tokens in SAAFI's account) — build used it, no longer needed. For future hands-off DB work: invite the main Naunas Supabase account into SAAFI's org as Developer.
 4. ~~Point `saaficleaningservice.com` at the Vercel project~~ ✅ 2026-08-20 — apex + www live with SSL.
-5. Set service-area prefixes once SAAFI confirm coverage postcodes (self-serve in `/admin/pricing`).
+5. ~~Set service-area prefixes~~ ✅ 09-02 — OX only, enforced in `service_areas`.
 6. ~~Resend domain verification -> booking alert emails~~ ✅ 2026-08-20. Twilio if SMS confirmations wanted (doc §11) — still open.
 7. Phase 3 payments (Stripe): card saved at booking, charged after the clean at the approved final price. Needs a Stripe account in the business's name. The adjustment engine above is the half that doesn't need Stripe.
