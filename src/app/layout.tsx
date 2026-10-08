@@ -48,6 +48,11 @@ export const metadata: Metadata = {
       "Family-run home cleaning. See your price online in under a minute — clear per-visit prices, no hidden extras, and pay securely online when you book.",
   },
   twitter: { card: "summary_large_image" },
+  // Search Console ownership, verified from SAAFI's own Google account. The
+  // code lives in Vercel env so it can be set without a commit; unset, no tag.
+  ...(process.env.GOOGLE_SITE_VERIFICATION && {
+    verification: { google: process.env.GOOGLE_SITE_VERIFICATION },
+  }),
 };
 
 export default function RootLayout({

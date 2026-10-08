@@ -7,10 +7,9 @@
  * LocalBusiness structured data all read from here. Replacing something is
  * editing one line in this file — never a hunt through components.
  *
- * Everything below is written to READ as real, because the page has to look
- * finished when it is shown to SAAFI. None of it IS real. That combination is
- * useful in a demo and dangerous on an indexed public site, which is what
- * DEMO_CONTENT exists to manage.
+ * Everything below was confirmed real on 2026-10-08 and the site is now open
+ * to crawlers. Anything new that is not yet confirmed must not land here
+ * without setting DEMO_CONTENT back to true.
  */
 
 /**
@@ -25,7 +24,7 @@
  * Flip to false in the SAME commit that replaces the last invented value
  * below. Not before, and not separately.
  */
-export const DEMO_CONTENT: boolean = true;
+export const DEMO_CONTENT: boolean = false;
 
 export const site = {
   url: "https://saaficleaningservice.com",
@@ -39,15 +38,13 @@ export const contact = {
   /** REAL — the business number, updated 2026-09-16. */
   phoneDisplay: "07864 161387",
   phoneHref: "+447864161387",
-  /** INVENTED — confirm the hours someone actually answers. */
+  /** REAL — confirmed by Naunas 2026-10-08. */
   hours: "Mon to Sat, 8am to 6pm",
 } as const;
 
 /**
- * PARTLY CONFIRMED — SAAFI serve Oxfordshire (2026-09-01 meeting: "restrict
- * it to only OX"). Oxford as the locality is an inference from that, not a
- * confirmed trading address; a local service business needs a real locality
- * here to appear in local results, so confirm it with the family.
+ * REAL — SAAFI serve Oxfordshire (2026-09-01 meeting: "restrict it to only
+ * OX"), and Oxford as the base locality was confirmed by Naunas 2026-10-08.
  */
 export const address = {
   locality: "Oxford",
@@ -103,15 +100,12 @@ export type Review = {
 export const reviews: Review[] = [];
 
 /**
- * INVENTED CLAIMS, and the most consequential invention in this file.
+ * REAL — all four confirmed by Naunas 2026-10-08, including that public
+ * liability cover is purchased, not just budgeted.
  *
  * Every line is a commercial and legal claim about the safety of a stranger
- * entering someone's home. "Insured" in particular is either true and evidenced
- * by a policy number, or it is a misrepresentation — SAAFI's costing sheet
- * budgets for insurance, and budgeted is not purchased.
- *
- * Confirm each one individually. Delete any they cannot evidence: three honest
- * checks beat four where one is aspirational.
+ * entering someone's home. If any stops being true (a policy lapses, a hire
+ * skips the checks), delete that line the same day.
  */
 export type Check = { title: string; text: string };
 
