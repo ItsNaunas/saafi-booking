@@ -140,6 +140,14 @@ export async function smsCustomerReminder(b: BookingRow): Promise<void> {
   );
 }
 
+export async function smsCustomerReviewRequest(b: BookingRow, reviewUrl: string): Promise<void> {
+  if (!smsConfigured()) return;
+  await sendSms(
+    b.customer_phone,
+    `SAAFI Cleaning: thanks for having us yesterday! If you've a minute, a quick Google review really helps a small local business: ${reviewUrl}`
+  );
+}
+
 export async function smsCustomerRunningLate(b: BookingRow, cleanerName: string, minutes: number): Promise<void> {
   if (!smsConfigured()) return;
   await sendSms(

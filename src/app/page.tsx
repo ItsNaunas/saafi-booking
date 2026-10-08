@@ -17,6 +17,7 @@ import Reviews from "@/components/Reviews";
 import ServiceArea from "@/components/ServiceArea";
 import StickyQuoteBar from "@/components/StickyQuoteBar";
 import StickyHeader from "@/components/StickyHeader";
+import SiteFooter from "@/components/SiteFooter";
 import Reveal from "@/components/Reveal";
 import AnimatedPrice from "@/components/AnimatedPrice";
 import {
@@ -376,6 +377,21 @@ export default async function Home() {
             href="/quote?service=deep"
           />
         </div>
+        <p className="mt-10 text-center text-sm text-slate-600">
+          More about{" "}
+          <Link href="/regular-cleaning" className="font-semibold text-slate-900 underline underline-offset-4 hover:text-brand-600">
+            regular cleaning
+          </Link>
+          ,{" "}
+          <Link href="/one-off-cleaning" className="font-semibold text-slate-900 underline underline-offset-4 hover:text-brand-600">
+            one-off cleans
+          </Link>{" "}
+          and{" "}
+          <Link href="/deep-cleaning" className="font-semibold text-slate-900 underline underline-offset-4 hover:text-brand-600">
+            deep &amp; end of tenancy cleaning
+          </Link>
+          .
+        </p>
       </section>
 
       {/* ---------- what's included: an editorial spread, not a feature grid ----------
@@ -615,127 +631,7 @@ export default async function Home() {
       </section>
 
       {/* ---------- footer ---------- */}
-      <footer className="bg-slate-900 text-slate-400">
-        <div className="mx-auto grid max-w-6xl gap-10 px-4 py-14 sm:grid-cols-2 md:grid-cols-4">
-          <div>
-            <span className="text-lg font-bold tracking-tight text-white">
-              SAAFI <span className="text-brand-400">Cleaning</span>
-            </span>
-            <p className="mt-3 text-sm leading-relaxed">
-              Family-run home cleaning with a clear price for every visit and
-              no surprises on the bill.
-            </p>
-          </div>
-          <div>
-            <h4 className="text-sm font-semibold uppercase tracking-wider text-white">
-              Services
-            </h4>
-            <ul className="mt-4 space-y-2 text-sm">
-              <li>
-                <Link
-                  href="/quote?frequency=fortnightly"
-                  className="outline-none transition hover:text-brand-400 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-brand-300"
-                >
-                  Regular cleaning
-                </Link>
-              </li>
-              <li>
-                <Link
-                  href="/quote?frequency=one_off"
-                  className="outline-none transition hover:text-brand-400 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-brand-300"
-                >
-                  One-off cleaning
-                </Link>
-              </li>
-              <li>
-                <Link
-                  href="/quote?service=deep"
-                  className="outline-none transition hover:text-brand-400 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-brand-300"
-                >
-                  Deep cleaning
-                </Link>
-              </li>
-            </ul>
-          </div>
-          <div>
-            <h4 className="text-sm font-semibold uppercase tracking-wider text-white">
-              Company
-            </h4>
-            <ul className="mt-4 space-y-2 text-sm">
-              <li>
-                <a href="#how" className="outline-none transition hover:text-brand-400 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-brand-300">
-                  How it works
-                </a>
-              </li>
-              <li>
-                <a href="#pricing" className="outline-none transition hover:text-brand-400 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-brand-300">
-                  Pricing
-                </a>
-              </li>
-              <li>
-                <a href="#faqs" className="outline-none transition hover:text-brand-400 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-brand-300">
-                  FAQs
-                </a>
-              </li>
-              <li>
-                <a
-                  href="mailto:info@saaficleaningservice.com?subject=Cleaning%20work"
-                  className="outline-none transition hover:text-brand-400 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-brand-300"
-                >
-                  Work with us
-                </a>
-              </li>
-            </ul>
-          </div>
-          <div>
-            <h4 className="text-sm font-semibold uppercase tracking-wider text-white">
-              Get in touch
-            </h4>
-            <ul className="mt-4 space-y-2 text-sm">
-              <li>
-                <a
-                  href={`tel:${contact.phoneHref}`}
-                  className="text-base font-semibold text-white outline-none transition hover:text-brand-400 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-brand-300"
-                >
-                  {contact.phoneDisplay}
-                </a>
-              </li>
-              <li className="text-xs">{contact.hours}</li>
-              <li className="pt-1">
-                <a
-                  href={`mailto:${contact.email}`}
-                  className="outline-none transition hover:text-brand-400 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-brand-300"
-                >
-                  {contact.email}
-                </a>
-              </li>
-              <li>
-                <a href="#areas" className="outline-none transition hover:text-brand-400 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-brand-300">
-                  Areas we cover
-                </a>
-              </li>
-              {socials.map((s) => (
-                <li key={s.label}>
-                  <a
-                    href={s.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="outline-none transition hover:text-brand-400 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-brand-300"
-                  >
-                    {s.label} · {s.handle}
-                  </a>
-                </li>
-              ))}
-            </ul>
-          </div>
-        </div>
-        <div className="border-t border-slate-800">
-          <div className="mx-auto max-w-6xl px-4 py-6 text-center text-xs">
-            © {new Date().getFullYear()} SAAFI Cleaning Service. All rights
-            reserved.
-          </div>
-        </div>
-      </footer>
+      <SiteFooter />
 
       {/* Mobile only — the desktop nav is always in view. */}
       <StickyQuoteBar rate={typicalVisit} />
@@ -754,8 +650,17 @@ export default async function Home() {
           __html: JSON.stringify({
             "@context": "https://schema.org",
             "@type": "HomeAndConstructionBusiness",
+            // Stable id so the service pages can point at this one business
+            // rather than each declaring a new one.
+            "@id": `${site.url}/#business`,
             name: site.legalName,
             url: site.url,
+            openingHoursSpecification: {
+              "@type": "OpeningHoursSpecification",
+              dayOfWeek: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"],
+              opens: "08:00",
+              closes: "18:00",
+            },
             email: contact.email,
             telephone: contact.phoneHref,
             image: `${site.url}/opengraph-image`,
@@ -798,7 +703,33 @@ export default async function Home() {
                   priceCurrency: "GBP",
                 },
               },
+              {
+                "@type": "Offer",
+                name: "Deep clean (2-bed)",
+                priceSpecification: {
+                  "@type": "PriceSpecification",
+                  price: deepVisit,
+                  priceCurrency: "GBP",
+                },
+              },
             ],
+          }),
+        }}
+      />
+      {/* The FAQs, read by search and AI answer engines. Google stopped showing
+          FAQ rich results for most sites in 2023, so this is understanding, not
+          a visible snippet. Built from the same array the accordion renders. */}
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: JSON.stringify({
+            "@context": "https://schema.org",
+            "@type": "FAQPage",
+            mainEntity: FAQS.map((f) => ({
+              "@type": "Question",
+              name: f.q,
+              acceptedAnswer: { "@type": "Answer", text: f.a },
+            })),
           }),
         }}
       />

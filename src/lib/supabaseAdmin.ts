@@ -735,6 +735,39 @@ export async function markPaymentChased(id: string): Promise<void> {
   });
 }
 
+/**
+ * Finished 12h–7d ago and never considered for a review ask. The 12h floor
+ * means the ask lands the morning after, not while the cleaner is at the door;
+ * the 7d ceiling means switching the feature on doesn't mail last spring.
+ */
+export async function listBookingsNeedingReviewAsk(): Promise<BookingRow[]> {
+  const newest = new Date(Date.now() - 12 * 3_600_000).toISOString();
+  const oldest = new Date(Date.now() - 7 * 86_400_000).toISOString();
+  return (
+    (await rest<BookingRow[]>(
+      `bookings?status=in.(completed,paid)&review_requested_at=is.null` +
+        `&finished_at=lt.${encodeURIComponent(newest)}&finished_at=gt.${encodeURIComponent(oldest)}` +
+        `&select=*&order=finished_at.asc`
+    )) ?? []
+  );
+}
+
+/** Emails (lowercased) of customers who have already been asked for a review. */
+export async function emailsAlreadyAskedForReview(): Promise<Set<string>> {
+  const rows =
+    (await rest<{ customer_email: string }[]>(
+      `bookings?review_requested_at=not.is.null&select=customer_email`
+    )) ?? [];
+  return new Set(rows.map((r) => r.customer_email.toLowerCase()));
+}
+
+export async function markReviewRequested(id: string): Promise<void> {
+  await rest(`bookings?id=eq.${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: JSON.stringify({ review_requested_at: new Date().toISOString() }),
+  });
+}
+
 export async function markPaymentLinkSent(id: string): Promise<void> {
   await rest(`bookings?id=eq.${encodeURIComponent(id)}`, {
     method: "PATCH",

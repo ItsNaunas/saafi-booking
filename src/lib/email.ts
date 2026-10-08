@@ -751,6 +751,28 @@ export async function sendCleanCompletedEmail(
 }
 
 /**
+ * The morning after a customer's first completed clean: one honest ask for a
+ * Google review. Sent once per customer ever (the cron decides who), never
+ * with an incentive and never only to the happy ones — gating or rewarding
+ * reviews breaks Google's rules and the DMCC Act alike.
+ */
+export async function sendReviewRequestEmail(booking: BookingRow, reviewUrl: string): Promise<void> {
+  await send({
+    to: booking.customer_email,
+    subject: "How did we do? — SAAFI Cleaning Service",
+    greeting: first(booking.customer_name),
+    heading: "Thanks for having us — how did we do?",
+    rows: [["Clean", whenLine(booking)]],
+    cta: { label: "Leave a Google review", url: reviewUrl },
+    outro: [
+      "We're a small family business, and a couple of lines on Google helps local people find us more than anything else we can do.",
+      "Something not right? Reply to this email instead — we'd much rather put it right.",
+    ],
+    reference: booking.reference,
+  }).catch(() => {});
+}
+
+/**
  * The office alert on a new booking — the eleventh email, previously living in
  * the bookings route as raw text on its own send path.
  */
@@ -896,13 +918,19 @@ export async function sendCronReportEmail(opts: {
   /** Tomorrow's jobs chased because the cleaner hadn't tapped "Got it". */
   nudges?: number;
   unseen?: string[];
+  /** First-clean customers asked for a Google review. */
+  reviewAsks?: number;
   errors: string[];
 }): Promise<void> {
   const reconciled = opts.reconciled ?? 0;
   const nudges = opts.nudges ?? 0;
+  const reviewAsks = opts.reviewAsks ?? 0;
   // Quiet days stay quiet: a daily "0/0/0 all fine" trains people to delete
   // the report unread. Send only when something happened or something broke.
-  if (opts.reminders + opts.chases + opts.daySheets + reconciled + nudges === 0 && opts.errors.length === 0)
+  if (
+    opts.reminders + opts.chases + opts.daySheets + reconciled + nudges + reviewAsks === 0 &&
+    opts.errors.length === 0
+  )
     return;
   await send({
     to: officeAddress(),
@@ -916,6 +944,7 @@ export async function sendCronReportEmail(opts: {
       ["Cleaner day-sheets", String(opts.daySheets)],
       reconciled > 0 && ["Payments repaired", String(reconciled)],
       nudges > 0 && ["Cleaners chased (job not seen yet)", String(nudges)],
+      reviewAsks > 0 && ["Google review requests", String(reviewAsks)],
       ...(opts.unseen ?? []).map((u, i): Row => [`Not seen ${i + 1}`, u]),
       ...opts.errors.map((e, i): Row => [`Problem ${i + 1}`, e]),
     ],

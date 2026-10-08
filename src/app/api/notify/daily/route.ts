@@ -8,11 +8,20 @@ import {
   listCleaners,
   markReminderSent,
   markPaymentChased,
+  listBookingsNeedingReviewAsk,
+  emailsAlreadyAskedForReview,
+  markReviewRequested,
   amountDueFor,
   type BookingRow,
 } from "@/lib/supabaseAdmin";
 import { reconcileStripePayments } from "@/lib/reconcile";
-import { smsConfigured, smsCustomerReminder, smsCleanerDaySheet, smsCleanerNudge } from "@/lib/sms";
+import {
+  smsConfigured,
+  smsCustomerReminder,
+  smsCleanerDaySheet,
+  smsCleanerNudge,
+  smsCustomerReviewRequest,
+} from "@/lib/sms";
 import {
   sendDayBeforeReminderEmail,
   sendPaymentChaseEmail,
@@ -20,6 +29,7 @@ import {
   sendCleanerNudgeEmail,
   sendCronReportEmail,
   sendOpsAlertEmail,
+  sendReviewRequestEmail,
 } from "@/lib/email";
 
 export const runtime = "nodejs";
@@ -39,6 +49,7 @@ export const maxDuration = 300;
  *   1. day-before reminders    — tomorrow's confirmed cleans
  *   2. unpaid-link nudges      — completed, link 3+ days old, never chased
  *   3. cleaner day-sheets      — today's assigned jobs, one email per cleaner
+ *   3c. Google review asks     — first completed clean, the morning after
  *   4. Stripe reconciliation   — money Stripe took that no booking shows
  *
  * Each section is best-effort and isolated: a Resend hiccup on reminders must
@@ -63,6 +74,7 @@ export async function GET(req: NextRequest) {
   let nudges = 0;
   const unseen: string[] = [];
   let reconciled = 0;
+  let reviewAsks = 0;
 
   try {
     // ---- 1. day-before reminders ----
@@ -161,6 +173,35 @@ export async function GET(req: NextRequest) {
       errors.push(`nudges: ${String(e).slice(0, 140)}`);
     }
 
+    // ---- 3c. Google review asks ----
+    // Dormant until GOOGLE_REVIEW_URL is set (the Business Profile's "ask for
+    // reviews" link). Once per customer ever: a regular gets asked after their
+    // first clean, not every fortnight. Anyone who refused marketing at
+    // booking is skipped — stamped, never asked.
+    const reviewUrl = process.env.GOOGLE_REVIEW_URL;
+    if (reviewUrl) {
+      try {
+        const asked = await emailsAlreadyAskedForReview();
+        for (const b of await listBookingsNeedingReviewAsk()) {
+          try {
+            const email = b.customer_email.toLowerCase();
+            const refused = (b as { marketing_ok?: boolean | null }).marketing_ok === false;
+            // Marker first, as with reminders: a lost ask beats a double one.
+            await markReviewRequested(b.id);
+            if (asked.has(email) || refused) continue;
+            asked.add(email);
+            await sendReviewRequestEmail(b, reviewUrl);
+            await smsCustomerReviewRequest(b, reviewUrl).catch(() => {});
+            reviewAsks++;
+          } catch (e) {
+            errors.push(`review ask ${b.reference}: ${String(e).slice(0, 120)}`);
+          }
+        }
+      } catch (e) {
+        errors.push(`review asks: ${String(e).slice(0, 140)}`);
+      }
+    }
+
     // ---- 4. Stripe reconciliation ----
     try {
       const rec = await reconcileStripePayments(3);
@@ -183,7 +224,7 @@ export async function GET(req: NextRequest) {
       errors.push(`reconcile: ${String(e).slice(0, 140)}`);
     }
   } finally {
-    await sendCronReportEmail({ date: today, reminders, chases, daySheets, reconciled, nudges, unseen, errors }).catch(
+    await sendCronReportEmail({ date: today, reminders, chases, daySheets, reconciled, nudges, unseen, reviewAsks, errors }).catch(
       () => {}
     );
   }
@@ -196,6 +237,7 @@ export async function GET(req: NextRequest) {
     daySheets,
     nudges,
     reconciled,
+    reviewAsks,
     errors,
   });
 }
