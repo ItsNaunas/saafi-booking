@@ -36,9 +36,11 @@ import { formatGBP, quotePrice, recommendedHours } from "@/lib/pricing";
 import { deepPrice } from "@/lib/deepClean";
 
 export const metadata: Metadata = {
-  title: "SAAFI Cleaning Service — home cleaning with a price you see before you book",
+  // The title is the strongest ranking signal on the page, so it leads with
+  // the search people actually type ("cleaners Oxford") and keeps the brand.
+  title: "House Cleaners in Oxford & Oxfordshire | SAAFI Cleaning Service",
   description:
-    "Family-run home cleaning. See your price online in under a minute — clear per-visit prices, no hidden extras, and pay securely online when you book.",
+    "Family-run home cleaning across Oxford, Abingdon, Witney, Bicester, Didcot and the rest of Oxfordshire. Regular, one-off and deep cleans — see your price online in under a minute.",
 };
 
 // Pricing config changes by hand, not by the minute — a 5-minute-stale price

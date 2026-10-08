@@ -34,18 +34,18 @@ export const metadata: Metadata = {
   // URL. Without it, shares render as a grey box — which matters more than
   // usual here, because this business shares its own link over WhatsApp.
   metadataBase: new URL(site.url),
-  title: "SAAFI Cleaning Service — book your home clean",
+  title: "SAAFI Cleaning Service — house cleaners in Oxfordshire",
   description:
-    "Family-run cleaning service. Get an instant quote and book your home clean in minutes.",
+    "Family-run home cleaning across Oxfordshire. Get an instant quote and book your home clean in minutes.",
   alternates: { canonical: "/" },
   openGraph: {
     type: "website",
     siteName: site.name,
     locale: "en_GB",
     url: site.url,
-    title: "SAAFI Cleaning Service — home cleaning with a price you see before you book",
+    title: "SAAFI Cleaning Service — house cleaners in Oxford & Oxfordshire",
     description:
-      "Family-run home cleaning. See your price online in under a minute — clear per-visit prices, no hidden extras, and pay securely online when you book.",
+      "Family-run home cleaning across Oxfordshire. See your price online in under a minute — clear per-visit prices, no hidden extras, and pay securely online when you book.",
   },
   twitter: { card: "summary_large_image" },
   // Search Console ownership, verified from SAAFI's own Google account. The
