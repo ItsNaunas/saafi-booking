@@ -4,6 +4,13 @@
 
 **State: LIVE at https://saaficleaningservice.com — and indexable as of 2026-10-08.**
 
+**2026-10-08 (later) — SEO build** (commits 7a82d37, 377c05d; live and verified).
+- Titles/descriptions lead with "House Cleaners in Oxford & Oxfordshire".
+- **Service pages** `/regular-cleaning`, `/one-off-cleaning`, `/deep-cleaning` (end of tenancy anchored at `#end-of-tenancy`): one `ServicePage` template, copy in `lib/services.ts` (only claims the home page already makes), live prices, Service + Breadcrumb + FAQ schema, in the sitemap, linked from the home page body and the shared `SiteFooter`.
+- Home schema: FAQPage, opening hours, deep-clean offer, `@id` `/#business` the service pages point at.
+- **Google review asks**: daily cron section 3c, the morning after a customer's first completed clean, once per customer ever, skips `marketing_ok = false`. Dormant until `GOOGLE_REVIEW_URL` is set. **Needs `supabase/2026-10-08-review-requests.sql` pasted first.**
+- Off-site to-do list: `docs/SEO-PLAYBOOK.md` (business details to copy exactly, listings order, letting-agent email, review rules, post ideas).
+
 **2026-10-08 — open to Google** (commit 72c1825, deployed to prod via CLI — pushes do not auto-deploy this project).
 - Every fact in `lib/business.ts` confirmed real by Naunas: hours (Mon–Sat 8am–6pm), Oxford as the base locality, and all four trust claims (ID/right-to-work checks, references, public liability insurance — purchased, not just budgeted — and training). This supersedes the 08-24 note below that vetting/insurance were deliberately absent.
 - `DEMO_CONTENT` → false, so `robots.txt` now allows crawling (disallows `/admin`, `/c/`, `/b/`, `/paid`, `/api/`) and points at `sitemap.xml`. Verified live.
