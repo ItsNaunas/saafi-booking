@@ -1,6 +1,20 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // Don't advertise the framework in every response header.
+  poweredByHeader: false,
+  // One host only. www and the apex both served 200, which search engines can
+  // read as two copies of the site; www now 301s to the apex, path intact.
+  async redirects() {
+    return [
+      {
+        source: "/:path*",
+        has: [{ type: "host", value: "www.saaficleaningservice.com" }],
+        destination: "https://saaficleaningservice.com/:path*",
+        statusCode: 301,
+      },
+    ];
+  },
   images: {
     // AVIF first, WebP as the fallback. AVIF encodes ~50% slower on the very
     // first request for a given size, then compresses ~20% smaller than WebP

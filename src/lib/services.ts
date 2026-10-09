@@ -29,9 +29,9 @@ export type ServiceContent = {
 export const SERVICES: Record<ServiceSlug, ServiceContent> = {
   "regular-cleaning": {
     slug: "regular-cleaning",
-    metaTitle: "Regular House Cleaning in Oxford & Oxfordshire | SAAFI Cleaning Service",
+    metaTitle: "Regular House Cleaning in Oxford | SAAFI Cleaning",
     metaDescription:
-      "Weekly or fortnightly home cleaning across Oxford and Oxfordshire. The same cleaner wherever we can, a clear price per visit, and you see it online before you book.",
+      "Weekly or fortnightly home cleaning in Oxford & Oxfordshire. The same cleaner wherever we can, and a clear price per visit before you book.",
     name: "Regular cleaning",
     h1: "Regular house cleaning in Oxford & Oxfordshire",
     intro: [
@@ -75,9 +75,9 @@ export const SERVICES: Record<ServiceSlug, ServiceContent> = {
 
   "one-off-cleaning": {
     slug: "one-off-cleaning",
-    metaTitle: "One-Off House Cleaning in Oxford & Oxfordshire | SAAFI Cleaning Service",
+    metaTitle: "One-Off House Cleaning in Oxford | SAAFI Cleaning",
     metaDescription:
-      "A single home clean whenever you need it — before guests, after a party or just to reset the house. Oxford and Oxfordshire, priced online in under a minute.",
+      "A single home clean whenever you need it — before guests, after a party or to reset the house. Oxford & Oxfordshire, priced online in a minute.",
     name: "One-off cleaning",
     h1: "One-off house cleaning in Oxford & Oxfordshire",
     intro: [
@@ -121,9 +121,9 @@ export const SERVICES: Record<ServiceSlug, ServiceContent> = {
 
   "deep-cleaning": {
     slug: "deep-cleaning",
-    metaTitle: "Deep Cleaning & End of Tenancy Cleaning in Oxford | SAAFI Cleaning Service",
+    metaTitle: "Deep & End of Tenancy Cleaning in Oxford | SAAFI Cleaning",
     metaDescription:
-      "Top-to-bottom deep cleans across Oxford and Oxfordshire — moving out, moving in, after building work or when it's been a while. Two cleaners, priced by the size of your home.",
+      "Deep cleans and end of tenancy cleaning in Oxford & Oxfordshire. Two cleaners, kitchen and oven included, priced by the size of your home.",
     name: "Deep cleaning",
     h1: "Deep cleaning in Oxford & Oxfordshire",
     intro: [

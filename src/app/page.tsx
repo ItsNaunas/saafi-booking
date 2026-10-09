@@ -39,9 +39,11 @@ import { deepPrice } from "@/lib/deepClean";
 export const metadata: Metadata = {
   // The title is the strongest ranking signal on the page, so it leads with
   // the search people actually type ("cleaners Oxford") and keeps the brand.
-  title: "House Cleaners in Oxford & Oxfordshire | SAAFI Cleaning Service",
+  // Kept under Google's ~580px title / ~155-character description cut-offs,
+  // so neither is truncated in results.
+  title: "House Cleaners in Oxford & Oxfordshire | SAAFI Cleaning",
   description:
-    "Family-run home cleaning across Oxford, Abingdon, Witney, Bicester, Didcot and the rest of Oxfordshire. Regular, one-off and deep cleans — see your price online in under a minute.",
+    "Family-run house cleaners in Oxford & Oxfordshire. Regular, one-off and deep cleans, with your price shown online in under a minute.",
 };
 
 // Pricing config changes by hand, not by the minute — a 5-minute-stale price
@@ -197,8 +199,7 @@ export default async function Home() {
             500KB of JPEG and gets a <link rel=preload> in the head. */}
         <Image
           src={livingRoomHero}
-          alt=""
-          aria-hidden="true"
+          alt="A bright, freshly cleaned living room"
           fill
           preload
           sizes="100vw"
@@ -263,7 +264,7 @@ export default async function Home() {
           {/* headline */}
           <div className="mx-auto max-w-6xl px-5 text-center sm:px-8">
             <h1 className="mx-auto max-w-3xl text-4xl font-bold leading-[1.08] tracking-tight text-white sm:text-5xl">
-              A family-run clean, with your price agreed before you book
+              Family-run house cleaning in Oxford, with your price agreed before you book
             </h1>
             <p className="mx-auto mt-4 max-w-lg text-base text-white/80 sm:text-lg">
               See it online in under a minute, then we ring to confirm the

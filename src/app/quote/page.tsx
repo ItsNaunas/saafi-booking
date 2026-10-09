@@ -5,8 +5,12 @@ import { loadPricingAndAddons } from "@/lib/pricingServer";
 import { normalisePostcode } from "@/lib/pricing";
 
 export const metadata: Metadata = {
-  title: "Get a quote — SAAFI Cleaning Service",
-  description: "Instant quote for your home clean. Pick your rooms, get a price, book in under a minute.",
+  title: "Cleaning Quote, Oxford & Oxfordshire | SAAFI Cleaning",
+  description: "Instant quote for your home clean in Oxfordshire. Pick your rooms, see the price, book in under a minute.",
+  // Without this the layout's canonical ("/") is inherited and tells Google
+  // this page is a copy of the home page. Also folds every ?frequency=… /
+  // ?service=… variant the site links to into the one URL.
+  alternates: { canonical: "/quote" },
 };
 
 export const dynamic = "force-dynamic";
