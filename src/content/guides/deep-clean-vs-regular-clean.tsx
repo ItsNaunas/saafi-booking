@@ -11,7 +11,7 @@ export const meta: GuideMeta = {
   metaTitle: "Deep Clean vs Regular Clean: Which Do You Need? | SAAFI",
   description:
     "What a regular home clean covers, what a deep clean adds, when you need each, and what they cost in Oxford and Oxfordshire.",
-  date: "2026-10-16",
+  date: "2026-10-09",
   readMins: 4,
   cta: { href: "/quote", text: "Price both for your home" },
 };

@@ -10,7 +10,7 @@ export const meta: GuideMeta = {
   metaTitle: "How Often Should You Get a Cleaner? | SAAFI Cleaning Oxford",
   description:
     "Weekly, fortnightly or one-off? How to choose how often to have your home cleaned, and what each costs in Oxford and Oxfordshire.",
-  date: "2026-10-30",
+  date: "2026-10-09",
   readMins: 4,
   cta: { href: "/quote?frequency=fortnightly", text: "Price a regular clean" },
 };

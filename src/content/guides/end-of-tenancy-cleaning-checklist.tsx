@@ -9,7 +9,7 @@ export const meta: GuideMeta = {
   metaTitle: "End of Tenancy Cleaning Checklist, Oxford | SAAFI Cleaning",
   description:
     "A room-by-room end of tenancy cleaning checklist for renters in Oxford and Oxfordshire — what check-outs look at, and how to prepare.",
-  date: "2026-10-23",
+  date: "2026-10-09",
   readMins: 5,
   cta: { href: "/quote?service=deep", text: "Price an end of tenancy clean" },
 };
