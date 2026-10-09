@@ -237,6 +237,9 @@ export default async function Home() {
               <a className="outline-none transition hover:text-white focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-brand-300" href="#faqs">
                 FAQs
               </a>
+              <Link className="outline-none transition hover:text-white focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-brand-300" href="/guides">
+                Guides
+              </Link>
             </nav>
             <div className="flex shrink-0 items-center gap-4">
               {/* The site had no phone number anywhere. The people most likely

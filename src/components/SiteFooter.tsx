@@ -70,6 +70,11 @@ export default function SiteFooter() {
               </Link>
             </li>
             <li>
+              <Link href="/guides" className={LINK}>
+                Cleaning guides
+              </Link>
+            </li>
+            <li>
               <a href="mailto:info@saaficleaningservice.com?subject=Cleaning%20work" className={LINK}>
                 Work with us
               </a>

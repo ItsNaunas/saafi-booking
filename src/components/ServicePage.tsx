@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Check, Phone } from "lucide-react";
 import Icon from "@/components/Icon";
 import SiteFooter from "@/components/SiteFooter";
+import SiteHeader from "@/components/SiteHeader";
 import { contact, site, serviceAreas } from "@/lib/business";
 import { loadPricingAndAddons } from "@/lib/pricingServer";
 import { formatGBP, quotePrice, recommendedHours } from "@/lib/pricing";
@@ -97,24 +98,7 @@ export default async function ServicePage({ slug }: { slug: ServiceSlug }) {
 
   return (
     <>
-      <header className="border-b border-slate-200 bg-white">
-        <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-5 py-5 sm:px-8">
-          <Link href="/" className="text-xl font-bold tracking-tight text-slate-900">
-            SAAFI <span className="text-brand-600">Cleaning</span>
-          </Link>
-          <div className="flex shrink-0 items-center gap-4">
-            <a
-              href={`tel:${contact.phoneHref}`}
-              className="hidden text-sm font-semibold text-slate-900 hover:text-brand-600 sm:block"
-            >
-              {contact.phoneDisplay}
-            </a>
-            <Link href={s.quoteHref} className={BTN_PRIMARY.replace("px-6 py-3", "px-5 py-2.5")}>
-              Get a quote
-            </Link>
-          </div>
-        </div>
-      </header>
+      <SiteHeader quoteHref={s.quoteHref} />
 
       <main className="bg-white">
         {/* breadcrumb */}
