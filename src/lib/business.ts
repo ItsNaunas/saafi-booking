@@ -38,8 +38,11 @@ export const contact = {
   /** REAL — the business number, updated 2026-09-16. */
   phoneDisplay: "07864 161387",
   phoneHref: "+447864161387",
-  /** REAL — confirmed by Naunas 2026-10-08. */
-  hours: "Mon to Sat, 8am to 6pm",
+  /**
+   * REAL — 8am to 8pm confirmed by Naunas 2026-10-09 (was 6pm). Must match
+   * the Google Business Profile and openingHoursSpecification in app/page.tsx.
+   */
+  hours: "Mon to Sat, 8am to 8pm",
 } as const;
 
 /**
