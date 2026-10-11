@@ -4,6 +4,8 @@
 
 **State: LIVE at https://saaficleaningservice.com — and indexable as of 2026-10-08.**
 
+**2026-10-09 → 10-11 — registration, guides, IndexNow.** Search Console verified (HTML file `public/googlea5765440a1b0bd3d.html` — never delete), Bing Webmaster imported, GBP verified. `/guides` live with 4 guides (`497b2b7`, `0ff95de`; scheduling by `date`, prices from `guidePrices`). Seobility fixes (`8846dfe`): www→apex 301, `/quote` canonical. Hours 8am–8pm (`ac0b444`). Review asks switched on (column + `GOOGLE_REVIEW_URL`). **IndexNow** (`dc2df60`): **after any deploy that adds or changes public pages, run `npm run indexnow`**; the daily cron pings guides going live that day. First ping 10-11: 202 for 10 URLs.
+
 **2026-10-08 (later) — SEO build** (commits 7a82d37, 377c05d; live and verified).
 - Titles/descriptions lead with "House Cleaners in Oxford & Oxfordshire".
 - **Service pages** `/regular-cleaning`, `/one-off-cleaning`, `/deep-cleaning` (end of tenancy anchored at `#end-of-tenancy`): one `ServicePage` template, copy in `lib/services.ts` (only claims the home page already makes), live prices, Service + Breadcrumb + FAQ schema, in the sitemap, linked from the home page body and the shared `SiteFooter`.
