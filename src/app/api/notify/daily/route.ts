@@ -15,6 +15,9 @@ import {
   type BookingRow,
 } from "@/lib/supabaseAdmin";
 import { reconcileStripePayments } from "@/lib/reconcile";
+import { publishedGuides } from "@/lib/guides";
+import { submitToIndexNow } from "@/lib/indexnow";
+import { site } from "@/lib/business";
 import {
   smsConfigured,
   smsCustomerReminder,
@@ -50,6 +53,7 @@ export const maxDuration = 300;
  *   2. unpaid-link nudges      — completed, link 3+ days old, never chased
  *   3. cleaner day-sheets      — today's assigned jobs, one email per cleaner
  *   3c. Google review asks     — first completed clean, the morning after
+ *   3d. IndexNow               — guides whose publish date is today
  *   4. Stripe reconciliation   — money Stripe took that no booking shows
  *
  * Each section is best-effort and isolated: a Resend hiccup on reminders must
@@ -200,6 +204,20 @@ export async function GET(req: NextRequest) {
       } catch (e) {
         errors.push(`review asks: ${String(e).slice(0, 140)}`);
       }
+    }
+
+    // ---- 3d. IndexNow for guides going live today ----
+    // A scheduled guide flips live on its date with no deploy, so nothing else
+    // would tell Bing. Best-effort: a failed ping only means a slower crawl.
+    try {
+      const fresh = publishedGuides().filter((g) => g.meta.date === today);
+      if (fresh.length > 0) {
+        const urls = [`${site.url}/guides`, ...fresh.map((g) => `${site.url}/guides/${g.meta.slug}`)];
+        const res = await submitToIndexNow(urls);
+        if (!res.ok) errors.push(`indexnow: status ${res.status}`);
+      }
+    } catch (e) {
+      errors.push(`indexnow: ${String(e).slice(0, 140)}`);
     }
 
     // ---- 4. Stripe reconciliation ----
