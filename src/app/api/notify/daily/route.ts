@@ -15,6 +15,7 @@ import {
   type BookingRow,
 } from "@/lib/supabaseAdmin";
 import { reconcileStripePayments } from "@/lib/reconcile";
+import { syncFeeds } from "@/lib/airbnbSync";
 import { publishedGuides } from "@/lib/guides";
 import { submitToIndexNow } from "@/lib/indexnow";
 import { site } from "@/lib/business";
@@ -54,6 +55,7 @@ export const maxDuration = 300;
  *   3. cleaner day-sheets      — today's assigned jobs, one email per cleaner
  *   3c. Google review asks     — first completed clean, the morning after
  *   3d. IndexNow               — guides whose publish date is today
+ *   3e. Airbnb calendars       — checkouts -> suggested turnover cleans
  *   4. Stripe reconciliation   — money Stripe took that no booking shows
  *
  * Each section is best-effort and isolated: a Resend hiccup on reminders must
@@ -218,6 +220,19 @@ export async function GET(req: NextRequest) {
       }
     } catch (e) {
       errors.push(`indexnow: ${String(e).slice(0, 140)}`);
+    }
+
+    // ---- 3e. Airbnb calendars ----
+    // Turns new checkouts into suggestions on the admin calendar. Nothing is
+    // booked here; a dead link or a changed stay surfaces in this report.
+    try {
+      for (const r of await syncFeeds()) {
+        if (r.error) errors.push(`airbnb ${r.feed}: ${r.error.slice(0, 120)}`);
+        else if (r.flagged > 0) errors.push(`airbnb ${r.feed}: ${r.flagged} confirmed clean(s) changed on Airbnb — check the calendar`);
+      }
+    } catch (e) {
+      // Table missing (PGRST205 / 42P01) = the 2026-10-12 migration isn't pasted yet; stay quiet.
+      if (!/PGRST205|42P01/.test(String(e))) errors.push(`airbnb sync: ${String(e).slice(0, 140)}`);
     }
 
     // ---- 4. Stripe reconciliation ----

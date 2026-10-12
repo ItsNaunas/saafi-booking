@@ -20,8 +20,15 @@ import {
   type Frequency,
 } from "@/lib/pricing";
 
-export default function ManualPriceFields({ cfg }: { cfg: PricingConfig }) {
-  const [hours, setHours] = useState("2");
+export default function ManualPriceFields({
+  cfg,
+  initialHours = "2",
+}: {
+  cfg: PricingConfig;
+  /** Pre-filled length, e.g. an Airbnb property's usual turnover. */
+  initialHours?: string;
+}) {
+  const [hours, setHours] = useState(initialHours);
   const [frequency, setFrequency] = useState<Frequency>("one_off");
   const [price, setPrice] = useState("");
 

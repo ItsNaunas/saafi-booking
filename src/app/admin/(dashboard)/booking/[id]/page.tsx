@@ -9,6 +9,7 @@ import {
   paidSoFar,
   busyBlocksForDate,
   getCustomer,
+  getSuggestionForBooking,
   type AdjustmentRow,
 } from "@/lib/supabaseAdmin";
 import { assignmentConflict, toMinutes, toHHMM, formatTimeRange } from "@/lib/scheduling";
@@ -22,6 +23,7 @@ import {
   sendCardSetupLink,
   chargeCardNow,
   refundBooking,
+  clearSuggestionFlag,
 } from "@/app/admin/actions";
 import { stripeConfigured, stripeIsTestMode } from "@/lib/stripe";
 import { FREQUENCY_LABEL, formatGBP } from "@/lib/pricing";
@@ -71,6 +73,9 @@ export default async function BookingDetailPage({
   // What the cleaner ticked off, and — the useful half — what they didn't.
   const checklistMissing = b.checklist ? missingLabels(checklistFor(b), b.checklist) : [];
 
+  // Booked from an Airbnb checkout? Surfaces a change on Airbnb since then.
+  const turnover = await getSuggestionForBooking(id).catch(() => null);
+
   // Tolerate the card columns not existing yet (pre-migration).
   const customer = b.customer_id ? await getCustomer(b.customer_id).catch(() => null) : null;
   const card = describeCard(customer);
@@ -90,6 +95,16 @@ export default async function BookingDetailPage({
 
   return (
     <div className="mx-auto max-w-xl">
+      {turnover?.changed_at && (
+        <div className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-1 bg-rose-50 px-3 py-2 text-sm text-rose-900 ring-1 ring-rose-200">
+          <span className="min-w-0 flex-1">⚠ {turnover.change_note}</span>
+          <form action={clearSuggestionFlag}>
+            <input type="hidden" name="id" value={turnover.id} />
+            <input type="hidden" name="booking_id" value={b.id} />
+            <button className="text-xs font-semibold underline">Checked ✓</button>
+          </form>
+        </div>
+      )}
       <h1 className="mb-1 text-2xl font-bold text-slate-900">{b.customer_name}</h1>
       <p className="mb-4 text-sm text-slate-500">
         {b.reference} · status <b>{STATUS_LABEL[b.status]}</b> · {FREQUENCY_LABEL[b.frequency]}

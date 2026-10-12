@@ -27,9 +27,16 @@ import {
   paidSoFar,
   recordBookingRefund,
   markPaymentLinkSent,
+  getSuggestion,
+  updateSuggestion,
+  insertIcalFeed,
+  getIcalFeed,
+  updateIcalFeed,
+  deleteIcalFeed,
   type BookingStatus,
   type BookingRow,
 } from "@/lib/supabaseAdmin";
+import { syncFeed, syncFeeds } from "@/lib/airbnbSync";
 import { getStripe, fromPence } from "@/lib/stripe";
 import {
   sendConfirmationEmail,
@@ -262,8 +269,16 @@ export async function createManualBooking(formData: FormData) {
   const name = get("name");
   const phone = get("phone");
   const preferredDate = get("preferred_date");
+  // Confirming an Airbnb turnover suggestion arrives through this same form.
+  const suggestionId = get("suggestion_id");
+  const back = suggestionId ? `/admin/new?suggestion=${encodeURIComponent(suggestionId)}&` : "/admin/new?";
   if (name.length < 2 || phone.length < 7 || !/^\d{4}-\d{2}-\d{2}$/.test(preferredDate)) {
-    redirect("/admin/new?error=1");
+    redirect(`${back}error=1`);
+  }
+  if (suggestionId) {
+    // A double-submit or a second tab must not book the same turnover twice.
+    const s = await getSuggestion(suggestionId);
+    if (s?.status === "confirmed" && s.booking_id) redirect(`/admin/booking/${s.booking_id}`);
   }
   const hours = Math.max(0.5, Number(get("hours")) || 2);
   // The owner books over the top of availability on purpose — a phone booking is
@@ -316,7 +331,15 @@ export async function createManualBooking(formData: FormData) {
     console.error("[admin] manual booking insert failed:", e);
     return null;
   });
-  if (!row) redirect("/admin/new?error=2");
+  if (!row) redirect(`${back}error=2`);
+
+  if (row && suggestionId) {
+    await updateSuggestion(suggestionId, {
+      status: "confirmed",
+      booking_id: row.id,
+      updated_at: new Date().toISOString(),
+    }).catch((e) => console.error("[admin] linking turnover suggestion failed:", e));
+  }
 
   // A phone booking is still a booking: the same confirmation email (a no-op
   // when there's no real address) and the same series top-up as the public
@@ -330,7 +353,7 @@ export async function createManualBooking(formData: FormData) {
       console.error("[admin] manual booking series top-up failed:", e)
     );
   }
-  redirect("/admin");
+  redirect(suggestionId && row ? `/admin/booking/${row.id}` : "/admin");
 }
 
 export async function editBooking(formData: FormData) {
@@ -837,4 +860,96 @@ export async function chargeCardNow(formData: FormData) {
       ? `/admin/booking/${id}?card=charged`
       : `/admin/booking/${id}?card=declined&why=${encodeURIComponent(result.reason)}`
   );
+}
+
+/* ---------- Airbnb calendars ---------- */
+
+function normPostcode(v: string): string | null {
+  const p = v.toUpperCase().replace(/\s+/g, "");
+  return p || null;
+}
+
+export async function addIcalFeed(formData: FormData) {
+  const get = (k: string) => String(formData.get(k) ?? "").trim();
+  const url = get("url").replace(/^webcal:\/\//i, "https://");
+  const label = get("label");
+  const hostName = get("host_name");
+  const hostPhone = get("host_phone");
+  let ok = label.length >= 2 && hostName.length >= 2 && hostPhone.length >= 7;
+  try {
+    if (new URL(url).protocol !== "https:") ok = false;
+  } catch {
+    ok = false;
+  }
+  if (!ok) redirect("/admin/airbnb?error=1");
+
+  const hours = Number(get("default_hours"));
+  const start = toMinutes(get("default_start_time"));
+  const feed = await insertIcalFeed({
+    label,
+    url,
+    host_name: hostName,
+    host_phone: hostPhone,
+    host_email: get("host_email").toLowerCase() || null,
+    address_line: get("address_line") || null,
+    postcode: normPostcode(get("postcode")),
+    default_hours: Number.isFinite(hours) && hours >= 0.5 && hours <= 12 ? hours : 3,
+    default_start_time: start === null ? "11:00" : toHHMM(start),
+  }).catch((e) => {
+    console.error("[admin] add calendar failed:", e);
+    return null;
+  });
+  if (!feed) redirect("/admin/airbnb?error=2");
+  // Read it straight away, so a wrong link shows its error now, not tomorrow.
+  if (feed) await syncFeed(feed);
+  revalidatePath("/admin/airbnb");
+  revalidatePath("/admin/calendar");
+  redirect("/admin/airbnb");
+}
+
+export async function setIcalFeedActive(formData: FormData) {
+  const id = String(formData.get("id") ?? "");
+  if (!id) return;
+  await updateIcalFeed(id, { active: formData.get("active") === "1" });
+  revalidatePath("/admin/airbnb");
+}
+
+export async function removeIcalFeed(formData: FormData) {
+  const id = String(formData.get("id") ?? "");
+  if (!id) return;
+  // Cascades to its suggestions; confirmed bookings stay — they're real cleans.
+  await deleteIcalFeed(id);
+  revalidatePath("/admin/airbnb");
+  revalidatePath("/admin/calendar");
+}
+
+export async function syncIcalFeedsNow(formData: FormData) {
+  const id = String(formData.get("id") ?? "");
+  if (id) {
+    const feed = await getIcalFeed(id);
+    if (feed) await syncFeed(feed);
+  } else {
+    await syncFeeds();
+  }
+  revalidatePath("/admin/airbnb");
+  revalidatePath("/admin/calendar");
+}
+
+export async function dismissSuggestion(formData: FormData) {
+  const id = String(formData.get("id") ?? "");
+  if (!id) return;
+  const s = await getSuggestion(id);
+  if (!s || s.status !== "suggested") return;
+  await updateSuggestion(id, { status: "dismissed", updated_at: new Date().toISOString() });
+  revalidatePath("/admin/calendar");
+}
+
+/** "I've checked this" on an Airbnb change flag. The note stays, so the same change never re-flags. */
+export async function clearSuggestionFlag(formData: FormData) {
+  const id = String(formData.get("id") ?? "");
+  if (!id) return;
+  await updateSuggestion(id, { changed_at: null, updated_at: new Date().toISOString() });
+  revalidatePath("/admin/calendar");
+  const bookingId = String(formData.get("booking_id") ?? "");
+  if (bookingId) revalidatePath(`/admin/booking/${bookingId}`);
 }

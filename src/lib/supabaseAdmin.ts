@@ -6,6 +6,7 @@ import type { ReasonCode } from "./adjustments";
 import { busyFromBooking, type BusyBlock, type SchedulableCleaner } from "./scheduling";
 import type { OutcomeReason } from "./outcomes";
 import type { ChecklistRecord } from "./checklist";
+import type { SuggestionRow, SyncPlan } from "./icalImport";
 
 export type BookingStatus =
   | "requested"
@@ -970,5 +971,101 @@ export async function recordChargeAttempt(id: string, error: string | null): Pro
   await rest(`bookings?id=eq.${encodeURIComponent(id)}`, {
     method: "PATCH",
     body: JSON.stringify({ charge_attempted_at: new Date().toISOString(), charge_error: error }),
+  });
+}
+
+/* ---------- Airbnb calendar import (2026-10-12 migration) ---------- */
+
+export type IcalFeedRow = {
+  id: string;
+  label: string;
+  url: string;
+  host_name: string;
+  host_phone: string;
+  host_email: string | null;
+  address_line: string | null;
+  postcode: string | null;
+  default_hours: number;
+  default_start_time: string;
+  active: boolean;
+  last_synced_at: string | null;
+  last_error: string | null;
+  created_at: string;
+};
+
+export async function listIcalFeeds(): Promise<IcalFeedRow[]> {
+  return rest<IcalFeedRow[]>("ical_feeds?select=*&order=created_at.asc");
+}
+
+export async function getIcalFeed(id: string): Promise<IcalFeedRow | null> {
+  const rows = await rest<IcalFeedRow[]>(`ical_feeds?id=eq.${encodeURIComponent(id)}&select=*&limit=1`);
+  return rows[0] ?? null;
+}
+
+export async function insertIcalFeed(
+  fields: Omit<IcalFeedRow, "id" | "active" | "last_synced_at" | "last_error" | "created_at">
+): Promise<IcalFeedRow | null> {
+  const rows = await rest<IcalFeedRow[]>("ical_feeds", { method: "POST", body: JSON.stringify(fields) });
+  return rows?.[0] ?? null;
+}
+
+export async function updateIcalFeed(
+  id: string,
+  fields: Partial<Omit<IcalFeedRow, "id" | "created_at">>
+): Promise<void> {
+  await rest(`ical_feeds?id=eq.${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(fields) });
+}
+
+export async function deleteIcalFeed(id: string): Promise<void> {
+  await rest(`ical_feeds?id=eq.${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
+export async function listSuggestionsForFeed(feedId: string): Promise<SuggestionRow[]> {
+  return rest<SuggestionRow[]>(`turnover_suggestions?feed_id=eq.${encodeURIComponent(feedId)}&select=*`);
+}
+
+/** What the calendar shows: open suggestions plus flagged confirmed ones, from `from` on. */
+export async function listOpenSuggestions(
+  from: string
+): Promise<(SuggestionRow & { ical_feeds: Pick<IcalFeedRow, "label" | "postcode"> | null })[]> {
+  return rest(
+    `turnover_suggestions?select=*,ical_feeds(label,postcode)` +
+      `&or=(status.eq.suggested,and(status.eq.confirmed,changed_at.not.is.null))` +
+      `&checkout_date=gte.${from}&order=checkout_date.asc`
+  );
+}
+
+export async function getSuggestion(
+  id: string
+): Promise<(SuggestionRow & { ical_feeds: IcalFeedRow | null }) | null> {
+  const rows = await rest<(SuggestionRow & { ical_feeds: IcalFeedRow | null })[]>(
+    `turnover_suggestions?id=eq.${encodeURIComponent(id)}&select=*,ical_feeds(*)&limit=1`
+  );
+  return rows[0] ?? null;
+}
+
+/** The suggestion a confirmed booking came from, if any — for the booking page's flag. */
+export async function getSuggestionForBooking(bookingId: string): Promise<SuggestionRow | null> {
+  const rows = await rest<SuggestionRow[]>(
+    `turnover_suggestions?booking_id=eq.${encodeURIComponent(bookingId)}&select=*&limit=1`
+  );
+  return rows[0] ?? null;
+}
+
+export async function insertSuggestions(rows: SyncPlan["inserts"]): Promise<void> {
+  if (rows.length === 0) return;
+  // ignore-duplicates: two overlapping syncs racing on the same new stay
+  // must not error — the unique (feed_id, uid) makes the second a no-op.
+  await rest("turnover_suggestions?on_conflict=feed_id,uid", {
+    method: "POST",
+    body: JSON.stringify(rows),
+    headers: { Prefer: "return=minimal,resolution=ignore-duplicates" },
+  });
+}
+
+export async function updateSuggestion(id: string, fields: Partial<SuggestionRow>): Promise<void> {
+  await rest(`turnover_suggestions?id=eq.${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: JSON.stringify(fields),
   });
 }

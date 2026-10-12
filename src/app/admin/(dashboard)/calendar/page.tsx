@@ -1,6 +1,11 @@
 import Link from "next/link";
 import { headers } from "next/headers";
-import { listBookings, listCleaners, type BookingRow } from "@/lib/supabaseAdmin";
+import { after } from "next/server";
+import { listBookings, listCleaners, listOpenSuggestions, type BookingRow } from "@/lib/supabaseAdmin";
+import { syncFeeds, STALE_MINUTES } from "@/lib/airbnbSync";
+import { isBlock } from "@/lib/icalImport";
+import { dismissSuggestion, clearSuggestionFlag } from "@/app/admin/actions";
+import PendingButton from "@/components/PendingButton";
 import { formatGBP } from "@/lib/pricing";
 import { formatTime, formatTimeRange, isValidDate, londonWallClock } from "@/lib/scheduling";
 import { calendarFeedToken } from "@/lib/calendarFeed";
@@ -19,6 +24,13 @@ const STATUS_ORDER = ["no_access", "requested", "confirmed", "completed", "paid"
 
 const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
+type Suggestion = Awaited<ReturnType<typeof listOpenSuggestions>>[number];
+
+/** Short day label, "Tue 14 Oct". */
+function fmtDay(d: string): string {
+  return new Date(d + "T00:00:00").toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
+}
+
 /** 'YYYY-MM' for the month `delta` months away from `ym`. */
 function shiftMonth(ym: string, delta: number): string {
   const [y, m] = ym.split("-").map(Number);
@@ -36,7 +48,18 @@ export default async function CalendarPage({
 }: {
   searchParams: Promise<{ m?: string; cleaner?: string; d?: string }>;
 }) {
-  const [allBookings, cleaners] = await Promise.all([listBookings(), listCleaners()]);
+  const todayForFeeds = londonWallClock(new Date()).date;
+  const [allBookings, cleaners, allSuggestions] = await Promise.all([
+    listBookings(),
+    listCleaners(),
+    // Airbnb turnovers. Empty (never an error page) until the 2026-10-12
+    // migration is pasted or if the read hiccups — the calendar must not
+    // depend on a convenience feature.
+    listOpenSuggestions(todayForFeeds).catch(() => [] as Suggestion[]),
+  ]);
+  // Refresh stale Airbnb calendars after this response is sent; the next view
+  // picks up whatever changed. Never blocks the page.
+  after(() => syncFeeds({ staleMinutes: STALE_MINUTES }).catch(() => {}));
   const cleanerName = new Map<string, string>(cleaners.map((c) => [c.id, c.name]));
   const activeCleaners = cleaners.filter((c) => c.active);
 
@@ -73,6 +96,17 @@ export default async function CalendarPage({
     p.set("d", d);
     return `/admin/calendar?${p.toString()}`;
   };
+
+  // Suggestions aren't anyone's job yet, so a single-cleaner view hides them.
+  const showSuggestions = cleaner === "" || cleaner === "none";
+  const suggested = showSuggestions ? allSuggestions.filter((x) => x.status === "suggested") : [];
+  const flagged = allSuggestions.filter((x) => x.status === "confirmed" && x.changed_at);
+  const suggestedByDate = new Map<string, Suggestion[]>();
+  for (const x of suggested) {
+    const list = suggestedByDate.get(x.checkout_date);
+    if (list) list.push(x);
+    else suggestedByDate.set(x.checkout_date, [x]);
+  }
 
   // Bookings grouped by date for O(1) lookup while laying out the grid.
   const byDate = new Map<string, BookingRow[]>();
@@ -223,6 +257,45 @@ export default async function CalendarPage({
         )}
       </div>
 
+      {/* Airbnb: confirmed cleans whose stay changed, then turnovers waiting for a yes */}
+      {flagged.length > 0 && (
+        <div className="mb-4 bg-rose-50 p-4 ring-1 ring-rose-200">
+          <h2 className="mb-2 text-sm font-semibold text-rose-900">⚠ Changed on Airbnb — check these cleans</h2>
+          <div className="space-y-1.5">
+            {flagged.map((x) => (
+              <div key={x.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+                <span className="font-medium text-rose-900">{x.ical_feeds?.label ?? "Airbnb"}</span>
+                <span className="min-w-0 flex-1 text-rose-800">{x.change_note}</span>
+                {x.booking_id && (
+                  <Link href={`/admin/booking/${x.booking_id}`} className="text-xs font-semibold text-rose-900 underline">
+                    Open booking
+                  </Link>
+                )}
+                <form action={clearSuggestionFlag}>
+                  <input type="hidden" name="id" value={x.id} />
+                  <PendingButton pendingLabel="…" className="text-xs font-medium text-rose-700 hover:underline">
+                    Checked ✓
+                  </PendingButton>
+                </form>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      {suggested.length > 0 && (
+        <details className="mb-4 bg-white p-4 shadow-sm ring-1 ring-sky-200" open={suggested.length <= 6}>
+          <summary className="cursor-pointer text-sm font-semibold text-sky-900">
+            {suggested.length} Airbnb turnover{suggested.length === 1 ? "" : "s"} to confirm
+            <span className="ml-2 font-normal text-slate-400">nothing is booked until you confirm</span>
+          </summary>
+          <div className="mt-2 space-y-1.5">
+            {suggested.map((x) => (
+              <SuggestionRow key={x.id} x={x} />
+            ))}
+          </div>
+        </details>
+      )}
+
       {/* that day — every booking on a date opened from "+N more", not just the
           three the grid cell has room for */}
       {selectedDay && (
@@ -240,9 +313,12 @@ export default async function CalendarPage({
             </Link>
           </div>
           <div className="space-y-1.5">
-            {(byDate.get(selectedDay) ?? []).length === 0 && (
+            {(byDate.get(selectedDay) ?? []).length === 0 && !suggestedByDate.has(selectedDay) && (
               <p className="text-sm text-slate-400">Nothing booked this day.</p>
             )}
+            {(suggestedByDate.get(selectedDay) ?? []).map((x) => (
+              <SuggestionRow key={x.id} x={x} />
+            ))}
             {(byDate.get(selectedDay) ?? []).map((b) => {
               const cn = b.cleaner_id ? cleanerName.get(b.cleaner_id) : null;
               return (
@@ -289,6 +365,7 @@ export default async function CalendarPage({
               inMonth={cell.inMonth}
               isToday={cell.date === todayStr}
               rows={byDate.get(cell.date) ?? []}
+              suggestions={suggestedByDate.get(cell.date) ?? []}
               lastCol={i % 7 === 6}
               cleanerName={cleanerName}
               dayHref={dayHref}
@@ -309,6 +386,12 @@ export default async function CalendarPage({
           <span className="text-amber-500">●</span>
           <span>no cleaner assigned</span>
         </span>
+        {showSuggestions && (
+          <span className="flex items-center gap-1.5">
+            <span className="inline-block h-2.5 w-4 border border-dashed border-sky-400 bg-sky-50/60" />
+            <span>Airbnb checkout — suggested, not booked</span>
+          </span>
+        )}
       </div>
 
       {/* agenda for the shown month, from today forward */}
@@ -366,6 +449,7 @@ function DayCell({
   inMonth,
   isToday,
   rows,
+  suggestions,
   lastCol,
   cleanerName,
   dayHref,
@@ -374,13 +458,16 @@ function DayCell({
   inMonth: boolean;
   isToday: boolean;
   rows: BookingRow[];
+  suggestions: Suggestion[];
   lastCol: boolean;
   cleanerName: Map<string, string>;
   dayHref: (d: string) => string;
 }) {
   const dayNum = Number(date.slice(8, 10));
   const shown = rows.slice(0, 3);
-  const extra = rows.length - shown.length;
+  // Suggestions take whatever room the bookings leave, at least one line.
+  const shownSuggestions = suggestions.slice(0, Math.max(1, 3 - shown.length));
+  const extra = rows.length - shown.length + (suggestions.length - shownSuggestions.length);
   const areas = [...new Set(rows.map((b) => outward(b.postcode)))];
 
   return (
@@ -427,6 +514,16 @@ function DayCell({
             </Link>
           );
         })}
+        {shownSuggestions.map((x) => (
+          <Link
+            key={x.id}
+            href={`/admin/new?suggestion=${x.id}`}
+            title={`Airbnb checkout · ${x.ical_feeds?.label ?? ""}${x.next_checkin_date ? ` · next check-in ${x.next_checkin_date}` : ""} · click to confirm`}
+            className="block truncate border border-dashed border-sky-400 bg-sky-50/60 px-1.5 py-0.5 text-[11px] font-medium text-sky-800 hover:bg-sky-100"
+          >
+            ↺ {x.ical_feeds?.label ?? "Airbnb"}
+          </Link>
+        ))}
         {extra > 0 && (
           <Link
             href={dayHref(date)}
@@ -488,5 +585,37 @@ function AgendaRow({
         <div className={`text-xs ${cn ? "text-slate-500" : "text-amber-600"}`}>{cn ?? "unassigned"}</div>
       </div>
     </Link>
+  );
+}
+
+function SuggestionRow({ x }: { x: Suggestion }) {
+  const sameDay = x.next_checkin_date === x.checkout_date;
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border border-dashed border-sky-300 bg-sky-50/40 px-2 py-1.5 text-sm">
+      <span className="w-24 shrink-0 text-xs font-medium text-slate-600">{fmtDay(x.checkout_date)}</span>
+      <span className="min-w-0 flex-1 truncate">
+        <span className="font-medium text-slate-900">{x.ical_feeds?.label ?? "Airbnb"}</span>
+        <span className="text-xs text-slate-500">
+          {" "}· {isBlock(x.summary) ? "host block ends" : "guest checks out"}
+          {x.next_checkin_date && (
+            <span className={sameDay ? "font-semibold text-rose-700" : ""}>
+              {" "}· next in {sameDay ? "same day" : fmtDay(x.next_checkin_date)}
+            </span>
+          )}
+        </span>
+      </span>
+      <Link
+        href={`/admin/new?suggestion=${x.id}`}
+        className="bg-brand-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-brand-700"
+      >
+        Confirm
+      </Link>
+      <form action={dismissSuggestion}>
+        <input type="hidden" name="id" value={x.id} />
+        <PendingButton pendingLabel="…" className="px-2 py-1 text-xs font-medium text-slate-500 hover:bg-slate-100">
+          Not needed
+        </PendingButton>
+      </form>
+    </div>
   );
 }
