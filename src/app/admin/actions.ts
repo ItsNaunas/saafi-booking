@@ -37,6 +37,15 @@ import {
   type BookingRow,
 } from "@/lib/supabaseAdmin";
 import { syncFeed, syncFeeds } from "@/lib/airbnbSync";
+import {
+  insertCampaign,
+  getCampaign,
+  updateCampaign,
+  deleteCampaign,
+  updateAutomation,
+} from "@/lib/supabaseAdmin";
+import { filterFromForm, type SegmentFilter } from "@/lib/segments";
+import { sendCampaign, sendCampaignTest } from "@/lib/marketing";
 import { getStripe, fromPence } from "@/lib/stripe";
 import {
   sendConfirmationEmail,
@@ -952,4 +961,84 @@ export async function clearSuggestionFlag(formData: FormData) {
   revalidatePath("/admin/calendar");
   const bookingId = String(formData.get("booking_id") ?? "");
   if (bookingId) revalidatePath(`/admin/booking/${bookingId}`);
+}
+
+/* ---------- marketing ---------- */
+
+const segmentOf = (formData: FormData): SegmentFilter =>
+  filterFromForm(
+    (k) => (formData.get(k) === null ? null : String(formData.get(k))),
+    (k) => formData.getAll(k).map(String)
+  );
+
+export async function createCampaignAction(formData: FormData) {
+  const name = String(formData.get("name") ?? "").trim() || "Untitled campaign";
+  const row = await insertCampaign({ name: name.slice(0, 120), segment: segmentOf(formData) });
+  if (!row) redirect("/admin/marketing?error=1");
+  redirect(`/admin/marketing/campaign/${row!.id}`);
+}
+
+/**
+ * The campaign editor's one form, three buttons: save, send a test to the
+ * office, or send for real (which needs the confirm box ticked). Every press
+ * saves first, so a test always shows exactly what's on screen.
+ */
+export async function saveCampaignAction(formData: FormData) {
+  const id = String(formData.get("id") ?? "");
+  const c = id ? await getCampaign(id) : null;
+  if (!c) redirect("/admin/marketing");
+  const back = `/admin/marketing/campaign/${id}`;
+  if (c!.status === "sent") redirect(back);
+
+  const get = (k: string, max: number) => String(formData.get(k) ?? "").trim().slice(0, max);
+  const ctaUrl = get("cta_url", 500);
+  await updateCampaign(id, {
+    name: get("name", 120) || c!.name,
+    subject: get("subject", 200),
+    heading: get("heading", 200),
+    body: String(formData.get("body") ?? "").slice(0, 10_000),
+    cta_label: get("cta_label", 60) || null,
+    cta_url: /^https?:\/\//.test(ctaUrl) ? ctaUrl : ctaUrl.startsWith("/") ? (process.env.NEXT_PUBLIC_SITE_URL ?? "https://saaficleaningservice.com") + ctaUrl : null,
+    segment: segmentOf(formData),
+  });
+
+  const intent = String(formData.get("intent") ?? "save");
+  if (intent === "test") {
+    const to = process.env.ALERT_EMAIL_TO ?? "";
+    const r = to ? await sendCampaignTest(id, to) : { ok: false, reason: "ALERT_EMAIL_TO isn't set" };
+    redirect(`${back}?test=${r.ok ? "ok" : encodeURIComponent(r.reason ?? "failed")}`);
+  }
+  if (intent === "send") {
+    if (formData.get("confirm_send") !== "on") redirect(`${back}?confirm=1`);
+    const r = await sendCampaign(id);
+    if (r.error) redirect(`${back}?err=${encodeURIComponent(r.error)}`);
+    redirect(`${back}?sent=${r.sent}&failed=${r.failed}&left=${r.remaining}`);
+  }
+  revalidatePath(back);
+  redirect(`${back}?saved=1`);
+}
+
+export async function deleteCampaignAction(formData: FormData) {
+  const id = String(formData.get("id") ?? "");
+  if (id) await deleteCampaign(id);
+  redirect("/admin/marketing");
+}
+
+export async function saveAutomationAction(formData: FormData) {
+  const key = String(formData.get("key") ?? "");
+  if (!["abandoned_quote", "one_off_followup", "lapsed_regular"].includes(key)) return;
+  const get = (k: string, max: number) => String(formData.get(k) ?? "").trim().slice(0, max);
+  const days = Number(get("delay_days", 4));
+  const fields: Record<string, unknown> = { enabled: formData.get("enabled") === "on" };
+  if (formData.has("subject")) {
+    Object.assign(fields, {
+      subject: get("subject", 200),
+      heading: get("heading", 200),
+      body: String(formData.get("body") ?? "").slice(0, 5000),
+      cta_label: get("cta_label", 60) || "Book a clean",
+      ...(Number.isInteger(days) && days >= 0 && days <= 365 ? { delay_days: days } : {}),
+    });
+  }
+  await updateAutomation(key, fields);
+  revalidatePath("/admin/marketing");
 }

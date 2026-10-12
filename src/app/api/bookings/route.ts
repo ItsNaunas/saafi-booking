@@ -32,6 +32,7 @@ import {
 } from "@/lib/supabaseAdmin";
 import { raiseBookingPaymentLink } from "@/lib/paymentLink";
 import { sendBookingReceivedEmail, sendNewBookingAlertEmail } from "@/lib/email";
+import { markLeadConverted } from "@/lib/supabaseAdmin";
 import type { BookingRecord, BookingRequest } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -307,6 +308,10 @@ export async function POST(req: NextRequest) {
     notes: record.notes ?? "",
     reference: stored.reference,
   }).catch((e) => console.error("[bookings] alert email failed:", e));
+
+  // They finished: the abandoned-quote follow-up must not chase them. (The
+  // automation also checks for a booking itself, so a miss here is harmless.)
+  await markLeadConverted(record.email).catch(() => {});
 
   // And tell the customer. Until this existed they saw a reference on screen and
   // then heard nothing at all until somebody rang them.

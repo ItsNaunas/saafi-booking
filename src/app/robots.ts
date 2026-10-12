@@ -16,7 +16,7 @@ export default function robots(): MetadataRoute.Robots {
       allow: "/",
       // The CRM, the cleaner job links, customer booking pages and the
       // payment return page.
-      disallow: ["/admin", "/c/", "/b/", "/paid", "/api/"],
+      disallow: ["/admin", "/c/", "/b/", "/paid", "/api/", "/unsubscribe"],
     },
     sitemap: `${site.url}/sitemap.xml`,
   };

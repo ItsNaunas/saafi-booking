@@ -14,14 +14,19 @@ export default function PendingButton({
   children,
   pendingLabel = "Working…",
   className,
+  name,
+  value,
 }: {
   children: React.ReactNode;
   pendingLabel?: string;
   className?: string;
+  /** For forms with several submit buttons: which one was pressed. */
+  name?: string;
+  value?: string;
 }) {
   const { pending } = useFormStatus();
   return (
-    <button disabled={pending} className={`${className ?? ""} disabled:opacity-60`}>
+    <button name={name} value={value} disabled={pending} className={`${className ?? ""} disabled:opacity-60`}>
       {pending ? pendingLabel : children}
     </button>
   );

@@ -16,6 +16,7 @@ import {
 } from "@/lib/supabaseAdmin";
 import { reconcileStripePayments } from "@/lib/reconcile";
 import { syncFeeds } from "@/lib/airbnbSync";
+import { runAutomations } from "@/lib/marketing";
 import { publishedGuides } from "@/lib/guides";
 import { submitToIndexNow } from "@/lib/indexnow";
 import { site } from "@/lib/business";
@@ -56,6 +57,7 @@ export const maxDuration = 300;
  *   3c. Google review asks     — first completed clean, the morning after
  *   3d. IndexNow               — guides whose publish date is today
  *   3e. Airbnb calendars       — checkouts -> suggested turnover cleans
+ *   3f. Marketing automations  — abandoned quotes, one-off follow-ups, lapsed regulars
  *   4. Stripe reconciliation   — money Stripe took that no booking shows
  *
  * Each section is best-effort and isolated: a Resend hiccup on reminders must
@@ -80,6 +82,7 @@ export async function GET(req: NextRequest) {
   let nudges = 0;
   const unseen: string[] = [];
   let reconciled = 0;
+  let marketing = 0;
   let reviewAsks = 0;
 
   try {
@@ -235,6 +238,17 @@ export async function GET(req: NextRequest) {
       if (!/PGRST205|42P01/.test(String(e))) errors.push(`airbnb sync: ${String(e).slice(0, 140)}`);
     }
 
+    // ---- 3f. Marketing automations ----
+    // Each is off until switched on in /admin/marketing. Consent, unsubscribes,
+    // a 7-day quiet period and a daily cap are enforced inside.
+    try {
+      const auto = await runAutomations();
+      marketing = Object.values(auto.sent).reduce((s, n) => s + n, 0);
+      errors.push(...auto.errors.map((e) => `marketing ${e}`.slice(0, 160)));
+    } catch (e) {
+      if (!/PGRST205|42P01/.test(String(e))) errors.push(`marketing: ${String(e).slice(0, 140)}`);
+    }
+
     // ---- 4. Stripe reconciliation ----
     try {
       const rec = await reconcileStripePayments(3);
@@ -257,7 +271,7 @@ export async function GET(req: NextRequest) {
       errors.push(`reconcile: ${String(e).slice(0, 140)}`);
     }
   } finally {
-    await sendCronReportEmail({ date: today, reminders, chases, daySheets, reconciled, nudges, unseen, reviewAsks, errors }).catch(
+    await sendCronReportEmail({ date: today, reminders, chases, daySheets, reconciled, nudges, unseen, reviewAsks, marketing, errors }).catch(
       () => {}
     );
   }
@@ -271,6 +285,7 @@ export async function GET(req: NextRequest) {
     nudges,
     reconciled,
     reviewAsks,
+    marketing,
     errors,
   });
 }

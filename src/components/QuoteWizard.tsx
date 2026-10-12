@@ -417,6 +417,37 @@ export default function QuoteWizard({
   // Honeypot: humans never see it, bots fill it, the server quietly discards.
   const honeypot = useRef<HTMLInputElement>(null);
 
+  // Abandoned-quote capture: the moment a real email is typed, keep it with the
+  // quote so far, so someone who leaves half way can still be followed up (only
+  // if they leave the offers box ticked — the server and the automation both
+  // check). Fire-and-forget; the form never waits on it.
+  const leadSent = useRef("");
+  function captureLead(mk: boolean = marketingOk) {
+    if (!isValidEmail(email)) return;
+    const body = {
+      email: email.trim(),
+      name: name.trim(),
+      phone: phone.trim(),
+      postcode,
+      service,
+      frequency: isDeep ? "one_off" : frequency,
+      hours: totalHours,
+      price,
+      date: preferredDate,
+      marketingOk: mk,
+      website: honeypot.current?.value ?? "",
+    };
+    const sig = JSON.stringify(body);
+    if (leadSent.current === sig) return;
+    leadSent.current = sig;
+    void fetch("/api/leads", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: sig,
+      keepalive: true,
+    }).catch(() => {});
+  }
+
   /** Every problem at once — a single form should not reveal them one at a time. */
   function validate(): Partial<Record<FieldKey, string>> {
     const found: Partial<Record<FieldKey, string>> = {};
@@ -1132,12 +1163,13 @@ export default function QuoteWizard({
                 describedBy={errors.name ? "name-error" : undefined}
                 // Empty is skipped — flagging a field they haven't reached yet
                 // is just noise. Submit still catches it either way.
-                onBlur={() =>
+                onBlur={() => {
                   setErrors((e) => ({
                     ...e,
                     name: name.trim() ? (isValidName(name) ? undefined : NAME_ERROR) : e.name,
-                  }))
-                }
+                  }));
+                  captureLead();
+                }}
               />
             </Field>
             <Field label="Phone" error={errors.phone} errorId="phone-error">
@@ -1148,12 +1180,13 @@ export default function QuoteWizard({
                 autoComplete="tel"
                 invalid={!!errors.phone}
                 describedBy={errors.phone ? "phone-error" : undefined}
-                onBlur={() =>
+                onBlur={() => {
                   setErrors((e) => ({
                     ...e,
                     phone: phone.trim() ? (isValidPhone(phone) ? undefined : PHONE_ERROR) : e.phone,
-                  }))
-                }
+                  }));
+                  captureLead();
+                }}
               />
             </Field>
             <Field label="Email" error={errors.email} errorId="email-error">
@@ -1164,12 +1197,13 @@ export default function QuoteWizard({
                 autoComplete="email"
                 invalid={!!errors.email}
                 describedBy={errors.email ? "email-error" : undefined}
-                onBlur={() =>
+                onBlur={() => {
                   setErrors((e) => ({
                     ...e,
                     email: email.trim() ? (isValidEmail(email) ? undefined : EMAIL_ERROR) : e.email,
-                  }))
-                }
+                  }));
+                  captureLead();
+                }}
               />
             </Field>
             <Field label="First line of address" error={errors.address} errorId="address-error">
@@ -1207,7 +1241,11 @@ export default function QuoteWizard({
           <input
             type="checkbox"
             checked={marketingOk}
-            onChange={(e) => setMarketingOk(e.target.checked)}
+            onChange={(e) => {
+              setMarketingOk(e.target.checked);
+              // An untick after the email was captured must reach the server too.
+              captureLead(e.target.checked);
+            }}
             className="mt-0.5 h-4 w-4 shrink-0 accent-brand-600"
           />
           <span>

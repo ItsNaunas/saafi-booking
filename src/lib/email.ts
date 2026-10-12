@@ -41,6 +41,11 @@ type Mail = {
   outro?: (string | false | null | undefined)[];
   reference?: string;
   replyTo?: string;
+  /** Marketing only: footer unsubscribe link + List-Unsubscribe headers. */
+  unsubscribe?: { page: string; oneClick: string };
+  /** Marketing only: a separate sending address, so a campaign marked as spam
+   *  can't drag booking confirmations into junk with it. */
+  from?: string;
 };
 
 const BRAND = {
@@ -130,6 +135,11 @@ function renderHtml(m: Mail): string {
           <p style="margin:0;${font}font-size:12px;color:${BRAND.faint};">
             ${m.reference ? `Reference ${esc(m.reference)} &nbsp;·&nbsp; ` : ""}${esc(site.url.replace("https://", ""))}
           </p>
+          ${
+            m.unsubscribe
+              ? `<p style="margin:8px 0 0;${font}font-size:12px;color:${BRAND.faint};">You're getting this because you booked or asked for a quote with us. <a href="${esc(m.unsubscribe.page)}" style="color:${BRAND.faint};text-decoration:underline;">Unsubscribe</a></p>`
+              : ""
+          }
         </td></tr>
 
       </table>
@@ -157,6 +167,7 @@ function renderText(m: Mail): string {
     site.name,
     m.reference ? `Reference: ${m.reference}` : null,
     site.url.replace("https://", ""),
+    m.unsubscribe ? `\nUnsubscribe: ${m.unsubscribe.page}` : null,
   ]
     .filter((l): l is string => l !== null)
     .join("\n");
@@ -183,7 +194,7 @@ async function send(mail: Mail): Promise<{ ok: boolean; reason?: string }> {
   if (!key) return { ok: false, reason: "email isn't configured" };
   if (!looksLikeARealAddress(mail.to)) return { ok: false, reason: "no real email address" };
 
-  const from = process.env.ALERT_EMAIL_FROM ?? "bookings@saaficleaningservice.com";
+  const from = mail.from ?? process.env.ALERT_EMAIL_FROM ?? "bookings@saaficleaningservice.com";
   const res = await fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
@@ -196,6 +207,14 @@ async function send(mail: Mail): Promise<{ ok: boolean; reason?: string }> {
       subject: mail.subject,
       html: renderHtml(mail),
       text: renderText(mail),
+      ...(mail.unsubscribe
+        ? {
+            headers: {
+              "List-Unsubscribe": `<${mail.unsubscribe.oneClick}>`,
+              "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+            },
+          }
+        : {}),
     }),
   });
 
@@ -920,15 +939,18 @@ export async function sendCronReportEmail(opts: {
   unseen?: string[];
   /** First-clean customers asked for a Google review. */
   reviewAsks?: number;
+  /** Automatic marketing emails sent. */
+  marketing?: number;
   errors: string[];
 }): Promise<void> {
   const reconciled = opts.reconciled ?? 0;
   const nudges = opts.nudges ?? 0;
   const reviewAsks = opts.reviewAsks ?? 0;
+  const marketing = opts.marketing ?? 0;
   // Quiet days stay quiet: a daily "0/0/0 all fine" trains people to delete
   // the report unread. Send only when something happened or something broke.
   if (
-    opts.reminders + opts.chases + opts.daySheets + reconciled + nudges + reviewAsks === 0 &&
+    opts.reminders + opts.chases + opts.daySheets + reconciled + nudges + reviewAsks + marketing === 0 &&
     opts.errors.length === 0
   )
     return;
@@ -945,6 +967,7 @@ export async function sendCronReportEmail(opts: {
       reconciled > 0 && ["Payments repaired", String(reconciled)],
       nudges > 0 && ["Cleaners chased (job not seen yet)", String(nudges)],
       reviewAsks > 0 && ["Google review requests", String(reviewAsks)],
+      marketing > 0 && ["Automatic marketing emails", String(marketing)],
       ...(opts.unseen ?? []).map((u, i): Row => [`Not seen ${i + 1}`, u]),
       ...opts.errors.map((e, i): Row => [`Problem ${i + 1}`, e]),
     ],
@@ -1080,4 +1103,34 @@ export async function sendTimeOffDecisionEmail(
         : "Ring the office and they'll talk it through with you.",
     ],
   }).catch(() => {});
+}
+
+/* ------------------------------------------------------------------ *
+ *  Marketing (2026-10-12)
+ * ------------------------------------------------------------------ */
+
+/**
+ * One marketing email: a campaign or an automation. Same template as every
+ * other email, plus the unsubscribe footer and one-click headers. Refuses to
+ * send without an unsubscribe link — a marketing email without one breaks the
+ * promise on the quote form and the bulk-sender rules.
+ */
+export async function sendMarketingEmail(opts: {
+  to: string;
+  subject: string;
+  heading: string;
+  paragraphs: string[];
+  cta?: { label: string; url: string } | null;
+  unsubscribe: { page: string; oneClick: string } | null;
+}): Promise<{ ok: boolean; reason?: string }> {
+  if (!opts.unsubscribe) return { ok: false, reason: "unsubscribe links need SESSION_SECRET" };
+  return send({
+    to: opts.to,
+    subject: opts.subject,
+    heading: opts.heading,
+    intro: opts.paragraphs,
+    cta: opts.cta ?? null,
+    unsubscribe: opts.unsubscribe,
+    from: process.env.MARKETING_EMAIL_FROM || undefined,
+  });
 }

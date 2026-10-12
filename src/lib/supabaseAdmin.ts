@@ -1069,3 +1069,198 @@ export async function updateSuggestion(id: string, fields: Partial<SuggestionRow
     body: JSON.stringify(fields),
   });
 }
+
+/* ---------- marketing (2026-10-12 migration) ---------- */
+
+export type QuoteLeadRow = {
+  id: string;
+  email: string;
+  name: string | null;
+  phone: string | null;
+  postcode: string | null;
+  quote: {
+    service?: string;
+    frequency?: string;
+    hours?: number;
+    price?: number;
+    date?: string;
+  };
+  marketing_ok: boolean | null;
+  converted_at: string | null;
+  nudged_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+/** One row per address: a second visit to the quote form updates the first. */
+export async function upsertQuoteLead(
+  fields: Pick<QuoteLeadRow, "email" | "name" | "phone" | "postcode" | "quote" | "marketing_ok">
+): Promise<void> {
+  await rest("quote_leads?on_conflict=email", {
+    method: "POST",
+    body: JSON.stringify({ ...fields, updated_at: new Date().toISOString() }),
+    headers: { Prefer: "return=minimal,resolution=merge-duplicates" },
+  });
+}
+
+export async function markLeadConverted(email: string): Promise<void> {
+  await rest(`quote_leads?email=eq.${encodeURIComponent(email.toLowerCase())}&converted_at=is.null`, {
+    method: "PATCH",
+    body: JSON.stringify({ converted_at: new Date().toISOString() }),
+    headers: { Prefer: "return=minimal" },
+  });
+}
+
+export async function listQuoteLeads(): Promise<QuoteLeadRow[]> {
+  return rest<QuoteLeadRow[]>("quote_leads?select=*&order=updated_at.desc");
+}
+
+export async function markLeadNudged(id: string): Promise<void> {
+  await rest(`quote_leads?id=eq.${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: JSON.stringify({ nudged_at: new Date().toISOString() }),
+    headers: { Prefer: "return=minimal" },
+  });
+}
+
+export async function listSuppressedEmails(): Promise<Set<string>> {
+  const rows = await rest<{ email: string }[]>("email_suppressions?select=email");
+  return new Set(rows.map((r) => r.email.toLowerCase()));
+}
+
+export async function suppressEmail(email: string, reason = "unsubscribed"): Promise<void> {
+  await rest("email_suppressions?on_conflict=email", {
+    method: "POST",
+    body: JSON.stringify({ email: email.toLowerCase(), reason }),
+    headers: { Prefer: "return=minimal,resolution=ignore-duplicates" },
+  });
+}
+
+/** Addresses on a connected Airbnb calendar — the "host" segment. Empty pre-migration. */
+export async function listHostEmails(): Promise<Set<string>> {
+  const rows = await rest<{ host_email: string | null }[]>("ical_feeds?select=host_email").catch(() => []);
+  return new Set(rows.map((r) => (r.host_email ?? "").toLowerCase()).filter(Boolean));
+}
+
+export type CampaignRow = {
+  id: string;
+  name: string;
+  subject: string;
+  heading: string;
+  body: string;
+  cta_label: string | null;
+  cta_url: string | null;
+  segment: import("./segments").SegmentFilter;
+  status: "draft" | "sending" | "sent";
+  sent_count: number;
+  sent_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export async function listCampaigns(): Promise<CampaignRow[]> {
+  return rest<CampaignRow[]>("email_campaigns?select=*&order=created_at.desc");
+}
+
+export async function getCampaign(id: string): Promise<CampaignRow | null> {
+  const rows = await rest<CampaignRow[]>(`email_campaigns?id=eq.${encodeURIComponent(id)}&select=*&limit=1`);
+  return rows[0] ?? null;
+}
+
+export async function insertCampaign(fields: Partial<CampaignRow> & { name: string }): Promise<CampaignRow | null> {
+  const rows = await rest<CampaignRow[]>("email_campaigns", { method: "POST", body: JSON.stringify(fields) });
+  return rows?.[0] ?? null;
+}
+
+export async function updateCampaign(id: string, fields: Partial<CampaignRow>): Promise<void> {
+  await rest(`email_campaigns?id=eq.${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: JSON.stringify({ ...fields, updated_at: new Date().toISOString() }),
+    headers: { Prefer: "return=minimal" },
+  });
+}
+
+export async function deleteCampaign(id: string): Promise<void> {
+  await rest(`email_campaigns?id=eq.${encodeURIComponent(id)}&status=eq.draft`, { method: "DELETE" });
+}
+
+/**
+ * Claim the right to send one email. Returns the send row's id, or null when
+ * this dedupe key was already claimed — that email went (or is going) already.
+ * Claim first, send second: a crash between the two loses an email rather
+ * than sending it twice.
+ */
+export async function claimSend(opts: {
+  dedupeKey: string;
+  kind: string;
+  campaignId?: string | null;
+  email: string;
+}): Promise<string | null> {
+  const rows = await rest<{ id: string }[]>("email_sends?on_conflict=dedupe_key&select=id", {
+    method: "POST",
+    body: JSON.stringify({
+      dedupe_key: opts.dedupeKey,
+      kind: opts.kind,
+      campaign_id: opts.campaignId ?? null,
+      email: opts.email.toLowerCase(),
+    }),
+    headers: { Prefer: "return=representation,resolution=ignore-duplicates" },
+  });
+  return rows?.[0]?.id ?? null;
+}
+
+export async function finishSend(id: string, ok: boolean, error?: string): Promise<void> {
+  if (ok) {
+    await rest(`email_sends?id=eq.${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      body: JSON.stringify({ status: "sent" }),
+      headers: { Prefer: "return=minimal" },
+    });
+  } else {
+    // A failed send releases its claim so the next attempt can retry it.
+    await rest(`email_sends?id=eq.${encodeURIComponent(id)}`, { method: "DELETE" });
+    console.error("[marketing] send failed:", error);
+  }
+}
+
+export async function countSentForCampaign(campaignId: string): Promise<number> {
+  const rows = await rest<{ id: string }[]>(
+    `email_sends?campaign_id=eq.${encodeURIComponent(campaignId)}&status=eq.sent&select=id`
+  );
+  return rows.length;
+}
+
+/** Addresses sent any marketing email since `sinceIso` — the frequency cap. */
+export async function emailsSentSince(sinceIso: string): Promise<Set<string>> {
+  const rows = await rest<{ email: string }[]>(
+    `email_sends?created_at=gte.${encodeURIComponent(sinceIso)}&select=email`
+  );
+  return new Set(rows.map((r) => r.email));
+}
+
+export async function recentSends(limit = 50): Promise<{ email: string; kind: string; status: string; created_at: string }[]> {
+  return rest(`email_sends?select=email,kind,status,created_at&order=created_at.desc&limit=${limit}`);
+}
+
+export type AutomationRow = {
+  key: "abandoned_quote" | "one_off_followup" | "lapsed_regular";
+  enabled: boolean;
+  delay_days: number;
+  subject: string;
+  heading: string;
+  body: string;
+  cta_label: string;
+  updated_at: string;
+};
+
+export async function listAutomations(): Promise<AutomationRow[]> {
+  return rest<AutomationRow[]>("marketing_automations?select=*&order=key.asc");
+}
+
+export async function updateAutomation(key: string, fields: Partial<AutomationRow>): Promise<void> {
+  await rest(`marketing_automations?key=eq.${encodeURIComponent(key)}`, {
+    method: "PATCH",
+    body: JSON.stringify({ ...fields, updated_at: new Date().toISOString() }),
+    headers: { Prefer: "return=minimal" },
+  });
+}
