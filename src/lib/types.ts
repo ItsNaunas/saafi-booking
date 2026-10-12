@@ -19,6 +19,8 @@ export type BookingRequest = {
   notes?: string;
   /** Left ticked on the form = may receive marketing email (soft opt-in). */
   marketingOk?: boolean;
+  /** "How did you hear about us?" — a SOURCES key, optional. */
+  heardFrom?: string | null;
   /** Deep cleans only, and required there: why the house needs one. */
   deepReason?: string | null;
 };

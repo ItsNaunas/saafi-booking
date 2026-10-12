@@ -6,17 +6,18 @@
 // nothing is ever sent twice — a campaign that stops part way is resumed by
 // pressing Send again, and the cron can re-run safely.
 
-import { site } from "./business";
+import { site, contact } from "./business";
 import { londonWallClock } from "./scheduling";
 import { formatGBP, FREQUENCY_LABEL, type Frequency } from "./pricing";
 import { sendMarketingEmail } from "./email";
 import { unsubscribeUrls } from "./unsubscribe";
-import { buildProfiles, recipients, merge, paragraphs, type Profile } from "./segments";
+import { buildProfiles, recipients, merge, paragraphs, daysBetween, type Profile } from "./segments";
 import {
   listBookings,
   listQuoteLeads,
   listSuppressedEmails,
   listHostEmails,
+  listHostStats,
   getCampaign,
   updateCampaign,
   claimSend,
@@ -36,13 +37,14 @@ const siteUrl = () => process.env.NEXT_PUBLIC_SITE_URL ?? site.url;
 
 export async function loadAudience(): Promise<{ profiles: Profile[]; leads: QuoteLeadRow[]; bookings: BookingRow[] }> {
   const today = londonWallClock(new Date()).date;
-  const [bookings, leads, suppressed, hostEmails] = await Promise.all([
+  const [bookings, leads, suppressed, hostEmails, hostStats] = await Promise.all([
     listBookings(),
     listQuoteLeads(),
     listSuppressedEmails(),
     listHostEmails(),
+    listHostStats(today),
   ]);
-  return { profiles: buildProfiles({ bookings, leads, suppressed, hostEmails, today }), leads, bookings };
+  return { profiles: buildProfiles({ bookings, leads, suppressed, hostEmails, hostStats, today }), leads, bookings };
 }
 
 /** Send one marketing email to one person, at most once per dedupe key. */
@@ -54,7 +56,7 @@ async function sendOnce(opts: {
   subject: string;
   heading: string;
   body: string;
-  extra?: string[];
+  highlight?: string | null;
   cta?: { label: string; url: string } | null;
 }): Promise<"sent" | "skipped" | "failed"> {
   const claim = await claimSend({
@@ -68,7 +70,8 @@ async function sendOnce(opts: {
     to: opts.profile.email,
     subject: merge(opts.subject, opts.profile),
     heading: merge(opts.heading, opts.profile),
-    paragraphs: [...(opts.extra ?? []), ...paragraphs(merge(opts.body, opts.profile))],
+    paragraphs: paragraphs(merge(opts.body, opts.profile)),
+    highlight: opts.highlight ? merge(opts.highlight, opts.profile) : null,
     cta: opts.cta,
     unsubscribe: await unsubscribeUrls(opts.profile.email),
   }).catch((e) => ({ ok: false, reason: String(e) }));
@@ -108,6 +111,7 @@ export async function sendCampaign(
       subject: c.subject,
       heading: c.heading || c.subject,
       body: c.body,
+      highlight: c.highlight,
       cta: c.cta_label && c.cta_url ? { label: c.cta_label, url: c.cta_url } : null,
     });
     if (r === "sent") {
@@ -134,6 +138,7 @@ export async function sendCampaignTest(id: string, to: string): Promise<{ ok: bo
     subject: `[TEST] ${merge(c.subject, sample)}`,
     heading: merge(c.heading || c.subject, sample),
     paragraphs: paragraphs(merge(c.body, sample)),
+    highlight: c.highlight ? merge(c.highlight, sample) : null,
     cta: c.cta_label && c.cta_url ? { label: c.cta_label, url: c.cta_url } : null,
     unsubscribe: await unsubscribeUrls(to),
   });
@@ -141,23 +146,99 @@ export async function sendCampaignTest(id: string, to: string): Promise<{ ok: bo
 
 /* ---------- automations (daily cron) ---------- */
 
-const AUTOMATION_CTA: Record<AutomationRow["key"], string> = {
-  abandoned_quote: "/quote",
-  one_off_followup: "/regular-cleaning",
-  lapsed_regular: "/quote",
-};
+export const AUTOMATION_KEYS = [
+  "abandoned_quote",
+  "one_off_followup",
+  "lapsed_regular",
+  "mover_followup",
+  "seasonal_deep",
+  "referral_ask",
+  "at_risk_checkin",
+] as const;
+
+/** Where each automation's button goes. */
+export function automationCtaUrl(key: AutomationRow["key"]): string {
+  switch (key) {
+    case "one_off_followup":
+      return siteUrl() + "/regular-cleaning";
+    case "seasonal_deep":
+      return siteUrl() + "/deep-cleaning";
+    case "referral_ask":
+      return siteUrl();
+    case "at_risk_checkin":
+      return `mailto:${contact.email}`;
+    default:
+      return siteUrl() + "/quote";
+  }
+}
 
 /** Most automation emails a day — a ceiling on any surprise (or abuse of the quote form). */
 const DAILY_CAP = 40;
 /** No one gets two marketing emails within this many days. */
 const QUIET_DAYS = 7;
+/** Seasonal deep-clean pushes run in these months (1-12). */
+const SEASON_MONTHS = [3, 9];
 
-function quoteLine(l: QuoteLeadRow): string | null {
+export function quoteLine(l: Pick<QuoteLeadRow, "quote">): string | null {
   const q = l.quote ?? {};
   if (!q.price) return null;
   const what = q.service === "deep" ? "Deep clean" : `${FREQUENCY_LABEL[(q.frequency ?? "one_off") as Frequency] ?? "Clean"}`;
   const hrs = q.hours && q.service !== "deep" ? `, ${q.hours} hours` : "";
-  return `Your quote: ${what}${hrs} — ${formatGBP(Number(q.price))}${q.service !== "deep" && q.frequency && q.frequency !== "one_off" ? " a visit" : ""}.`;
+  return `Your quote: ${what}${hrs} — ${formatGBP(Number(q.price))}${q.service !== "deep" && q.frequency && q.frequency !== "one_off" ? " a visit" : ""}`;
+}
+
+/**
+ * Who each lifecycle automation is for today, and the key that makes it
+ * once-only. Pure over profiles — the abandoned-quote one needs leads too and
+ * is handled separately.
+ */
+export function automationTargets(
+  key: Exclude<AutomationRow["key"], "abandoned_quote">,
+  delayDays: number,
+  profiles: Profile[],
+  today: string
+): { profile: Profile; dedupeKey: string }[] {
+  const ok = (p: Profile) => p.consent === "yes";
+  const out: { profile: Profile; dedupeKey: string }[] = [];
+  const within = (date: string | null, from: number, span: number) => {
+    if (!date) return false;
+    const d = daysBetween(date, today);
+    return d >= from && d <= from + span;
+  };
+  for (const p of profiles) {
+    if (!ok(p)) continue;
+    // At-risk people get the check-in and nothing else.
+    if (key !== "at_risk_checkin" && p.atRisk) continue;
+    switch (key) {
+      case "one_off_followup":
+        if (p.stage === "one_off" && !p.nextBooking && within(p.lastClean, delayDays, 30))
+          out.push({ profile: p, dedupeKey: `${key}:${p.email}:${p.lastClean}` });
+        break;
+      case "lapsed_regular":
+        if (p.stage === "lapsed" && !p.nextBooking && within(p.lastClean, delayDays, 60))
+          out.push({ profile: p, dedupeKey: `${key}:${p.email}:${p.lastClean}` });
+        break;
+      case "mover_followup":
+        if (within(p.lastMoveClean, delayDays, 30))
+          out.push({ profile: p, dedupeKey: `${key}:${p.email}:${p.lastMoveClean}` });
+        break;
+      case "seasonal_deep": {
+        const month = Number(today.slice(5, 7));
+        const due = p.daysSinceDeep == null || p.daysSinceDeep >= 6 * 30;
+        if (SEASON_MONTHS.includes(month) && (p.stage === "regular" || p.stage === "one_off") && due)
+          out.push({ profile: p, dedupeKey: `${key}:${p.email}:${today.slice(0, 7)}` });
+        break;
+      }
+      case "referral_ask":
+        if (p.happy) out.push({ profile: p, dedupeKey: `${key}:${p.email}` });
+        break;
+      case "at_risk_checkin":
+        if (p.atRisk && within(p.lastIssue, delayDays, 5))
+          out.push({ profile: p, dedupeKey: `${key}:${p.email}:${p.lastIssue}` });
+        break;
+    }
+  }
+  return out;
 }
 
 export async function runAutomations(): Promise<{ sent: Record<string, number>; errors: string[] }> {
@@ -166,13 +247,14 @@ export async function runAutomations(): Promise<{ sent: Record<string, number>; 
   const automations = (await listAutomations()).filter((a) => a.enabled);
   if (automations.length === 0) return { sent, errors };
 
+  const today = londonWallClock(new Date()).date;
   const { profiles, leads, bookings } = await loadAudience();
   const byEmail = new Map(profiles.map((p) => [p.email, p]));
   const quietSince = new Date(Date.now() - QUIET_DAYS * 86_400_000).toISOString();
   const recentlyEmailed = await emailsSentSince(quietSince);
   let budget = DAILY_CAP;
 
-  const go = async (a: AutomationRow, p: Profile, key: string, extra?: string[]) => {
+  const go = async (a: AutomationRow, p: Profile, key: string, highlight?: string | null) => {
     if (budget <= 0 || recentlyEmailed.has(p.email)) return false;
     const r = await sendOnce({
       dedupeKey: key,
@@ -181,8 +263,8 @@ export async function runAutomations(): Promise<{ sent: Record<string, number>; 
       subject: a.subject,
       heading: a.heading,
       body: a.body,
-      extra,
-      cta: { label: a.cta_label, url: siteUrl() + AUTOMATION_CTA[a.key] },
+      highlight,
+      cta: { label: a.cta_label, url: automationCtaUrl(a.key) },
     });
     if (r === "sent") {
       budget--;
@@ -193,33 +275,28 @@ export async function runAutomations(): Promise<{ sent: Record<string, number>; 
     return r === "sent";
   };
 
-  for (const a of automations) {
+  // The check-in goes first: if something went wrong, that's the email they
+  // should get this week, not an offer.
+  const order = (k: string) => (k === "at_risk_checkin" ? 0 : k === "abandoned_quote" ? 1 : 2);
+  for (const a of automations.sort((x, y) => order(x.key) - order(y.key))) {
     try {
       if (a.key === "abandoned_quote") {
         const now = Date.now();
         for (const l of leads) {
           const email = l.email.toLowerCase();
           const p = byEmail.get(email);
-          if (!p || p.consent !== "yes") continue;
+          if (!p || p.consent !== "yes" || p.atRisk) continue;
           if (l.converted_at || l.nudged_at) continue;
           // Quiet for 6h (they may just be on a break), and never older than a week.
-          const age = now - Date.parse(l.updated_at);
-          if (age < 6 * 3_600_000 || now - Date.parse(l.created_at) > 7 * 86_400_000) continue;
+          if (now - Date.parse(l.updated_at) < 6 * 3_600_000 || now - Date.parse(l.created_at) > 7 * 86_400_000) continue;
           // A name and phone too: an email alone could be anyone's, typed by anyone.
           if (!l.name || (l.phone ?? "").replace(/\D/g, "").length < 7) continue;
           // Booked after quoting (even if the conversion marker missed)?
           if (bookings.some((b) => b.customer_email.toLowerCase() === email && b.created_at >= l.created_at)) continue;
-          const line = quoteLine(l);
-          if (await go(a, p, `abandoned_quote:${email}`, line ? [line] : undefined)) await markLeadNudged(l.id);
+          if (await go(a, p, `abandoned_quote:${email}`, quoteLine(l))) await markLeadNudged(l.id);
         }
       } else {
-        const stage = a.key === "one_off_followup" ? "one_off" : "lapsed";
-        const window = a.key === "one_off_followup" ? 30 : 60;
-        for (const p of profiles) {
-          if (p.consent !== "yes" || p.stage !== stage || p.nextBooking || p.daysSinceLastClean == null) continue;
-          if (p.daysSinceLastClean < a.delay_days || p.daysSinceLastClean > a.delay_days + window) continue;
-          await go(a, p, `${a.key}:${p.email}:${p.lastClean}`);
-        }
+        for (const t of automationTargets(a.key, a.delay_days, profiles, today)) await go(a, t.profile, t.dedupeKey);
       }
     } catch (e) {
       errors.push(`${a.key}: ${String(e).slice(0, 140)}`);

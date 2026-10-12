@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { SOURCES } from "@/lib/segments";
 import {
   pricingConfig,
   recommendedHours,
@@ -147,6 +148,7 @@ export default function QuoteWizard({
   // Pre-ticked with a plain way to untick: the "opportunity to refuse" that
   // the soft opt-in needs, offered at the moment the email is collected.
   const [marketingOk, setMarketingOk] = useState(true);
+  const [heardFrom, setHeardFrom] = useState("");
   const [reference, setReference] = useState<string | null>(null);
   const [payUrl, setPayUrl] = useState<string | null>(null);
   // The server's answer is the one Stripe charges — the client figure is only
@@ -520,6 +522,7 @@ export default function QuoteWizard({
           startTime,
           notes,
           marketingOk,
+          heardFrom: heardFrom || null,
           website: honeypot.current?.value ?? "",
         }),
       });
@@ -1236,6 +1239,24 @@ export default function QuoteWizard({
             />
           </Disclosure>
         </Section>
+
+        <label className="block text-sm">
+          <span className="mb-1 block font-medium text-slate-700">
+            How did you hear about us? <span className="font-normal text-slate-400">(optional)</span>
+          </span>
+          <select
+            value={heardFrom}
+            onChange={(e) => setHeardFrom(e.target.value)}
+            className="w-full border border-slate-300 bg-white px-3 py-2 text-slate-800 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-200"
+          >
+            <option value="">Choose one</option>
+            {SOURCES.map((s) => (
+              <option key={s.key} value={s.key}>
+                {s.label}
+              </option>
+            ))}
+          </select>
+        </label>
 
         <label className="flex cursor-pointer items-start gap-3 text-sm text-slate-600">
           <input

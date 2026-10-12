@@ -1136,6 +1136,30 @@ export async function suppressEmail(email: string, reason = "unsubscribed"): Pro
   });
 }
 
+/** Per host email: listings connected, and same-day turnovers from today on. Empty pre-migration. */
+export async function listHostStats(today: string): Promise<Map<string, import("./segments").HostStats>> {
+  const out = new Map<string, import("./segments").HostStats>();
+  const feeds = await rest<{ id: string; host_email: string | null }[]>("ical_feeds?select=id,host_email").catch(() => []);
+  const owner = new Map<string, string>();
+  for (const f of feeds) {
+    const email = (f.host_email ?? "").toLowerCase();
+    if (!email) continue;
+    owner.set(f.id, email);
+    const s = out.get(email) ?? { listings: 0, sameDay: 0 };
+    s.listings++;
+    out.set(email, s);
+  }
+  if (owner.size === 0) return out;
+  const rows = await rest<{ feed_id: string; checkout_date: string; next_checkin_date: string | null }[]>(
+    `turnover_suggestions?select=feed_id,checkout_date,next_checkin_date&status=in.(suggested,confirmed)&checkout_date=gte.${today}`
+  ).catch(() => []);
+  for (const r of rows) {
+    const email = owner.get(r.feed_id);
+    if (email && r.next_checkin_date === r.checkout_date) out.get(email)!.sameDay++;
+  }
+  return out;
+}
+
 /** Addresses on a connected Airbnb calendar — the "host" segment. Empty pre-migration. */
 export async function listHostEmails(): Promise<Set<string>> {
   const rows = await rest<{ host_email: string | null }[]>("ical_feeds?select=host_email").catch(() => []);
@@ -1150,6 +1174,8 @@ export type CampaignRow = {
   body: string;
   cta_label: string | null;
   cta_url: string | null;
+  /** Optional offer line shown in a tinted box (2026-10-12 part 2). */
+  highlight?: string | null;
   segment: import("./segments").SegmentFilter;
   status: "draft" | "sending" | "sent";
   sent_count: number;
@@ -1243,7 +1269,14 @@ export async function recentSends(limit = 50): Promise<{ email: string; kind: st
 }
 
 export type AutomationRow = {
-  key: "abandoned_quote" | "one_off_followup" | "lapsed_regular";
+  key:
+    | "abandoned_quote"
+    | "one_off_followup"
+    | "lapsed_regular"
+    | "mover_followup"
+    | "seasonal_deep"
+    | "referral_ask"
+    | "at_risk_checkin";
   enabled: boolean;
   delay_days: number;
   subject: string;

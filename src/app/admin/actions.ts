@@ -45,7 +45,7 @@ import {
   updateAutomation,
 } from "@/lib/supabaseAdmin";
 import { filterFromForm, type SegmentFilter } from "@/lib/segments";
-import { sendCampaign, sendCampaignTest } from "@/lib/marketing";
+import { sendCampaign, sendCampaignTest, AUTOMATION_KEYS } from "@/lib/marketing";
 import { getStripe, fromPence } from "@/lib/stripe";
 import {
   sendConfirmationEmail,
@@ -998,6 +998,7 @@ export async function saveCampaignAction(formData: FormData) {
     heading: get("heading", 200),
     body: String(formData.get("body") ?? "").slice(0, 10_000),
     cta_label: get("cta_label", 60) || null,
+    highlight: get("highlight", 200) || null,
     cta_url: /^https?:\/\//.test(ctaUrl) ? ctaUrl : ctaUrl.startsWith("/") ? (process.env.NEXT_PUBLIC_SITE_URL ?? "https://saaficleaningservice.com") + ctaUrl : null,
     segment: segmentOf(formData),
   });
@@ -1026,7 +1027,7 @@ export async function deleteCampaignAction(formData: FormData) {
 
 export async function saveAutomationAction(formData: FormData) {
   const key = String(formData.get("key") ?? "");
-  if (!["abandoned_quote", "one_off_followup", "lapsed_regular"].includes(key)) return;
+  if (!(AUTOMATION_KEYS as readonly string[]).includes(key)) return;
   const get = (k: string, max: number) => String(formData.get(k) ?? "").trim().slice(0, max);
   const days = Number(get("delay_days", 4));
   const fields: Record<string, unknown> = { enabled: formData.get("enabled") === "on" };

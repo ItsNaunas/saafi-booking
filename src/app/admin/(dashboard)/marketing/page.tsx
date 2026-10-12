@@ -7,8 +7,11 @@ import {
   STAGE_LABEL,
   describeFilter,
   filterFromForm,
+  filterToFields,
   matches,
+  SOURCE_LABEL,
   type Consent,
+  type SegmentFilter,
   type Profile,
   type Stage,
 } from "@/lib/segments";
@@ -19,20 +22,50 @@ import SegmentFields from "./SegmentFields";
 
 export const dynamic = "force-dynamic";
 
-const AUTOMATION_INFO: Record<AutomationRow["key"], { title: string; when: (d: number) => string }> = {
+const AUTOMATION_INFO: Record<AutomationRow["key"], { title: string; when: (d: number) => string; delayLabel?: string }> = {
+  at_risk_checkin: {
+    title: "Something went wrong — check-in",
+    when: (d) =>
+      `A personal "how did we do" ${d}+ days after a no-access visit, cancellation, refund or bill above the quote. Never an offer; goes before any other email that week.`,
+    delayLabel: "Days after the problem",
+  },
   abandoned_quote: {
     title: "Abandoned quote",
-    when: () => "Someone typed their email into the quote form but didn't book. Sent once, the next morning (6h+ later), within a week.",
+    when: () => "Typed their email into the quote form but didn't book. Sent once, the next morning (6h+ later), within a week, with their quoted price.",
   },
   one_off_followup: {
     title: "One-off → regular",
-    when: (d) => `A one-off customer, ${d}+ days after their clean, with nothing else booked.`,
+    when: (d) => `A one-off customer, ${d}–${d + 30} days after their clean, with nothing else booked.`,
+    delayLabel: "Days after their clean",
   },
   lapsed_regular: {
     title: "Lapsed regular win-back",
-    when: (d) => `A regular whose plan stopped, ${d}+ days after their last clean, with nothing booked.`,
+    when: (d) => `A regular whose plan stopped, ${d}–${d + 60} days after their last clean, with nothing booked.`,
+    delayLabel: "Days after their last clean",
+  },
+  mover_followup: {
+    title: "Mover follow-up",
+    when: (d) => `${d}–${d + 30} days after a deep clean booked for moving out or moving in. Asks for a clean at the new place and an introduction.`,
+    delayLabel: "Days after the move clean",
+  },
+  seasonal_deep: {
+    title: "Seasonal deep clean",
+    when: () => "March and September, to regulars and one-offs with no deep clean in 6+ months. Once per season.",
+  },
+  referral_ask: {
+    title: "Referral ask",
+    when: () => "Once, to happy regulars: 3+ completed cleans and nothing gone wrong in 90 days. No reward is promised.",
   },
 };
+const AUTOMATION_ORDER: AutomationRow["key"][] = [
+  "abandoned_quote",
+  "one_off_followup",
+  "lapsed_regular",
+  "mover_followup",
+  "seasonal_deep",
+  "referral_ask",
+  "at_risk_checkin",
+];
 
 const CONSENT_CHIP: Record<Consent, string> = {
   yes: "bg-emerald-50 text-emerald-800 ring-emerald-200",
@@ -128,10 +161,18 @@ export default async function MarketingPage({ searchParams }: { searchParams: Pr
       <section className="mb-6">
         <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-400">Automatic emails</h2>
         <div className="grid gap-3 md:grid-cols-3">
-          {automations.map((a) => (
-            <AutomationCard key={a.key} a={a} />
-          ))}
+          {automations
+            .filter((a) => a.key in AUTOMATION_INFO)
+            .sort((x, y) => AUTOMATION_ORDER.indexOf(x.key) - AUTOMATION_ORDER.indexOf(y.key))
+            .map((a) => (
+              <AutomationCard key={a.key} a={a} />
+            ))}
         </div>
+        {automations.length < AUTOMATION_ORDER.length && (
+          <p className="mt-2 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800 ring-1 ring-amber-200">
+            Four more automatic emails are ready: paste <code>supabase/2026-10-12-marketing-2.sql</code> into Supabase to add them.
+          </p>
+        )}
         <p className="mt-2 text-xs text-slate-400">
           Checked every morning. Nobody gets more than one marketing email a week, and at most 40 automatic emails go
           out per day.
@@ -240,7 +281,14 @@ export default async function MarketingPage({ searchParams }: { searchParams: Pr
                     </td>
                     <td className="px-3 py-2 text-slate-600">
                       {STAGE_LABEL[p.stage]}
-                      {p.isHost && <span className="ml-1 text-xs text-sky-700">· host</span>}
+                      <div className="flex flex-wrap gap-1 text-[10px]">
+                        {p.isHost && <Tag cls="text-sky-700">host{p.hostListings > 1 ? ` ×${p.hostListings}` : ""}</Tag>}
+                        {p.atRisk && <Tag cls="text-rose-700">at risk</Tag>}
+                        {p.happy && <Tag cls="text-emerald-700">happy</Tag>}
+                        {p.lastMoveClean && <Tag cls="text-violet-700">mover</Tag>}
+                        {p.plan && <Tag cls="text-slate-500">{p.plan.replace("_", "-")}</Tag>}
+                        {p.heardFrom && <Tag cls="text-slate-500">via {SOURCE_LABEL[p.heardFrom] ?? p.heardFrom}</Tag>}
+                      </div>
                     </td>
                     <td className="px-3 py-2 text-slate-600">{p.area ?? "—"}</td>
                     <td className="px-3 py-2 text-slate-600">
@@ -267,20 +315,10 @@ export default async function MarketingPage({ searchParams }: { searchParams: Pr
 }
 
 /** Carry a filter into a POST form as the same field names the builder uses. */
-function HiddenFilter({ f }: { f: import("@/lib/segments").SegmentFilter }) {
-  const fields: [string, string][] = [];
-  f.stages?.forEach((s) => fields.push(["stage", s]));
-  f.areas?.forEach((a) => fields.push(["area", a]));
-  if (f.deep) fields.push(["deep", f.deep]);
-  if (f.upcoming) fields.push(["upcoming", f.upcoming]);
-  if (f.host) fields.push(["host", f.host]);
-  if (f.minDaysSinceClean != null) fields.push(["min_days", String(f.minDaysSinceClean)]);
-  if (f.maxDaysSinceClean != null) fields.push(["max_days", String(f.maxDaysSinceClean)]);
-  if (f.minSpend != null) fields.push(["min_spend", String(f.minSpend)]);
-  if (f.minCleans != null) fields.push(["min_cleans", String(f.minCleans)]);
+function HiddenFilter({ f }: { f: SegmentFilter }) {
   return (
     <>
-      {fields.map(([k, v], i) => (
+      {filterToFields(f).map(([k, v], i) => (
         <input key={`${k}${i}`} type="hidden" name={k} value={v} />
       ))}
     </>
@@ -305,15 +343,19 @@ function AutomationCard({ a }: { a: AutomationRow }) {
         </form>
       </div>
       <p className="mb-2 text-xs text-slate-500">{info.when(a.delay_days)}</p>
+      <p className="mb-2 truncate text-xs text-slate-700">
+        <span className="text-slate-400">Subject:</span> {a.subject}
+      </p>
       <details className="text-sm">
         <summary className="cursor-pointer text-xs font-medium text-brand-700">Edit email</summary>
         <form action={saveAutomationAction} className="mt-2 space-y-2">
           <input type="hidden" name="key" value={a.key} />
           {a.enabled && <input type="hidden" name="enabled" value="on" />}
-          {a.key !== "abandoned_quote" && (
-            <Input label="Days after last clean" name="delay_days" defaultValue={String(a.delay_days)} type="number" />
+          {info.delayLabel ? (
+            <Input label={info.delayLabel} name="delay_days" defaultValue={String(a.delay_days)} type="number" />
+          ) : (
+            <input type="hidden" name="delay_days" value={String(a.delay_days)} />
           )}
-          {a.key === "abandoned_quote" && <input type="hidden" name="delay_days" value={String(a.delay_days)} />}
           <Input label="Subject" name="subject" defaultValue={a.subject} />
           <Input label="Headline" name="heading" defaultValue={a.heading} />
           <label className="block">
@@ -338,4 +380,8 @@ function Input({ label, name, defaultValue, type = "text" }: { label: string; na
       <input name={name} type={type} defaultValue={defaultValue} className="w-full border border-slate-300 px-2 py-1.5 text-sm outline-none focus:border-brand-500" />
     </label>
   );
+}
+
+function Tag({ children, cls }: { children: React.ReactNode; cls: string }) {
+  return <span className={`font-medium ${cls}`}>{children}</span>;
 }

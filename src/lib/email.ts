@@ -15,7 +15,7 @@ import { agreedPriceFor, paidSoFar } from "./money";
 import { secret } from "./env";
 import { formatTime, formatTimeRange } from "@/lib/scheduling";
 import { chargeableJourney, outcomeLabel, type OutcomeReason } from "./outcomes";
-import { site, contact } from "./business";
+import { site, contact, checks } from "./business";
 import { bookingManageUrl } from "./bookingLink";
 
 /* ------------------------------------------------------------------ *
@@ -46,6 +46,12 @@ type Mail = {
   /** Marketing only: a separate sending address, so a campaign marked as spam
    *  can't drag booking confirmations into junk with it. */
   from?: string;
+  /** Inbox preview text (hidden in the body). Defaults to nothing. */
+  preheader?: string;
+  /** One line that matters most — an offer, their quote — in a tinted box. */
+  highlight?: string | null;
+  /** Marketing: a warm sign-off and the trust strip under the card. */
+  personal?: boolean;
 };
 
 const BRAND = {
@@ -82,6 +88,11 @@ function renderHtml(m: Mail): string {
   return `<!DOCTYPE html>
 <html lang="en">
 <body style="margin:0;padding:0;background:${BRAND.page};">
+  ${
+    m.preheader
+      ? `<div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent;">${esc(m.preheader)}${"&nbsp;&zwnj;".repeat(40)}</div>`
+      : ""
+  }
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:${BRAND.page};">
     <tr><td align="center" style="padding:28px 12px;">
       <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="width:100%;max-width:560px;">
@@ -91,11 +102,19 @@ function renderHtml(m: Mail): string {
           <span style="${font}font-size:20px;font-weight:700;letter-spacing:0.16em;color:#ffffff;">SAAFI</span>
           <span style="${font}font-size:11px;font-weight:600;letter-spacing:0.18em;color:#86c5f7;"> &nbsp;CLEANING SERVICE</span>
         </td></tr>
+        ${m.personal ? `<tr><td style="background:${BRAND.blue};height:4px;line-height:4px;font-size:0;">&nbsp;</td></tr>` : ""}
 
         <!-- card -->
         <tr><td style="background:#ffffff;padding:28px;">
           ${m.greeting ? para(`Hi ${m.greeting},`, BRAND.muted) : ""}
-          <p style="margin:0 0 16px;${font}font-size:19px;line-height:1.35;font-weight:700;color:${BRAND.text};">${esc(m.heading)}</p>
+          <p style="margin:0 0 16px;${font}font-size:${m.personal ? 22 : 19}px;line-height:1.3;font-weight:700;color:${BRAND.text};">${esc(m.heading)}</p>
+          ${
+            m.highlight
+              ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:2px 0 18px;">
+                  <tr><td style="background:${BRAND.tint};border-left:4px solid ${BRAND.blue};padding:14px 16px;${font}font-size:15px;line-height:1.5;font-weight:600;color:${BRAND.ink};">${esc(m.highlight)}</td></tr>
+                </table>`
+              : ""
+          }
           ${intro.map((t) => para(t)).join("")}
 
           ${
@@ -125,7 +144,19 @@ function renderHtml(m: Mail): string {
           }
 
           ${outro.map((t) => para(t, BRAND.muted)).join("")}
+          ${
+            m.personal
+              ? `<p style="margin:8px 0 0;${font}font-size:15px;line-height:1.6;color:${BRAND.text};">Thanks,<br><b>The SAAFI family</b></p>`
+              : ""
+          }
         </td></tr>
+        ${
+          m.personal && checks.length
+            ? `<tr><td style="background:#ffffff;border-top:1px solid #e2e8f0;padding:14px 28px;" align="center">
+                <p style="margin:0;${font}font-size:12px;line-height:1.6;color:${BRAND.muted};">Family-run in Oxford &nbsp;·&nbsp; Vetted, trained cleaners &nbsp;·&nbsp; Insured for work in your home</p>
+              </td></tr>`
+            : ""
+        }
 
         <!-- footer -->
         <tr><td style="padding:18px 28px;">
@@ -158,12 +189,14 @@ function renderText(m: Mail): string {
     m.greeting ? "" : null,
     m.heading,
     "",
+    ...(m.highlight ? [m.highlight, ""] : []),
     ...compact(m.intro).flatMap((t) => [t, ""]),
     ...rows.map(([k, v]) => `${(k + ":").padEnd(pad + 2)}${v}`),
     rows.length ? "" : null,
     m.cta ? `${m.cta.label}: ${m.cta.url}` : null,
     m.cta ? "" : null,
     ...compact(m.outro).flatMap((t) => [t, ""]),
+    ...(m.personal ? ["Thanks,", "The SAAFI family", ""] : []),
     site.name,
     m.reference ? `Reference: ${m.reference}` : null,
     site.url.replace("https://", ""),
@@ -1115,22 +1148,40 @@ export async function sendTimeOffDecisionEmail(
  * send without an unsubscribe link — a marketing email without one breaks the
  * promise on the quote form and the bulk-sender rules.
  */
-export async function sendMarketingEmail(opts: {
+type MarketingMail = {
   to: string;
   subject: string;
   heading: string;
   paragraphs: string[];
+  highlight?: string | null;
   cta?: { label: string; url: string } | null;
   unsubscribe: { page: string; oneClick: string } | null;
-}): Promise<{ ok: boolean; reason?: string }> {
-  if (!opts.unsubscribe) return { ok: false, reason: "unsubscribe links need SESSION_SECRET" };
-  return send({
+};
+
+function marketingMail(opts: MarketingMail): Mail {
+  return {
     to: opts.to,
     subject: opts.subject,
     heading: opts.heading,
     intro: opts.paragraphs,
+    highlight: opts.highlight ?? null,
     cta: opts.cta ?? null,
-    unsubscribe: opts.unsubscribe,
+    unsubscribe: opts.unsubscribe ?? undefined,
+    personal: true,
+    // The inbox preview line: the offer if there is one, else the opening words.
+    preheader: (opts.highlight || opts.paragraphs[0] || "").slice(0, 110),
     from: process.env.MARKETING_EMAIL_FROM || undefined,
-  });
+  };
+}
+
+export async function sendMarketingEmail(opts: MarketingMail): Promise<{ ok: boolean; reason?: string }> {
+  if (!opts.unsubscribe) return { ok: false, reason: "unsubscribe links need SESSION_SECRET" };
+  return send(marketingMail(opts));
+}
+
+/** The exact HTML a marketing email will be — for the admin preview. */
+export function renderMarketingPreview(opts: Omit<MarketingMail, "to" | "unsubscribe">): string {
+  return renderHtml(
+    marketingMail({ ...opts, to: "preview@example.com", unsubscribe: { page: "#", oneClick: "#" } })
+  );
 }

@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { getCampaign } from "@/lib/supabaseAdmin";
 import { loadAudience } from "@/lib/marketing";
 import { describeFilter, merge, paragraphs, recipients } from "@/lib/segments";
+import { renderMarketingPreview } from "@/lib/email";
 import { saveCampaignAction, deleteCampaignAction } from "@/app/admin/actions";
 import PendingButton from "@/components/PendingButton";
 import SegmentFields from "../../SegmentFields";
@@ -63,6 +64,12 @@ export default async function CampaignPage({ params, searchParams }: { params: P
                   className="w-full border border-slate-300 px-3 py-2 text-sm outline-none focus:border-brand-500"
                 />
               </label>
+              <Field
+                label="Highlight box (optional) — the offer, in a tinted box above the message"
+                name="highlight"
+                defaultValue={c.highlight ?? ""}
+                placeholder="10% off any deep clean booked before 31 March"
+              />
               <div className="grid gap-3 sm:grid-cols-2">
                 <Field label="Button text" name="cta_label" defaultValue={c.cta_label ?? ""} placeholder="Book a clean" />
                 <Field label="Button link" name="cta_url" defaultValue={c.cta_url ?? ""} placeholder="/quote" />
@@ -77,27 +84,23 @@ export default async function CampaignPage({ params, searchParams }: { params: P
           </div>
         </fieldset>
 
-        {/* preview */}
+        {/* preview: the exact HTML the email will be */}
         <div className="bg-slate-100 p-4">
           <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">
-            Preview{list[0] ? ` — as ${sample.firstName} sees it` : ""}
+            Preview{list[0] ? ` — as ${sample.firstName} sees it` : ""} · Subject: {merge(c.subject || "(no subject)", sample)}
           </p>
-          <div className="mx-auto max-w-md bg-white shadow-sm">
-            <div className="bg-[#0d2a48] px-5 py-3 text-sm font-bold tracking-[0.16em] text-white">SAAFI</div>
-            <div className="p-5 text-sm">
-              <p className="mb-1 text-xs text-slate-400">Subject: {merge(c.subject || "(no subject)", sample)}</p>
-              <p className="mb-3 text-lg font-bold text-slate-900">{merge(c.heading || c.subject || "(no headline)", sample)}</p>
-              {paragraphs(merge(c.body, sample)).map((p, i) => (
-                <p key={i} className="mb-3 leading-relaxed text-slate-800">
-                  {p}
-                </p>
-              ))}
-              {c.cta_label && c.cta_url && (
-                <span className="inline-block bg-[#1273c4] px-4 py-2 font-semibold text-white">{c.cta_label}</span>
-              )}
-              <p className="mt-4 text-[11px] text-slate-400">… footer with contact details and an Unsubscribe link</p>
-            </div>
-          </div>
+          <iframe
+            title="Email preview"
+            sandbox=""
+            className="h-[640px] w-full bg-white"
+            srcDoc={renderMarketingPreview({
+              subject: merge(c.subject, sample),
+              heading: merge(c.heading || c.subject || "(no headline)", sample),
+              paragraphs: paragraphs(merge(c.body || "(your message)", sample)),
+              highlight: c.highlight ? merge(c.highlight, sample) : null,
+              cta: c.cta_label && c.cta_url ? { label: c.cta_label, url: c.cta_url } : null,
+            })}
+          />
         </div>
 
         {!locked && (

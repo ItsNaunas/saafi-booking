@@ -33,6 +33,7 @@ import {
 import { raiseBookingPaymentLink } from "@/lib/paymentLink";
 import { sendBookingReceivedEmail, sendNewBookingAlertEmail } from "@/lib/email";
 import { markLeadConverted } from "@/lib/supabaseAdmin";
+import { SOURCE_LABEL } from "@/lib/segments";
 import type { BookingRecord, BookingRequest } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -137,6 +138,9 @@ export async function POST(req: NextRequest) {
   // where the email is collected. Only an explicit true counts — a cached form
   // that never showed the choice sends nothing, and that has to read as no.
   const marketingOk = body.marketingOk === true;
+  // Optional, and only the form's own options count.
+  const heardFrom =
+    typeof body.heardFrom === "string" && body.heardFrom in SOURCE_LABEL ? body.heardFrom : null;
   // A deep clean is priced by room count, not by the state of the house, so
   // the office needs to know which it is before they confirm and send a pair
   // of cleaners. Required on the deep tab; only keys the form offers count.
@@ -248,6 +252,7 @@ export async function POST(req: NextRequest) {
     startTime,
     notes,
     marketingOk,
+    heardFrom,
     deepReason,
     quotedPrice,
     status: "requested",
@@ -354,6 +359,7 @@ async function storeBooking(
   // Flipped when the DB reports marketing_ok missing (migration not pasted
   // yet) — the retry omits it rather than losing the booking over a flag.
   let skipMarketingColumn = false;
+  let skipHeardFromColumn = false;
   // Same for deep_reason, pre-2026-09-13-deep-reason.sql.
   let skipDeepReasonColumn = false;
 
@@ -405,6 +411,7 @@ async function storeBooking(
         start_time: record.startTime,
         notes: record.notes || null,
         ...(skipMarketingColumn ? {} : { marketing_ok: record.marketingOk }),
+        ...(skipHeardFromColumn || !record.heardFrom ? {} : { heard_from: record.heardFrom }),
         quoted_price: record.quotedPrice,
         status: "requested",
       }),
@@ -412,6 +419,10 @@ async function storeBooking(
       if (res.ok) return { ok: true, reference };
       const errText = await res.text();
       console.error("[bookings] supabase insert failed:", res.status, errText);
+      if (errText.includes("heard_from") && !skipHeardFromColumn) {
+        skipHeardFromColumn = true;
+        continue;
+      }
       if (errText.includes("marketing_ok") && !skipMarketingColumn) {
         skipMarketingColumn = true;
         continue;
