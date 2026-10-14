@@ -36,3 +36,10 @@ export async function verifyFeedToken(token: string | undefined): Promise<boolea
   for (let i = 0; i < token.length; i++) diff |= token.charCodeAt(i) ^ expected.charCodeAt(i);
   return diff === 0;
 }
+
+/** Token for the 15-minute Airbnb sync endpoint, derived like the feed token. */
+export async function airbnbSyncToken(): Promise<string | null> {
+  const secret = process.env.SESSION_SECRET;
+  if (!secret) return null;
+  return hmacHex("airbnb-sync-v1", secret);
+}

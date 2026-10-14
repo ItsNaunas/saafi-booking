@@ -257,3 +257,8 @@ export function releaseCancelledLinks(
     .filter((r) => r.status === "confirmed" && r.checkout_date >= today && (!r.booking_id || !live.has(r.booking_id)))
     .map((r) => r.id);
 }
+
+/** Whole days from `today` to `date` (both YYYY-MM-DD). Negative = past. */
+export function daysUntil(today: string, date: string): number {
+  return Math.round((Date.parse(`${date}T12:00:00Z`) - Date.parse(`${today}T12:00:00Z`)) / 86_400_000);
+}

@@ -1185,3 +1185,59 @@ export function renderMarketingPreview(opts: Omit<MarketingMail, "to" | "unsubsc
     marketingMail({ ...opts, to: "preview@example.com", unsubscribe: { page: "#", oneClick: "#" } })
   );
 }
+
+/* ------------------------------------------------------------------ *
+ *  Airbnb calendar alerts (2026-10-15)
+ * ------------------------------------------------------------------ */
+
+export type AirbnbAlertItem = {
+  /** new checkout · clean cancelled so it needs booking again · a booked stay changed · the link stopped working */
+  kind: "new" | "released" | "changed" | "failing";
+  checkout?: string;
+  nextCheckin?: string | null;
+  daysAway?: number;
+  note?: string;
+};
+
+const fmtDay = (d: string) =>
+  new Date(`${d}T12:00:00Z`).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" });
+
+/**
+ * One email per calendar per sync, listing what changed, so the office never
+ * has to keep checking. Anything within 48 hours goes in the subject.
+ */
+export async function sendAirbnbAlertEmail(feedLabel: string, items: AirbnbAlertItem[]): Promise<void> {
+  const to = officeAddress();
+  if (!to || items.length === 0) return;
+  const cleans = items.filter((i) => i.kind !== "failing");
+  const urgent = cleans.filter((i) => i.kind !== "changed" && (i.daysAway ?? 99) <= 2);
+  const failing = items.find((i) => i.kind === "failing");
+  const sameDay = (i: AirbnbAlertItem) => !!i.checkout && i.nextCheckin === i.checkout;
+
+  const label = (i: AirbnbAlertItem): Row => {
+    const when = i.checkout ? fmtDay(i.checkout) : "";
+    const soon = i.daysAway === 0 ? " · TODAY" : i.daysAway === 1 ? " · TOMORROW" : (i.daysAway ?? 99) <= 2 ? " · in 2 days" : "";
+    const turnover = sameDay(i) ? " · same-day turnover" : i.nextCheckin ? ` · next guest ${fmtDay(i.nextCheckin)}` : "";
+    const what =
+      i.kind === "new" ? "New checkout — clean needed" : i.kind === "released" ? "Clean was cancelled — needs booking again" : "Booked stay changed on Airbnb";
+    return [`${when}${soon}`, `${what}${turnover}${i.kind === "changed" && i.note ? ` — ${i.note}` : ""}`];
+  };
+
+  const subject = failing
+    ? `⚠ Airbnb calendar not syncing: ${feedLabel}`
+    : urgent.length
+      ? `URGENT: Airbnb clean needed ${urgent[0].daysAway === 0 ? "today" : urgent[0].daysAway === 1 ? "tomorrow" : "within 48h"} — ${feedLabel}`
+      : `New Airbnb ${cleans.length === 1 ? "checkout" : `checkouts (${cleans.length})`} — ${feedLabel}`;
+
+  await send({
+    to,
+    subject,
+    heading: failing ? `${feedLabel}: the Airbnb calendar has stopped syncing` : `${feedLabel}: ${cleans.length} update${cleans.length === 1 ? "" : "s"} from Airbnb`,
+    intro: [
+      failing ? `The calendar link stopped working: ${failing.note ?? "unknown error"}. New Airbnb bookings won't appear until it's fixed — check the link in Admin → Airbnb.` : null,
+      cleans.length ? "These are on the admin calendar as suggestions. Nothing is booked until you confirm them." : null,
+    ],
+    rows: cleans.map(label),
+    cta: { label: "Open the calendar", url: `${process.env.NEXT_PUBLIC_SITE_URL ?? site.url}/admin/calendar` },
+  }).catch(() => {});
+}

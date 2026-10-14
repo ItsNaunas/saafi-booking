@@ -1054,15 +1054,18 @@ export async function getSuggestionForBooking(bookingId: string): Promise<Sugges
   return rows[0] ?? null;
 }
 
-export async function insertSuggestions(rows: SyncPlan["inserts"]): Promise<void> {
-  if (rows.length === 0) return;
+/** Insert new suggestions; returns the UIDs that actually landed (duplicates are skipped silently). */
+export async function insertSuggestions(rows: SyncPlan["inserts"]): Promise<string[]> {
+  if (rows.length === 0) return [];
   // ignore-duplicates: two overlapping syncs racing on the same new stay
-  // must not error — the unique (feed_id, uid) makes the second a no-op.
-  await rest("turnover_suggestions?on_conflict=feed_id,uid", {
+  // must not error — the unique (feed_id, uid) makes the second a no-op, and
+  // it gets nothing back, which is how only one of them reports it as new.
+  const inserted = await rest<{ uid: string }[]>("turnover_suggestions?on_conflict=feed_id,uid&select=uid", {
     method: "POST",
     body: JSON.stringify(rows),
-    headers: { Prefer: "return=minimal,resolution=ignore-duplicates" },
+    headers: { Prefer: "return=representation,resolution=ignore-duplicates" },
   });
+  return (inserted ?? []).map((r) => r.uid);
 }
 
 export async function updateSuggestion(id: string, fields: Partial<SuggestionRow>): Promise<void> {

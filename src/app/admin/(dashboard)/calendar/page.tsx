@@ -1,8 +1,7 @@
 import Link from "next/link";
 import { headers } from "next/headers";
-import { after } from "next/server";
 import { listBookings, listCleaners, listOpenSuggestions, type BookingRow } from "@/lib/supabaseAdmin";
-import { syncFeeds, STALE_MINUTES } from "@/lib/airbnbSync";
+import { syncIfStale, FRESH_MINUTES } from "@/lib/airbnbSync";
 import { isBlock, alreadyBooked } from "@/lib/icalImport";
 import { dismissSuggestion, clearSuggestionFlag } from "@/app/admin/actions";
 import PendingButton from "@/components/PendingButton";
@@ -48,6 +47,9 @@ export default async function CalendarPage({
 }: {
   searchParams: Promise<{ m?: string; cleaner?: string; d?: string }>;
 }) {
+  // Fresh before you look: sync any Airbnb calendar more than 10 minutes old
+  // first, but never hold the page more than a few seconds for Airbnb.
+  await syncIfStale(FRESH_MINUTES, 6000);
   const todayForFeeds = londonWallClock(new Date()).date;
   const [allBookings, cleaners, allSuggestions] = await Promise.all([
     listBookings(),
@@ -57,9 +59,6 @@ export default async function CalendarPage({
     // depend on a convenience feature.
     listOpenSuggestions(todayForFeeds).catch(() => [] as Suggestion[]),
   ]);
-  // Refresh stale Airbnb calendars after this response is sent; the next view
-  // picks up whatever changed. Never blocks the page.
-  after(() => syncFeeds({ staleMinutes: STALE_MINUTES }).catch(() => {}));
   const cleanerName = new Map<string, string>(cleaners.map((c) => [c.id, c.name]));
   const activeCleaners = cleaners.filter((c) => c.active);
 
