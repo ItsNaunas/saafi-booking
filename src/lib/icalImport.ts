@@ -195,3 +195,47 @@ export function planSync(
   }
   return plan;
 }
+
+const normPostcode = (p: string | null | undefined) => (p ?? "").toUpperCase().replace(/\s+/g, "");
+
+/**
+ * The duplicate guard. A suggested turnover is already handled when a clean
+ * is booked at the same postcode on the checkout day — booked by hand, by
+ * phone, or confirmed from an earlier copy of this calendar. Those suggestions
+ * are linked to that booking (status confirmed) instead of asking again, so
+ * a later Airbnb change still flags it.
+ *
+ * Each booking links to at most one suggestion. Without a postcode on the
+ * calendar there's nothing safe to match on, so nothing is linked.
+ */
+export function linkSuggestionsToBookings(
+  rows: Pick<SuggestionRow, "id" | "status" | "checkout_date" | "booking_id">[],
+  bookings: { id: string; postcode: string; preferred_date: string; status: string }[],
+  feedPostcode: string | null
+): { id: string; bookingId: string }[] {
+  const pc = normPostcode(feedPostcode);
+  if (!pc) return [];
+  const used = new Set(rows.map((r) => r.booking_id).filter((b): b is string => !!b));
+  const out: { id: string; bookingId: string }[] = [];
+  for (const r of rows) {
+    if (r.status !== "suggested") continue;
+    const b = bookings.find(
+      (x) => x.status !== "cancelled" && x.preferred_date === r.checkout_date && normPostcode(x.postcode) === pc && !used.has(x.id)
+    );
+    if (b) {
+      used.add(b.id);
+      out.push({ id: r.id, bookingId: b.id });
+    }
+  }
+  return out;
+}
+
+/** True when a clean is already booked at this postcode on this day — for hiding a suggestion instantly. */
+export function alreadyBooked(
+  postcode: string | null,
+  date: string,
+  bookings: { postcode: string; preferred_date: string; status: string }[]
+): boolean {
+  const pc = normPostcode(postcode);
+  return !!pc && bookings.some((b) => b.status !== "cancelled" && b.preferred_date === date && normPostcode(b.postcode) === pc);
+}

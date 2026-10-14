@@ -932,8 +932,23 @@ export async function setIcalFeedActive(formData: FormData) {
 export async function removeIcalFeed(formData: FormData) {
   const id = String(formData.get("id") ?? "");
   if (!id) return;
+  const feed = await getIcalFeed(id).catch(() => null);
   // Cascades to its suggestions; confirmed bookings stay — they're real cleans.
   await deleteIcalFeed(id);
+  // A removed calendar stops every future Airbnb checkout reaching the CRM,
+  // silently. Leave a trail in the office inbox (2026-10-15: one went missing
+  // and nobody could say when).
+  if (feed) {
+    const when = new Date().toLocaleString("en-GB", { timeZone: "Europe/London", dateStyle: "medium", timeStyle: "short" });
+    await sendOpsAlertEmail({
+      subject: `Airbnb calendar removed: ${feed.label}`,
+      heading: "An Airbnb calendar was disconnected",
+      lines: [
+        `${feed.label} was removed from Admin → Airbnb at ${when}.`,
+        "New Airbnb bookings for this listing will no longer appear on the calendar until the link is added again.",
+      ],
+    }).catch(() => {});
+  }
   revalidatePath("/admin/airbnb");
   revalidatePath("/admin/calendar");
 }

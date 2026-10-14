@@ -1,7 +1,7 @@
 // Assertion harness for the Airbnb calendar import: `npx tsx scripts/ical-import-check.ts`
 //
 // Every case passes an explicit `today`, so these never go stale.
-import { parseIcal, planSync, isBlock, type SuggestionRow } from "../src/lib/icalImport";
+import { parseIcal, planSync, isBlock, linkSuggestionsToBookings, alreadyBooked, type SuggestionRow } from "../src/lib/icalImport";
 
 let failed = 0;
 function check(label: string, actual: unknown, expected: unknown) {
@@ -154,6 +154,30 @@ check(
   planSync("f1", ev.slice(0, 1), [row({ status: "gone" })], TODAY, NOW).updates[0].fields.status,
   "suggested"
 );
+
+/* ---------- duplicate guard ---------- */
+
+const bookingsAt = [
+  { id: "b1", postcode: "OX43DE", preferred_date: "2026-10-18", status: "confirmed" },
+  { id: "b2", postcode: "OX4 3DE", preferred_date: "2026-10-22", status: "cancelled" },
+  { id: "b3", postcode: "OX12EZ", preferred_date: "2026-11-01", status: "confirmed" },
+];
+const sugg = [
+  row({ id: "s1", checkout_date: "2026-10-18" }),
+  row({ id: "s2", uid: "u2", checkout_date: "2026-10-22" }),
+  row({ id: "s3", uid: "u3", checkout_date: "2026-11-01" }),
+];
+check("links a suggestion already booked at that postcode", linkSuggestionsToBookings(sugg, bookingsAt, "ox4 3de"), [{ id: "s1", bookingId: "b1" }]);
+check("a cancelled booking doesn't count", linkSuggestionsToBookings([sugg[1]], bookingsAt, "OX43DE"), []);
+check("another address that day doesn't count", linkSuggestionsToBookings([sugg[2]], bookingsAt, "OX43DE"), []);
+check("no postcode on the calendar = no guessing", linkSuggestionsToBookings(sugg, bookingsAt, null), []);
+check(
+  "a booking already linked isn't reused",
+  linkSuggestionsToBookings([row({ id: "s0", status: "confirmed", booking_id: "b1" }), sugg[0]], bookingsAt, "OX43DE"),
+  []
+);
+check("alreadyBooked: same postcode + day", alreadyBooked("OX4 3DE", "2026-10-18", bookingsAt), true);
+check("alreadyBooked: other day", alreadyBooked("OX4 3DE", "2026-10-19", bookingsAt), false);
 
 if (failed) {
   console.error(`\n${failed} check(s) FAILED`);

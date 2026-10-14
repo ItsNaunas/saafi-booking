@@ -3,7 +3,7 @@ import { headers } from "next/headers";
 import { after } from "next/server";
 import { listBookings, listCleaners, listOpenSuggestions, type BookingRow } from "@/lib/supabaseAdmin";
 import { syncFeeds, STALE_MINUTES } from "@/lib/airbnbSync";
-import { isBlock } from "@/lib/icalImport";
+import { isBlock, alreadyBooked } from "@/lib/icalImport";
 import { dismissSuggestion, clearSuggestionFlag } from "@/app/admin/actions";
 import PendingButton from "@/components/PendingButton";
 import { formatGBP } from "@/lib/pricing";
@@ -99,7 +99,14 @@ export default async function CalendarPage({
 
   // Suggestions aren't anyone's job yet, so a single-cleaner view hides them.
   const showSuggestions = cleaner === "" || cleaner === "none";
-  const suggested = showSuggestions ? allSuggestions.filter((x) => x.status === "suggested") : [];
+  // Duplicate guard, instant half: a clean already booked at that address on
+  // the checkout day means this one's handled, even before the next sync
+  // links them for good.
+  const suggested = showSuggestions
+    ? allSuggestions.filter(
+        (x) => x.status === "suggested" && !alreadyBooked(x.ical_feeds?.postcode ?? null, x.checkout_date, allBookings)
+      )
+    : [];
   const flagged = allSuggestions.filter((x) => x.status === "confirmed" && x.changed_at);
   const suggestedByDate = new Map<string, Suggestion[]>();
   for (const x of suggested) {

@@ -8,20 +8,30 @@
 // calendar is exactly when fresh data matters).
 
 import { londonWallClock } from "@/lib/scheduling";
-import { parseIcal, planSync } from "@/lib/icalImport";
+import { parseIcal, planSync, linkSuggestionsToBookings } from "@/lib/icalImport";
 import {
   listIcalFeeds,
   listSuggestionsForFeed,
   insertSuggestions,
   updateSuggestion,
   updateIcalFeed,
+  listBookings,
   type IcalFeedRow,
 } from "@/lib/supabaseAdmin";
 
 export const STALE_MINUTES = 30;
 const FETCH_TIMEOUT_MS = 15_000;
 
-export type FeedSyncResult = { feed: string; added: number; changed: number; flagged: number; error?: string };
+export type FeedSyncResult = {
+  feed: string;
+  /** New checkouts left as suggestions. */
+  added: number;
+  /** Suggestions linked to a clean that was already booked. */
+  alreadyBooked?: number;
+  changed: number;
+  flagged: number;
+  error?: string;
+};
 
 export async function syncFeed(feed: IcalFeedRow): Promise<FeedSyncResult> {
   const result: FeedSyncResult = { feed: feed.label, added: 0, changed: 0, flagged: 0 };
@@ -48,7 +58,17 @@ export async function syncFeed(feed: IcalFeedRow): Promise<FeedSyncResult> {
     const plan = planSync(feed.id, events, existing, today, nowIso);
     await insertSuggestions(plan.inserts);
     for (const u of plan.updates) await updateSuggestion(u.id, u.fields);
-    result.added = plan.inserts.length;
+
+    // Duplicate guard: anything already booked at this address that day is
+    // linked to that booking rather than suggested again.
+    const [fresh, bookings] = await Promise.all([listSuggestionsForFeed(feed.id), listBookings()]);
+    const links = linkSuggestionsToBookings(fresh, bookings, feed.postcode);
+    for (const l of links) await updateSuggestion(l.id, { status: "confirmed", booking_id: l.bookingId, updated_at: nowIso });
+    const linkedNew = new Set(links.map((l) => l.id));
+    const newIds = fresh.filter((r) => plan.inserts.some((i) => i.uid === r.uid)).map((r) => r.id);
+
+    result.added = newIds.filter((id) => !linkedNew.has(id)).length;
+    result.alreadyBooked = links.length;
     result.flagged = plan.updates.filter((u) => u.fields.changed_at).length;
     result.changed = plan.updates.length - result.flagged;
     await updateIcalFeed(feed.id, { last_synced_at: nowIso, last_error: null });
