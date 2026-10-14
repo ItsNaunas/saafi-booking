@@ -1030,7 +1030,9 @@ export async function listOpenSuggestions(
 ): Promise<(SuggestionRow & { ical_feeds: Pick<IcalFeedRow, "label" | "postcode"> | null })[]> {
   return rest(
     `turnover_suggestions?select=*,ical_feeds(label,postcode)` +
-      `&or=(status.eq.suggested,and(status.eq.confirmed,changed_at.not.is.null))` +
+      // Confirmed rows too: the calendar needs to see one whose clean was
+      // cancelled (shown as a suggestion again) or that Airbnb changed (flagged).
+      `&status=in.(suggested,confirmed)` +
       `&checkout_date=gte.${from}&order=checkout_date.asc`
   );
 }

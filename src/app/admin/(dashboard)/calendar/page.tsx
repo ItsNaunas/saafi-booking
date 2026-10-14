@@ -102,12 +102,17 @@ export default async function CalendarPage({
   // Duplicate guard, instant half: a clean already booked at that address on
   // the checkout day means this one's handled, even before the next sync
   // links them for good.
+  // A stay whose linked clean was cancelled or deleted counts as suggested
+  // again right away, without waiting for the next sync to release it.
+  const liveBookingIds = new Set(allBookings.filter((b) => b.status !== "cancelled").map((b) => b.id));
+  const linkedLive = (x: Suggestion) => x.status === "confirmed" && !!x.booking_id && liveBookingIds.has(x.booking_id);
+  const needsClean = (x: Suggestion) => x.status === "suggested" || (x.status === "confirmed" && !linkedLive(x));
   const suggested = showSuggestions
     ? allSuggestions.filter(
-        (x) => x.status === "suggested" && !alreadyBooked(x.ical_feeds?.postcode ?? null, x.checkout_date, allBookings)
+        (x) => needsClean(x) && !alreadyBooked(x.ical_feeds?.postcode ?? null, x.checkout_date, allBookings)
       )
     : [];
-  const flagged = allSuggestions.filter((x) => x.status === "confirmed" && x.changed_at);
+  const flagged = allSuggestions.filter((x) => linkedLive(x) && x.changed_at);
   const suggestedByDate = new Map<string, Suggestion[]>();
   for (const x of suggested) {
     const list = suggestedByDate.get(x.checkout_date);

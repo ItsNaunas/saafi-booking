@@ -239,3 +239,21 @@ export function alreadyBooked(
   const pc = normPostcode(postcode);
   return !!pc && bookings.some((b) => b.status !== "cancelled" && b.preferred_date === date && normPostcode(b.postcode) === pc);
 }
+
+/**
+ * The other half of the guard: a stay linked to a clean that was later
+ * cancelled or deleted still needs cleaning, so it goes back to being a
+ * suggestion. (2026-10-15: the office deleted a hand-entered clean to watch
+ * the sync, and the stay vanished from the calendar because it was still
+ * linked to the cancelled booking.) Past checkouts are left alone.
+ */
+export function releaseCancelledLinks(
+  rows: Pick<SuggestionRow, "id" | "status" | "checkout_date" | "booking_id">[],
+  bookings: { id: string; status: string }[],
+  today: string
+): string[] {
+  const live = new Set(bookings.filter((b) => b.status !== "cancelled").map((b) => b.id));
+  return rows
+    .filter((r) => r.status === "confirmed" && r.checkout_date >= today && (!r.booking_id || !live.has(r.booking_id)))
+    .map((r) => r.id);
+}

@@ -8,7 +8,7 @@
 // calendar is exactly when fresh data matters).
 
 import { londonWallClock } from "@/lib/scheduling";
-import { parseIcal, planSync, linkSuggestionsToBookings } from "@/lib/icalImport";
+import { parseIcal, planSync, linkSuggestionsToBookings, releaseCancelledLinks } from "@/lib/icalImport";
 import {
   listIcalFeeds,
   listSuggestionsForFeed,
@@ -62,6 +62,12 @@ export async function syncFeed(feed: IcalFeedRow): Promise<FeedSyncResult> {
     // Duplicate guard: anything already booked at this address that day is
     // linked to that booking rather than suggested again.
     const [fresh, bookings] = await Promise.all([listSuggestionsForFeed(feed.id), listBookings()]);
+    // A clean booked for a stay, then cancelled or deleted: the stay needs
+    // cleaning again, so it goes back to being suggested (and may re-link
+    // below if another clean is booked that day).
+    const released = new Set(releaseCancelledLinks(fresh, bookings, today));
+    for (const id of released) await updateSuggestion(id, { status: "suggested", booking_id: null, updated_at: nowIso });
+    for (const r of fresh) if (released.has(r.id)) Object.assign(r, { status: "suggested", booking_id: null });
     const links = linkSuggestionsToBookings(fresh, bookings, feed.postcode);
     for (const l of links) await updateSuggestion(l.id, { status: "confirmed", booking_id: l.bookingId, updated_at: nowIso });
     const linkedNew = new Set(links.map((l) => l.id));

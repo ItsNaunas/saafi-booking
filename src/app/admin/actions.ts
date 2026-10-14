@@ -293,7 +293,11 @@ export async function createManualBooking(formData: FormData) {
   if (suggestionId) {
     // A double-submit or a second tab must not book the same turnover twice.
     const s = await getSuggestion(suggestionId);
-    if (s?.status === "confirmed" && s.booking_id) redirect(`/admin/booking/${s.booking_id}`);
+    if (s?.status === "confirmed" && s.booking_id) {
+      // Only if that clean still stands — a cancelled one means book again.
+      const linked = await getBooking(s.booking_id);
+      if (linked && linked.status !== "cancelled") redirect(`/admin/booking/${s.booking_id}`);
+    }
   }
   const hours = Math.max(0.5, Number(get("hours")) || 2);
   // The owner books over the top of availability on purpose — a phone booking is
@@ -969,7 +973,13 @@ export async function dismissSuggestion(formData: FormData) {
   const id = String(formData.get("id") ?? "");
   if (!id) return;
   const s = await getSuggestion(id);
-  if (!s || s.status !== "suggested") return;
+  if (!s) return;
+  if (s.status !== "suggested") {
+    // A stay shown again because its clean was cancelled may be dismissed too.
+    const linked = s.status === "confirmed" && s.booking_id ? await getBooking(s.booking_id) : null;
+    const released = s.status === "confirmed" && (!linked || linked.status === "cancelled");
+    if (!released) return;
+  }
   await updateSuggestion(id, { status: "dismissed", updated_at: new Date().toISOString() });
   revalidatePath("/admin/calendar");
 }

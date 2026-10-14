@@ -1,7 +1,7 @@
 // Assertion harness for the Airbnb calendar import: `npx tsx scripts/ical-import-check.ts`
 //
 // Every case passes an explicit `today`, so these never go stale.
-import { parseIcal, planSync, isBlock, linkSuggestionsToBookings, alreadyBooked, type SuggestionRow } from "../src/lib/icalImport";
+import { parseIcal, planSync, isBlock, linkSuggestionsToBookings, alreadyBooked, releaseCancelledLinks, type SuggestionRow } from "../src/lib/icalImport";
 
 let failed = 0;
 function check(label: string, actual: unknown, expected: unknown) {
@@ -178,6 +178,32 @@ check(
 );
 check("alreadyBooked: same postcode + day", alreadyBooked("OX4 3DE", "2026-10-18", bookingsAt), true);
 check("alreadyBooked: other day", alreadyBooked("OX4 3DE", "2026-10-19", bookingsAt), false);
+
+/* ---------- cancelled clean -> suggested again ---------- */
+check(
+  "a stay whose clean was cancelled is released",
+  releaseCancelledLinks(
+    [row({ id: "c1", status: "confirmed", booking_id: "x1", checkout_date: "2026-10-23" })],
+    [{ id: "x1", status: "cancelled" }],
+    TODAY
+  ),
+  ["c1"]
+);
+check(
+  "...and one whose clean was deleted",
+  releaseCancelledLinks([row({ id: "c2", status: "confirmed", booking_id: null, checkout_date: "2026-10-23" })], [], TODAY),
+  ["c2"]
+);
+check(
+  "a live clean keeps its link",
+  releaseCancelledLinks([row({ id: "c3", status: "confirmed", booking_id: "x2" })], [{ id: "x2", status: "confirmed" }], TODAY),
+  []
+);
+check(
+  "past checkouts are left alone",
+  releaseCancelledLinks([row({ id: "c4", status: "confirmed", booking_id: null, checkout_date: "2026-10-01" })], [], TODAY),
+  []
+);
 
 if (failed) {
   console.error(`\n${failed} check(s) FAILED`);
