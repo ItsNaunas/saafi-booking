@@ -18,6 +18,7 @@ import {
   listSuppressedEmails,
   listHostEmails,
   listHostStats,
+  listManualConsent,
   getCampaign,
   updateCampaign,
   claimSend,
@@ -37,14 +38,19 @@ const siteUrl = () => process.env.NEXT_PUBLIC_SITE_URL ?? site.url;
 
 export async function loadAudience(): Promise<{ profiles: Profile[]; leads: QuoteLeadRow[]; bookings: BookingRow[] }> {
   const today = londonWallClock(new Date()).date;
-  const [bookings, leads, suppressed, hostEmails, hostStats] = await Promise.all([
+  const [bookings, leads, suppressed, hostEmails, hostStats, manual] = await Promise.all([
     listBookings(),
     listQuoteLeads(),
     listSuppressedEmails(),
     listHostEmails(),
     listHostStats(today),
+    listManualConsent(),
   ]);
-  return { profiles: buildProfiles({ bookings, leads, suppressed, hostEmails, hostStats, today }), leads, bookings };
+  return {
+    profiles: buildProfiles({ bookings, leads, suppressed, hostEmails, hostStats, manualConsent: manual ?? undefined, today }),
+    leads,
+    bookings,
+  };
 }
 
 /** Send one marketing email to one person, at most once per dedupe key. */

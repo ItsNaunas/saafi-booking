@@ -54,6 +54,7 @@ export const SOURCE_LABEL: Record<string, string> = Object.fromEntries(SOURCES.m
 export const WEEKDAY_LABEL = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
 export type Consent = "yes" | "no" | "unsubscribed" | "unknown";
+export type ConsentSource = "booking" | "quote form" | "recorded by hand";
 
 export const CONSENT_LABEL: Record<Consent, string> = {
   yes: "Can email",
@@ -66,6 +67,7 @@ export const CONSENT_LABEL: Record<Consent, string> = {
 export type SegBooking = {
   customer_name: string;
   customer_email: string;
+  customer_phone?: string | null;
   postcode: string;
   status: string;
   frequency: string;
@@ -87,6 +89,7 @@ export type SegBooking = {
 export type SegLead = {
   email: string;
   name: string | null;
+  phone?: string | null;
   postcode: string | null;
   marketing_ok: boolean | null;
   created_at: string;
@@ -103,6 +106,11 @@ export type Profile = {
   firstName: string;
   stage: Stage;
   consent: Consent;
+  /** Where the deciding answer came from, and when. */
+  consentSource: ConsentSource | null;
+  consentAt: string | null;
+  phone: string | null;
+  postcode: string | null;
   /** Outward postcode, "OX4". Null when unknown. */
   area: string | null;
   bookings: number;
@@ -204,6 +212,8 @@ export function buildProfiles(opts: {
   suppressed: Set<string>;
   hostEmails: Set<string>;
   hostStats?: Map<string, HostStats>;
+  /** Answers the office recorded by hand (phone customers). */
+  manualConsent?: Map<string, { ok: boolean; at: string }>;
   today: string;
 }): Profile[] {
   const { today } = opts;
@@ -267,14 +277,23 @@ export function buildProfiles(opts: {
     // person gave (booking or quote form) wins; never answered = unknown,
     // which is treated as no.
     let consent: Consent = "unknown";
+    let consentSource: ConsentSource | null = null;
+    let consentAt: string | null = null;
     if (opts.suppressed.has(email)) consent = "unsubscribed";
     else {
-      const answers: { at: string; ok: boolean }[] = [];
-      for (const b of sorted) if (typeof b.marketing_ok === "boolean") answers.push({ at: b.created_at, ok: b.marketing_ok });
-      if (lead && typeof lead.marketing_ok === "boolean") answers.push({ at: lead.updated_at, ok: lead.marketing_ok });
+      const answers: { at: string; ok: boolean; source: ConsentSource }[] = [];
+      for (const b of sorted)
+        if (typeof b.marketing_ok === "boolean") answers.push({ at: b.created_at, ok: b.marketing_ok, source: "booking" });
+      if (lead && typeof lead.marketing_ok === "boolean") answers.push({ at: lead.updated_at, ok: lead.marketing_ok, source: "quote form" });
+      const manual = opts.manualConsent?.get(email);
+      if (manual) answers.push({ at: manual.at, ok: manual.ok, source: "recorded by hand" });
       answers.sort((a, z) => a.at.localeCompare(z.at));
       const latest = answers.at(-1);
-      if (latest) consent = latest.ok ? "yes" : "no";
+      if (latest) {
+        consent = latest.ok ? "yes" : "no";
+        consentSource = latest.source;
+        consentAt = latest.at;
+      }
     }
 
     const deeps = live.filter((b) => b.service_type === "deep").map((b) => b.preferred_date).sort();
@@ -314,6 +333,10 @@ export function buildProfiles(opts: {
       firstName: name.split(/\s+/)[0] || "there",
       stage,
       consent,
+      consentSource,
+      consentAt,
+      phone: latestBooking?.customer_phone ?? lead?.phone ?? null,
+      postcode: latestBooking?.postcode ?? lead?.postcode ?? null,
       area,
       bookings: live.length,
       completed: done.length,

@@ -1307,3 +1307,45 @@ export async function sendCountsSince(sinceIso: string): Promise<Record<string, 
   for (const r of rows) out[r.kind] = (out[r.kind] ?? 0) + 1;
   return out;
 }
+
+/* ---------- consent recorded by hand (2026-10-14 migration) ---------- */
+
+/** Answers recorded by the office. Null when the table doesn't exist yet. */
+export async function listManualConsent(): Promise<Map<string, { ok: boolean; at: string; note: string | null }> | null> {
+  try {
+    const rows = await rest<{ email: string; ok: boolean; note: string | null; recorded_at: string }[]>(
+      "contact_consent?select=email,ok,note,recorded_at"
+    );
+    return new Map(rows.map((r) => [r.email.toLowerCase(), { ok: r.ok, at: r.recorded_at, note: r.note }]));
+  } catch (e) {
+    if (/PGRST205|42P01/.test(String(e))) return null;
+    throw e;
+  }
+}
+
+export async function recordManualConsent(email: string, ok: boolean, note: string | null): Promise<void> {
+  await rest("contact_consent?on_conflict=email", {
+    method: "POST",
+    body: JSON.stringify({ email: email.toLowerCase(), ok, note, recorded_at: new Date().toISOString() }),
+    headers: { Prefer: "return=minimal,resolution=merge-duplicates" },
+  });
+}
+
+export async function unsuppressEmail(email: string): Promise<void> {
+  await rest(`email_suppressions?email=eq.${encodeURIComponent(email.toLowerCase())}`, { method: "DELETE" });
+}
+
+export async function getSuppression(email: string): Promise<{ reason: string; created_at: string } | null> {
+  const rows = await rest<{ reason: string; created_at: string }[]>(
+    `email_suppressions?email=eq.${encodeURIComponent(email.toLowerCase())}&select=reason,created_at&limit=1`
+  );
+  return rows[0] ?? null;
+}
+
+export async function listSendsForEmail(
+  email: string
+): Promise<{ kind: string; campaign_id: string | null; status: string; created_at: string }[]> {
+  return rest(
+    `email_sends?email=eq.${encodeURIComponent(email.toLowerCase())}&select=kind,campaign_id,status,created_at&order=created_at.desc&limit=100`
+  );
+}

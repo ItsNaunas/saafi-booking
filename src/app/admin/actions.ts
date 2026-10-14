@@ -44,6 +44,9 @@ import {
   deleteCampaign,
   updateAutomation,
   listAutomations,
+  recordManualConsent,
+  suppressEmail,
+  unsuppressEmail,
   type CampaignRow,
 } from "@/lib/supabaseAdmin";
 import { filterFromForm, type SegmentFilter } from "@/lib/segments";
@@ -1075,4 +1078,43 @@ export async function saveAutomationAction(formData: FormData) {
   await updateAutomation(key, fields);
   revalidatePath("/admin/marketing");
   revalidatePath("/admin/marketing/automations");
+}
+
+/* ---------- contacts ---------- */
+
+const contactEmail = (formData: FormData) => {
+  const e = String(formData.get("email") ?? "").trim().toLowerCase();
+  return /^\S+@\S+\.\S+$/.test(e) ? e : null;
+};
+const contactPage = (email: string) => `/admin/marketing/contacts/${Buffer.from(email).toString("base64url")}`;
+
+/** "They said yes/no on the phone" — the office's record, with a note of how. */
+export async function recordConsentAction(formData: FormData) {
+  const email = contactEmail(formData);
+  if (!email) return;
+  const ok = formData.get("ok") === "yes";
+  const note = String(formData.get("note") ?? "").trim().slice(0, 300) || null;
+  await recordManualConsent(email, ok, note);
+  redirect(`${contactPage(email)}?done=${ok ? "yes" : "no"}`);
+}
+
+export async function unsubscribeContactAction(formData: FormData) {
+  const email = contactEmail(formData);
+  if (!email) return;
+  await suppressEmail(email, "by hand in the CRM");
+  redirect(`${contactPage(email)}?done=unsubscribed`);
+}
+
+/**
+ * Only when the person has asked to be emailed again. Lifts the unsubscribe
+ * and records a yes with the office's note, so there's a trail of why.
+ */
+export async function resubscribeContactAction(formData: FormData) {
+  const email = contactEmail(formData);
+  if (!email) return;
+  const note = String(formData.get("note") ?? "").trim().slice(0, 300);
+  if (!note) redirect(`${contactPage(email)}?done=need-note`);
+  await unsuppressEmail(email);
+  await recordManualConsent(email, true, `Re-subscribed: ${note}`);
+  redirect(`${contactPage(email)}?done=resubscribed`);
 }

@@ -219,6 +219,31 @@ const round = filterFromForm(
 );
 check("filter -> fields -> filter round trip", round, { plans: ["fortnightly"], deepDueMonths: 6, nearDay: 2, atRisk: "yes" });
 
+/* ---------- consent recorded by hand ---------- */
+const withManual = (ok: boolean, at: string, suppressed: string[] = []) =>
+  buildProfiles({
+    bookings: [bk({ marketing_ok: null })],
+    leads: [],
+    suppressed: new Set(suppressed),
+    hostEmails: new Set(),
+    manualConsent: new Map([["amy@example.com", { ok, at }]]),
+    today: TODAY,
+  })[0];
+check("phone customer said yes by hand", withManual(true, "2026-10-14T09:00:00Z").consent, "yes");
+check("...and it says where from", withManual(true, "2026-10-14T09:00:00Z").consentSource, "recorded by hand");
+check("a later form untick beats an older yes by hand", (() => {
+  const p = buildProfiles({
+    bookings: [bk({ marketing_ok: false, created_at: "2026-10-20T00:00:00Z" })],
+    leads: [],
+    suppressed: new Set(),
+    hostEmails: new Set(),
+    manualConsent: new Map([["amy@example.com", { ok: true, at: "2026-10-14T00:00:00Z" }]]),
+    today: TODAY,
+  })[0];
+  return p.consent;
+})(), "no");
+check("unsubscribe still beats a yes by hand", withManual(true, "2026-10-14T09:00:00Z", ["amy@example.com"]).consent, "unsubscribed");
+
 if (failed) {
   console.error(`\n${failed} check(s) FAILED`);
   process.exit(1);

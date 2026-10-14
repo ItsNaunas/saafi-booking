@@ -47,6 +47,9 @@ export default function SegmentPicker({ profiles, initial, areas, mode, action }
   const inSegment = useMemo(() => profiles.filter((p) => matches(p, f)), [profiles, f]);
   const reach = inSegment.filter((p) => p.consent === "yes");
   const blocked = inSegment.length - reach.length;
+  // The contacts list with no group picked is everyone, including people who
+  // had a problem recently, whom segments leave out of emails by default.
+  const shown = mode === "contacts" && Object.keys(f).length === 0 ? profiles : inSegment;
 
   const set = <K extends keyof SegmentFilter>(k: K, v: SegmentFilter[K] | undefined) =>
     setF((cur) => {
@@ -76,6 +79,7 @@ export default function SegmentPicker({ profiles, initial, areas, mode, action }
       {/* Contacts tab only: names the campaign it starts. The campaign editor has its own name field. */}
       {mode === "contacts" && <input type="hidden" name="name" value={describeFilter(f)} />}
 
+      <Fold folded={mode === "contacts"} label={Object.keys(f).length ? `Group: ${describeFilter(f)}` : "Filter by group"} onClear={Object.keys(f).length ? () => setF({}) : undefined}>
       <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
         {PRESETS.map((p) => {
           const n = profiles.filter((x) => x.consent === "yes" && matches(x, p.filter)).length;
@@ -190,6 +194,8 @@ export default function SegmentPicker({ profiles, initial, areas, mode, action }
         )}
       </div>
 
+      </Fold>
+
       {/* the answer */}
       <div className="sticky bottom-0 z-10 flex flex-wrap items-center gap-x-3 gap-y-1 bg-slate-900 px-4 py-3 text-white shadow-lg">
         <span className="text-2xl font-bold tabular-nums">{reach.length}</span>
@@ -208,7 +214,7 @@ export default function SegmentPicker({ profiles, initial, areas, mode, action }
         {action && reach.length > 0 && <span className="ml-auto">{action}</span>}
       </div>
 
-      {mode === "contacts" && <ContactList people={inSegment} />}
+      {mode === "contacts" && <ContactsBrowser people={shown} />}
     </div>
   );
 }
@@ -220,40 +226,199 @@ const CONSENT_CHIP: Record<Consent, string> = {
   unknown: "bg-amber-50 text-amber-800 ring-amber-200",
 };
 
-function ContactList({ people }: { people: Profile[] }) {
-  if (people.length === 0) return <p className="text-sm text-slate-500">Nobody in this group yet.</p>;
+type Sort = "name" | "recent" | "spend" | "cleans";
+type Chip = "all" | "yes" | "no";
+
+function ContactsBrowser({ people }: { people: Profile[] }) {
+  const [q, setQ] = useState("");
+  const [chip, setChip] = useState<Chip>("all");
+  const [sort, setSort] = useState<Sort>("recent");
+
+  const searched = useMemo(() => {
+    const needle = q.trim().toLowerCase().replace(/\s+/g, "");
+    if (!needle) return people;
+    return people.filter((p) =>
+      [p.name, p.email, p.phone ?? "", p.postcode ?? ""].some((v) => v.toLowerCase().replace(/\s+/g, "").includes(needle))
+    );
+  }, [people, q]);
+  const counts = { all: searched.length, yes: searched.filter((p) => p.consent === "yes").length };
+  const list = useMemo(() => {
+    const l = searched.filter((p) => (chip === "all" ? true : chip === "yes" ? p.consent === "yes" : p.consent !== "yes"));
+    const by: Record<Sort, (a: Profile, z: Profile) => number> = {
+      name: (a, z) => (a.name || a.email).localeCompare(z.name || z.email),
+      recent: (a, z) => (z.lastClean ?? z.nextBooking ?? "").localeCompare(a.lastClean ?? a.nextBooking ?? ""),
+      spend: (a, z) => z.spend - a.spend,
+      cleans: (a, z) => z.completed - a.completed,
+    };
+    return l.slice().sort(by[sort]);
+  }, [searched, chip, sort]);
+
+  const spend = list.reduce((s, p) => s + p.spend, 0);
+  const cleans = list.reduce((s, p) => s + p.completed, 0);
+  const customers = list.filter((p) => p.completed > 0).length;
+
+  const exportCsv = () => {
+    const cell = (v: unknown) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+    const head = ["Name", "Email", "Phone", "Postcode", "Stage", "Can email", "Cleans", "Spent", "Last clean", "Next booking"];
+    const rows = list.map((p) =>
+      [p.name, p.email, p.phone, p.postcode, STAGE_LABEL[p.stage], CONSENT_LABEL[p.consent], p.completed, p.spend.toFixed(2), p.lastClean, p.nextBooking]
+        .map(cell)
+        .join(",")
+    );
+    const blob = new Blob([[head.map(cell).join(","), ...rows].join("\n")], { type: "text/csv" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `saafi-contacts-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  };
+
   return (
-    <div className="divide-y divide-slate-100 bg-white ring-1 ring-slate-200">
-      {people.slice(0, 300).map((p) => (
-        <div key={p.email} className="grid gap-1 px-4 py-3 text-sm sm:grid-cols-[1fr_auto] sm:items-center">
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="font-semibold text-slate-900">{p.name || p.email}</span>
-              <span className={`px-1.5 py-0.5 text-[10px] font-semibold ring-1 ring-inset ${CONSENT_CHIP[p.consent]}`}>
-                {CONSENT_LABEL[p.consent]}
-              </span>
-              {p.atRisk && <span className="text-[11px] font-medium text-rose-700">had a problem</span>}
-              {p.happy && <span className="text-[11px] font-medium text-emerald-700">happy</span>}
-              {p.isHost && <span className="text-[11px] font-medium text-sky-700">Airbnb host</span>}
-              {p.lastMoveClean && <span className="text-[11px] font-medium text-violet-700">moved</span>}
-            </div>
-            <div className="truncate text-xs text-slate-500">
-              {p.email} · {STAGE_LABEL[p.stage]}
-              {p.plan ? ` (${PLAN_LABEL[p.plan].toLowerCase()})` : ""}
-              {p.area ? ` · ${p.area}` : ""}
-            </div>
-          </div>
-          <div className="flex gap-4 text-xs text-slate-500 sm:text-right">
-            <span>
-              <b className="text-slate-800">{p.completed}</b> clean{p.completed === 1 ? "" : "s"}
-            </span>
-            <span>{p.spend ? formatGBP(p.spend) : "—"}</span>
-            <span>{p.lastClean ? `last ${p.daysSinceLastClean}d ago` : "no clean yet"}</span>
-            {p.nextBooking && <span className="text-brand-700">next {p.nextBooking}</span>}
-          </div>
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <input
+          type="search"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="Search name, email, phone or postcode"
+          aria-label="Search contacts"
+          className="min-w-0 flex-1 basis-60 border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-200"
+        />
+        <div className="flex text-sm ring-1 ring-slate-200" role="group" aria-label="Who can be emailed">
+          {(
+            [
+              ["all", `All ${counts.all}`],
+              ["yes", `Can email ${counts.yes}`],
+              ["no", `Can't email ${counts.all - counts.yes}`],
+            ] as [Chip, string][]
+          ).map(([k, label]) => (
+            <button
+              key={k}
+              type="button"
+              onClick={() => setChip(k)}
+              aria-pressed={chip === k}
+              className={`px-3 py-2 font-medium ${chip === k ? "bg-slate-800 text-white" : "bg-white text-slate-600 hover:bg-slate-50"}`}
+            >
+              {label}
+            </button>
+          ))}
         </div>
-      ))}
-      {people.length > 300 && <p className="px-4 py-2 text-xs text-slate-400">Showing the first 300.</p>}
+        <select
+          value={sort}
+          onChange={(e) => setSort(e.target.value as Sort)}
+          aria-label="Sort contacts"
+          className="border border-slate-300 bg-white px-2 py-2 text-sm outline-none focus:border-brand-500"
+        >
+          <option value="recent">Most recent clean</option>
+          <option value="spend">Most spent</option>
+          <option value="cleans">Most cleans</option>
+          <option value="name">Name A–Z</option>
+        </select>
+        <button
+          type="button"
+          onClick={exportCsv}
+          disabled={list.length === 0}
+          className="border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+        >
+          Export CSV
+        </button>
+      </div>
+
+      <p className="text-xs text-slate-500">
+        <b className="text-slate-800">{list.length}</b> shown · {customers} customer{customers === 1 ? "" : "s"} · {cleans} clean
+        {cleans === 1 ? "" : "s"} · {formatGBP(spend)} spent{customers > 0 ? ` · ${formatGBP(spend / customers)} per customer` : ""}
+      </p>
+
+      {list.length === 0 ? (
+        <p className="bg-white p-6 text-center text-sm text-slate-500 ring-1 ring-slate-200">
+          {people.length === 0 ? "Nobody in this group yet." : "No one matches that."}
+        </p>
+      ) : (
+        <div className="divide-y divide-slate-100 bg-white ring-1 ring-slate-200">
+          {list.slice(0, 300).map((p) => (
+            <a
+              key={p.email}
+              href={`/admin/marketing/contacts/${toKey(p.email)}`}
+              className="grid gap-1 px-4 py-3 text-sm hover:bg-slate-50 sm:grid-cols-[1fr_auto] sm:items-center"
+            >
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="font-semibold text-slate-900">{p.name || p.email}</span>
+                  <span className={`px-1.5 py-0.5 text-[10px] font-semibold ring-1 ring-inset ${CONSENT_CHIP[p.consent]}`}>
+                    {CONSENT_LABEL[p.consent]}
+                  </span>
+                  {p.atRisk && <span className="text-[11px] font-medium text-rose-700">had a problem</span>}
+                  {p.happy && <span className="text-[11px] font-medium text-emerald-700">happy</span>}
+                  {p.isHost && <span className="text-[11px] font-medium text-sky-700">Airbnb host</span>}
+                  {p.lastMoveClean && <span className="text-[11px] font-medium text-violet-700">moved</span>}
+                </div>
+                <div className="truncate text-xs text-slate-500">
+                  {STAGE_LABEL[p.stage]}
+                  {p.plan ? ` (${PLAN_LABEL[p.plan].toLowerCase()})` : ""}
+                  {p.area ? ` · ${p.area}` : ""}
+                  {p.phone ? ` · ${p.phone}` : ""}
+                </div>
+              </div>
+              <div className="flex gap-4 text-xs text-slate-500 sm:text-right">
+                <span>
+                  <b className="text-slate-800">{p.completed}</b> clean{p.completed === 1 ? "" : "s"}
+                </span>
+                <span>{p.spend ? formatGBP(p.spend) : "—"}</span>
+                <span>{p.lastClean ? `last ${p.daysSinceLastClean}d ago` : "no clean yet"}</span>
+                {p.nextBooking && <span className="text-brand-700">next {p.nextBooking}</span>}
+                <span className="text-slate-300" aria-hidden>
+                  ›
+                </span>
+              </div>
+            </a>
+          ))}
+        </div>
+      )}
+      {list.length > 300 && <p className="text-xs text-slate-400">Showing the first 300 — search to narrow it down.</p>}
+    </div>
+  );
+}
+
+/** URL-safe key for a contact page: the address, base64url-encoded. */
+function toKey(email: string): string {
+  const bytes = new TextEncoder().encode(email);
+  let bin = "";
+  bytes.forEach((b) => (bin += String.fromCharCode(b)));
+  return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+function Fold({
+  folded,
+  label,
+  onClear,
+  children,
+}: {
+  folded: boolean;
+  label: string;
+  onClear?: () => void;
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  if (!folded) return <>{children}</>;
+  return (
+    <div className="bg-white ring-1 ring-slate-200">
+      <div className="flex items-center">
+        <button
+          type="button"
+          onClick={() => setOpen((o) => !o)}
+          aria-expanded={open}
+          className="flex min-w-0 flex-1 items-center justify-between gap-2 px-4 py-2.5 text-left text-sm font-medium text-slate-700 hover:bg-slate-50"
+        >
+          <span className="truncate">{label}</span>
+          <span className="text-slate-400">{open ? "▲" : "▼"}</span>
+        </button>
+        {onClear && (
+          <button type="button" onClick={onClear} className="px-3 py-2.5 text-xs font-medium text-brand-700 hover:underline">
+            Clear
+          </button>
+        )}
+      </div>
+      {open && <div className="space-y-4 border-t border-slate-100 p-4">{children}</div>}
     </div>
   );
 }
