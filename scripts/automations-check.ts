@@ -1,5 +1,5 @@
 // Who each automatic email goes to: `npx tsx scripts/automations-check.ts`
-import { automationTargets, quoteLine } from "../src/lib/marketing";
+import { automationTargets, quoteLine, abandonedTargets } from "../src/lib/marketing";
 import { buildProfiles, type SegBooking } from "../src/lib/segments";
 
 let failed = 0;
@@ -74,6 +74,38 @@ check(
   "quote line",
   quoteLine({ quote: { service: "standard", frequency: "fortnightly", hours: 3, price: 66 } }),
   "Your quote: Every 2 weeks, 3 hours — £66 a visit"
+);
+
+/* ---------- abandoned quote ---------- */
+const NOW = Date.parse("2026-10-12T09:00:00Z");
+const lead = (email: string, over: Record<string, unknown> = {}) => ({
+  id: email,
+  email,
+  name: "Lee",
+  phone: "07700 900123",
+  postcode: "OX4 1AA",
+  quote: { price: 66 },
+  marketing_ok: true,
+  converted_at: null,
+  nudged_at: null,
+  created_at: "2026-10-11T10:00:00Z",
+  updated_at: "2026-10-11T10:00:00Z",
+  ...over,
+});
+const leads = [
+  lead("ok@x.com"),
+  lead("fresh@x.com", { updated_at: "2026-10-12T07:00:00Z" }), // 2h ago: still on a break
+  lead("old@x.com", { created_at: "2026-10-01T10:00:00Z", updated_at: "2026-10-01T10:00:00Z" }),
+  lead("nophone@x.com", { phone: "" }),
+  lead("said-no@x.com", { marketing_ok: false }),
+  lead("nudged@x.com", { nudged_at: "2026-10-12T07:00:00Z" }),
+  lead("booked@x.com"),
+];
+const lp = buildProfiles({ bookings: [], leads: leads as never, suppressed: new Set(), hostEmails: new Set(), today: TODAY });
+check(
+  "abandoned quote: only the quiet, recent, complete, consented, un-nudged, un-booked lead",
+  abandonedTargets(leads as never, lp, [{ customer_email: "booked@x.com", created_at: "2026-10-11T12:00:00Z" }], NOW).map((t) => t.profile.email),
+  ["ok@x.com"]
 );
 
 if (failed) {

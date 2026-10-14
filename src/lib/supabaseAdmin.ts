@@ -1297,3 +1297,13 @@ export async function updateAutomation(key: string, fields: Partial<AutomationRo
     headers: { Prefer: "return=minimal" },
   });
 }
+
+/** Sent marketing emails per kind ('campaign' or an automation key) since a date. */
+export async function sendCountsSince(sinceIso: string): Promise<Record<string, number>> {
+  const rows = await rest<{ kind: string }[]>(
+    `email_sends?created_at=gte.${encodeURIComponent(sinceIso)}&status=eq.sent&select=kind`
+  );
+  const out: Record<string, number> = {};
+  for (const r of rows) out[r.kind] = (out[r.kind] ?? 0) + 1;
+  return out;
+}

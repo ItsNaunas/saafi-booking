@@ -2,6 +2,7 @@ import Link from "next/link";
 import { listIcalFeeds, type IcalFeedRow } from "@/lib/supabaseAdmin";
 import { addIcalFeed, setIcalFeedActive, removeIcalFeed, syncIcalFeedsNow } from "@/app/admin/actions";
 import PendingButton from "@/components/PendingButton";
+import ConfirmButton from "@/components/ConfirmButton";
 import { formatTime } from "@/lib/scheduling";
 
 export const dynamic = "force-dynamic";
@@ -96,9 +97,12 @@ export default async function AirbnbPage({ searchParams }: { searchParams: Promi
                   </form>
                   <form action={removeIcalFeed}>
                     <input type="hidden" name="id" value={f.id} />
-                    <PendingButton pendingLabel="…" className="px-2 py-1 font-medium text-rose-700 hover:bg-rose-50">
+                    <ConfirmButton
+                      confirm={`Remove ${f.label}? Its suggested cleans disappear from the calendar. Cleans you've already confirmed stay booked. To just stop updates, use Pause instead.`}
+                      className="px-2 py-1 font-medium text-rose-700 hover:bg-rose-50"
+                    >
                       Remove
-                    </PendingButton>
+                    </ConfirmButton>
                   </form>
                 </div>
               </div>

@@ -22,10 +22,10 @@ export type Stage =
 
 export const STAGE_LABEL: Record<Stage, string> = {
   lead: "Quoted, never booked",
-  cancelled: "Cancelled only",
+  cancelled: "Only ever cancelled",
   new: "First clean booked",
-  regular: "Active regular",
-  lapsed: "Lapsed regular",
+  regular: "On a regular plan",
+  lapsed: "Stopped their regular plan",
   one_off: "One-off customer",
 };
 
@@ -397,8 +397,8 @@ export const PRESETS: { key: string; label: string; hint: string; filter: Segmen
     hint: "one-off clean 30+ days ago, nothing booked",
     filter: { stages: ["one_off"], minDaysSinceClean: 30, upcoming: "no" },
   },
-  { key: "regulars", label: "Active regulars", hint: "on a live weekly/fortnightly plan", filter: { stages: ["regular"] } },
-  { key: "lapsed", label: "Lapsed regulars", hint: "plan stopped, nothing booked", filter: { stages: ["lapsed"], upcoming: "no" } },
+  { key: "regulars", label: "Regular customers", hint: "on a weekly, fortnightly or 4-weekly plan", filter: { stages: ["regular"] } },
+  { key: "lapsed", label: "Stopped their plan", hint: "were regular, nothing booked now", filter: { stages: ["lapsed"], upcoming: "no" } },
   { key: "deep", label: "Had a deep clean", hint: "deep or end-of-tenancy", filter: { deep: "yes" } },
   { key: "hosts", label: "Airbnb hosts", hint: "has a connected calendar", filter: { host: "yes" } },
   { key: "big", label: "Best customers", hint: "3+ completed cleans", filter: { minCleans: 3 } },
@@ -420,7 +420,7 @@ export const PRESETS: { key: string; label: string; hint: string; filter: Segmen
     filter: { stages: ["regular"], deepDueMonths: 6 },
   },
   { key: "happy", label: "Happy regulars", hint: "3+ cleans, nothing gone wrong in 90 days", filter: { happy: "yes" } },
-  { key: "at_risk", label: "At risk", hint: "something went wrong in the last 30 days — check-ins only", filter: { atRisk: "yes" } },
+  { key: "at_risk", label: "Had a problem recently", hint: "no access, cancellation, refund or a higher bill in the last 30 days — check-ins only", filter: { atRisk: "yes" } },
   { key: "busy_hosts", label: "Busy hosts", hint: "hosts with same-day turnovers coming up", filter: { host: "yes", sameDay: "yes" } },
 ];
 
@@ -505,7 +505,7 @@ export function filterToFields(f: SegmentFilter): [string, string][] {
 /** "One-off customer · OX4 · 30+ days since last clean" — for lists and confirmations. */
 export function describeFilter(f: SegmentFilter): string {
   const parts: string[] = [];
-  if (f.atRisk) parts.push("At risk (something went wrong recently)");
+  if (f.atRisk) parts.push("Had a problem recently");
   if (f.stages?.length) parts.push(f.stages.map((s) => STAGE_LABEL[s]).join(" or "));
   if (f.plans?.length) parts.push(`on ${f.plans.map((p) => PLAN_LABEL[p].toLowerCase()).join("/")} plans`);
   if (f.areas?.length) parts.push(f.areas.join("/"));

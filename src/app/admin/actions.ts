@@ -43,9 +43,12 @@ import {
   updateCampaign,
   deleteCampaign,
   updateAutomation,
+  listAutomations,
+  type CampaignRow,
 } from "@/lib/supabaseAdmin";
 import { filterFromForm, type SegmentFilter } from "@/lib/segments";
-import { sendCampaign, sendCampaignTest, AUTOMATION_KEYS } from "@/lib/marketing";
+import { sendCampaign, sendCampaignTest, sendAutomationTest, AUTOMATION_KEYS } from "@/lib/marketing";
+import { CAMPAIGN_TEMPLATES } from "@/lib/campaignTemplates";
 import { getStripe, fromPence } from "@/lib/stripe";
 import {
   sendConfirmationEmail,
@@ -974,55 +977,84 @@ const segmentOf = (formData: FormData): SegmentFilter =>
 export async function createCampaignAction(formData: FormData) {
   const name = String(formData.get("name") ?? "").trim() || "Untitled campaign";
   const row = await insertCampaign({ name: name.slice(0, 120), segment: segmentOf(formData) });
-  if (!row) redirect("/admin/marketing?error=1");
-  redirect(`/admin/marketing/campaign/${row!.id}`);
+  if (!row) redirect("/admin/marketing/campaigns?error=1");
+  // A segment picked on the way in means "who" is done: go straight to writing.
+  const step = formData.get("from") === "segment" ? "write" : "who";
+  redirect(`/admin/marketing/campaign/${row!.id}?step=${step}`);
 }
 
 /**
- * The campaign editor's one form, three buttons: save, send a test to the
- * office, or send for real (which needs the confirm box ticked). Every press
- * saves first, so a test always shows exactly what's on screen.
+ * The campaign editor, one action for all three steps. Each step's form only
+ * carries its own fields, so only fields actually present are written —
+ * saving "who" must never blank the message, and the reverse.
+ *
+ * intent: save (then go to `next`), template:<key>, test, send.
  */
 export async function saveCampaignAction(formData: FormData) {
   const id = String(formData.get("id") ?? "");
   const c = id ? await getCampaign(id) : null;
-  if (!c) redirect("/admin/marketing");
-  const back = `/admin/marketing/campaign/${id}`;
-  if (c!.status === "sent") redirect(back);
+  if (!c) redirect("/admin/marketing/campaigns");
+  const base = `/admin/marketing/campaign/${id}`;
+  if (c!.status === "sent") redirect(base);
 
+  const has = (k: string) => formData.has(k);
   const get = (k: string, max: number) => String(formData.get(k) ?? "").trim().slice(0, max);
-  const ctaUrl = get("cta_url", 500);
-  await updateCampaign(id, {
-    name: get("name", 120) || c!.name,
-    subject: get("subject", 200),
-    heading: get("heading", 200),
-    body: String(formData.get("body") ?? "").slice(0, 10_000),
-    cta_label: get("cta_label", 60) || null,
-    highlight: get("highlight", 200) || null,
-    cta_url: /^https?:\/\//.test(ctaUrl) ? ctaUrl : ctaUrl.startsWith("/") ? (process.env.NEXT_PUBLIC_SITE_URL ?? "https://saaficleaningservice.com") + ctaUrl : null,
-    segment: segmentOf(formData),
-  });
+  const fields: Partial<CampaignRow> = {};
+  if (has("name")) fields.name = get("name", 120) || c!.name;
+  if (has("subject")) fields.subject = get("subject", 200);
+  if (has("heading")) fields.heading = get("heading", 200);
+  if (has("body")) fields.body = String(formData.get("body") ?? "").slice(0, 10_000);
+  if (has("highlight")) fields.highlight = get("highlight", 200) || null;
+  if (has("cta_label")) fields.cta_label = get("cta_label", 60) || null;
+  if (has("cta_url")) {
+    const u = get("cta_url", 500);
+    const site = process.env.NEXT_PUBLIC_SITE_URL ?? "https://saaficleaningservice.com";
+    fields.cta_url = /^https?:\/\//.test(u) ? u : u.startsWith("/") ? site + u : null;
+  }
+  // The "who" step marks itself, because an empty filter ("everyone") is a
+  // real answer and has no fields of its own.
+  if (has("segment_step")) fields.segment = segmentOf(formData);
 
   const intent = String(formData.get("intent") ?? "save");
+  if (intent.startsWith("template:")) {
+    const t = CAMPAIGN_TEMPLATES.find((x) => x.key === intent.slice(9));
+    if (t) Object.assign(fields, { subject: t.subject, heading: t.heading, body: t.body, highlight: t.highlight, cta_label: t.cta_label, cta_url: t.cta_url });
+  }
+  if (Object.keys(fields).length) await updateCampaign(id, fields);
+
   if (intent === "test") {
     const to = process.env.ALERT_EMAIL_TO ?? "";
     const r = to ? await sendCampaignTest(id, to) : { ok: false, reason: "ALERT_EMAIL_TO isn't set" };
-    redirect(`${back}?test=${r.ok ? "ok" : encodeURIComponent(r.reason ?? "failed")}`);
+    redirect(`${base}?step=send&test=${r.ok ? "ok" : encodeURIComponent(r.reason ?? "failed")}`);
   }
   if (intent === "send") {
-    if (formData.get("confirm_send") !== "on") redirect(`${back}?confirm=1`);
+    if (formData.get("confirm_send") !== "on") redirect(`${base}?step=send&confirm=1`);
     const r = await sendCampaign(id);
-    if (r.error) redirect(`${back}?err=${encodeURIComponent(r.error)}`);
-    redirect(`${back}?sent=${r.sent}&failed=${r.failed}&left=${r.remaining}`);
+    if (r.error) redirect(`${base}?step=send&err=${encodeURIComponent(r.error)}`);
+    redirect(`${base}?step=send&sent=${r.sent}&failed=${r.failed}&left=${r.remaining}`);
   }
-  revalidatePath(back);
-  redirect(`${back}?saved=1`);
+  revalidatePath(base);
+  const next = String(formData.get("next") ?? "");
+  const step = ["who", "write", "send"].includes(next) ? next : String(formData.get("step") ?? "write");
+  redirect(`${base}?step=${step}${intent.startsWith("template:") ? "&saved=template" : next ? "" : "&saved=1"}`);
+}
+
+export async function testAutomationAction(formData: FormData) {
+  const key = String(formData.get("key") ?? "");
+  const a = (await listAutomations()).find((x) => x.key === key);
+  const to = process.env.ALERT_EMAIL_TO ?? "";
+  const r = !a
+    ? { ok: false, reason: "not found" }
+    : to
+      ? await sendAutomationTest(a, to)
+      : { ok: false, reason: "ALERT_EMAIL_TO isn't set" };
+  redirect(`/admin/marketing/automations?tested=${encodeURIComponent(key)}&ok=${r.ok ? 1 : 0}${r.reason ? `&why=${encodeURIComponent(r.reason)}` : ""}#${key}`);
 }
 
 export async function deleteCampaignAction(formData: FormData) {
   const id = String(formData.get("id") ?? "");
   if (id) await deleteCampaign(id);
-  redirect("/admin/marketing");
+  redirect("/admin/marketing/campaigns");
 }
 
 export async function saveAutomationAction(formData: FormData) {
@@ -1042,4 +1074,5 @@ export async function saveAutomationAction(formData: FormData) {
   }
   await updateAutomation(key, fields);
   revalidatePath("/admin/marketing");
+  revalidatePath("/admin/marketing/automations");
 }

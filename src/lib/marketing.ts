@@ -93,6 +93,8 @@ export async function sendCampaign(
   const c = await getCampaign(id);
   if (!c) return { sent: 0, failed: 0, remaining: 0, error: "campaign not found" };
   if (!c.subject.trim() || !c.body.trim()) return { sent: 0, failed: 0, remaining: 0, error: "add a subject and a message first" };
+  if (/\[[^\]]+\]/.test(`${c.subject}${c.heading}${c.body}${c.highlight ?? ""}`))
+    return { sent: 0, failed: 0, remaining: 0, error: "replace the text in [brackets] before sending" };
 
   const { profiles } = await loadAudience();
   const list = recipients(profiles, c.segment ?? {});
@@ -241,6 +243,62 @@ export function automationTargets(
   return out;
 }
 
+/** Abandoned quotes due a nudge right now. Pure: `now` is passed in. */
+export function abandonedTargets(
+  leads: QuoteLeadRow[],
+  profiles: Profile[],
+  bookings: Pick<BookingRow, "customer_email" | "created_at">[],
+  now: number
+): { profile: Profile; lead: QuoteLeadRow; dedupeKey: string }[] {
+  const byEmail = new Map(profiles.map((p) => [p.email, p]));
+  const out: { profile: Profile; lead: QuoteLeadRow; dedupeKey: string }[] = [];
+  for (const l of leads) {
+    const email = l.email.toLowerCase();
+    const p = byEmail.get(email);
+    if (!p || p.consent !== "yes" || p.atRisk) continue;
+    if (l.converted_at || l.nudged_at) continue;
+    // Quiet for 6h (they may just be on a break), and never older than a week.
+    if (now - Date.parse(l.updated_at) < 6 * 3_600_000 || now - Date.parse(l.created_at) > 7 * 86_400_000) continue;
+    // A name and phone too: an email alone could be anyone's, typed by anyone.
+    if (!l.name || (l.phone ?? "").replace(/\D/g, "").length < 7) continue;
+    // Booked after quoting (even if the conversion marker missed)?
+    if (bookings.some((b) => b.customer_email.toLowerCase() === email && b.created_at >= l.created_at)) continue;
+    out.push({ profile: p, lead: l, dedupeKey: `abandoned_quote:${email}` });
+  }
+  return out;
+}
+
+/** How many people each automation would email today (before the weekly quiet rule). */
+export function qualifyingCounts(
+  automations: Pick<AutomationRow, "key" | "delay_days">[],
+  audience: { profiles: Profile[]; leads: QuoteLeadRow[]; bookings: BookingRow[] },
+  today: string,
+  now: number
+): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const a of automations) {
+    out[a.key] =
+      a.key === "abandoned_quote"
+        ? abandonedTargets(audience.leads, audience.profiles, audience.bookings, now).length
+        : automationTargets(a.key, a.delay_days, audience.profiles, today).length;
+  }
+  return out;
+}
+
+/** A test of an automation's email to one address, never logged as a send. */
+export async function sendAutomationTest(a: AutomationRow, to: string): Promise<{ ok: boolean; reason?: string }> {
+  const sample = { firstName: "Sam", name: "Sam Example" };
+  return sendMarketingEmail({
+    to,
+    subject: `[TEST] ${merge(a.subject, sample)}`,
+    heading: merge(a.heading, sample),
+    paragraphs: paragraphs(merge(a.body, sample)),
+    highlight: a.key === "abandoned_quote" ? "Your quote: Every 2 weeks, 3 hours — £66 a visit" : null,
+    cta: { label: a.cta_label, url: automationCtaUrl(a.key) },
+    unsubscribe: await unsubscribeUrls(to),
+  });
+}
+
 export async function runAutomations(): Promise<{ sent: Record<string, number>; errors: string[] }> {
   const sent: Record<string, number> = {};
   const errors: string[] = [];
@@ -249,7 +307,6 @@ export async function runAutomations(): Promise<{ sent: Record<string, number>; 
 
   const today = londonWallClock(new Date()).date;
   const { profiles, leads, bookings } = await loadAudience();
-  const byEmail = new Map(profiles.map((p) => [p.email, p]));
   const quietSince = new Date(Date.now() - QUIET_DAYS * 86_400_000).toISOString();
   const recentlyEmailed = await emailsSentSince(quietSince);
   let budget = DAILY_CAP;
@@ -281,19 +338,8 @@ export async function runAutomations(): Promise<{ sent: Record<string, number>; 
   for (const a of automations.sort((x, y) => order(x.key) - order(y.key))) {
     try {
       if (a.key === "abandoned_quote") {
-        const now = Date.now();
-        for (const l of leads) {
-          const email = l.email.toLowerCase();
-          const p = byEmail.get(email);
-          if (!p || p.consent !== "yes" || p.atRisk) continue;
-          if (l.converted_at || l.nudged_at) continue;
-          // Quiet for 6h (they may just be on a break), and never older than a week.
-          if (now - Date.parse(l.updated_at) < 6 * 3_600_000 || now - Date.parse(l.created_at) > 7 * 86_400_000) continue;
-          // A name and phone too: an email alone could be anyone's, typed by anyone.
-          if (!l.name || (l.phone ?? "").replace(/\D/g, "").length < 7) continue;
-          // Booked after quoting (even if the conversion marker missed)?
-          if (bookings.some((b) => b.customer_email.toLowerCase() === email && b.created_at >= l.created_at)) continue;
-          if (await go(a, p, `abandoned_quote:${email}`, quoteLine(l))) await markLeadNudged(l.id);
+        for (const t of abandonedTargets(leads, profiles, bookings, Date.now())) {
+          if (await go(a, t.profile, t.dedupeKey, quoteLine(t.lead))) await markLeadNudged(t.lead.id);
         }
       } else {
         for (const t of automationTargets(a.key, a.delay_days, profiles, today)) await go(a, t.profile, t.dedupeKey);
