@@ -27,6 +27,7 @@ import {
   grossPaidFor,
   getCustomer,
   getCustomerByEmail,
+  isInvoicedBooking,
   markBookingPaid,
   finaliseBookingPaid,
   recordChargeAttempt,
@@ -178,6 +179,12 @@ export async function settleBookingWithSavedCard(
   // that hasn't happened. The admin's explicit "charge now" button opts out.
   if (booking.status !== "completed" && !opts.allowBeforeCompletion) {
     return { ok: false, reason: "the clean isn't finished yet" };
+  }
+  // Airbnb turnovers are invoiced by SAAFI, so the automatic charge skips them.
+  // "Charge now" (allowBeforeCompletion) is the office choosing to, and still can.
+  // A failed lookup counts as invoiced: never charge on a guess.
+  if (!opts.allowBeforeCompletion && (await isInvoicedBooking(booking.id).catch(() => true))) {
+    return { ok: false, reason: "Airbnb clean — invoiced directly" };
   }
   // Prepaid (pay-at-booking) jobs owe nothing by the time the cleaner finishes.
   // That is not a failure to route to a payment link — it is the job graduating.

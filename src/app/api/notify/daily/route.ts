@@ -8,6 +8,7 @@ import {
   listCleaners,
   markReminderSent,
   markPaymentChased,
+  isInvoicedBooking,
   listBookingsNeedingReviewAsk,
   emailsAlreadyAskedForReview,
   markReviewRequested,
@@ -112,6 +113,8 @@ export async function GET(req: NextRequest) {
       for (const b of await listBookingsNeedingChase(3)) {
         try {
           await markPaymentChased(b.id);
+          // Airbnb turnovers are invoiced by SAAFI — marked chased so it's asked once, never sent.
+          if (await isInvoicedBooking(b.id)) continue;
           await sendPaymentChaseEmail(b, amountDueFor(b));
           chases++;
         } catch (e) {

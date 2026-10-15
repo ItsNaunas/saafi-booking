@@ -13,6 +13,7 @@ import { getStripe, toPence, siteUrl } from "@/lib/stripe";
 import {
   amountDueFor,
   getBooking,
+  isInvoicedBooking,
   saveBookingPaymentLink,
   clearBookingPaymentLink,
   markPaymentLinkSent,
@@ -82,6 +83,9 @@ export async function autoInvoiceIfUnpaid(bookingId: string): Promise<void> {
   try {
     const fresh = await getBooking(bookingId);
     if (!fresh || fresh.status !== "completed" || fresh.price_status === "pending") return;
+    // Airbnb turnovers are invoiced by SAAFI directly. A failed lookup throws
+    // into the catch below — no email, which is the safe side of this one.
+    if (await isInvoicedBooking(fresh.id)) return;
     const amount = amountDueFor(fresh);
     if (!(amount > 0)) return;
     const url = await raiseBookingPaymentLink(fresh);

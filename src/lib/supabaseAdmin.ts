@@ -1054,6 +1054,23 @@ export async function getSuggestionForBooking(bookingId: string): Promise<Sugges
   return rows[0] ?? null;
 }
 
+/**
+ * Airbnb turnovers are billed by SAAFI's own invoice, never through the site
+ * (client, 2026-10-15: "for Airbnbs don't send payment emails as we get paid
+ * via invoice"). A booking linked to a turnover suggestion is one of those, so
+ * the automatic payment link, chase and card charge all leave it alone. The
+ * admin's manual buttons still work — pressing one is a decision.
+ */
+export async function isInvoicedBooking(bookingId: string): Promise<boolean> {
+  try {
+    return (await getSuggestionForBooking(bookingId)) !== null;
+  } catch (e) {
+    // Table missing = the 2026-10-12 migration isn't pasted, so no Airbnb bookings exist.
+    if (/PGRST205|42P01/.test(String(e))) return false;
+    throw e;
+  }
+}
+
 /** Insert new suggestions; returns the UIDs that actually landed (duplicates are skipped silently). */
 export async function insertSuggestions(rows: SyncPlan["inserts"]): Promise<string[]> {
   if (rows.length === 0) return [];
