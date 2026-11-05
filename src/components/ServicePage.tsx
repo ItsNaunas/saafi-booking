@@ -8,6 +8,14 @@ import { loadPricingAndAddons } from "@/lib/pricingServer";
 import { formatGBP, quotePrice, recommendedHours } from "@/lib/pricing";
 import { deepConfig, deepPrice, DEEP_EXTRAS } from "@/lib/deepClean";
 import { SERVICES, type ServiceSlug } from "@/lib/services";
+import {
+  BEFORE_WE_LEAVE,
+  DEEP_EXTRA_COVERS,
+  DEEP_ROOMS,
+  STANDARD_EXTRA_COVERS,
+  STANDARD_ROOMS,
+  WE_DONT,
+} from "@/lib/included";
 
 /**
  * One template for every service page. Prices come from the live pricing
@@ -15,21 +23,6 @@ import { SERVICES, type ServiceSlug } from "@/lib/services";
  * /admin/pricing reaches these pages too — nothing here can advertise a price
  * the business has stopped charging.
  */
-
-// The same four things the home page's "Every room, every visit" lists.
-const STANDARD_INCLUDED = [
-  { title: "Kitchen", text: "Surfaces, sink and hob cleaned every visit." },
-  { title: "Bathrooms", text: "Sink, toilet, bath or shower and visible surfaces cleaned thoroughly." },
-  { title: "Hallways & landings", text: "Floors, bannisters and surfaces on the way through — the common areas most cleaners skip." },
-  { title: "Floors & finishing touches", text: "Hard floors mopped, carpets vacuumed and bins emptied where needed." },
-];
-
-const DEEP_INCLUDED = [
-  { title: "Kitchen and oven", text: "The oven is part of every deep clean, never an extra." },
-  { title: "Bedroom and bathroom", text: "Top to bottom, not just the visible surfaces." },
-  { title: "Living and dining rooms", text: "Included in a deep clean as standard." },
-  { title: "Hallways & landings", text: "Floors, bannisters and every surface on the way through." },
-];
 
 const EXAMPLE_ROOMS = { bedrooms: 2, bathrooms: 1, diningRooms: 0, livingRooms: 0 };
 
@@ -55,8 +48,13 @@ export default async function ServicePage({ slug }: { slug: ServiceSlug }) {
       : { label: "2-bed home, one visit", amount: oneOffVisit };
 
   const url = `${site.url}/${slug}`;
-  const included = isDeep ? DEEP_INCLUDED : STANDARD_INCLUDED;
-  const extras = isDeep ? DEEP_EXTRAS.map((e) => e.label) : addons.map((a) => a.label);
+  // Room by room, from SAAFI's cleaner SOP — see lib/included.ts.
+  const rooms = isDeep ? DEEP_ROOMS : STANDARD_ROOMS;
+  const covers = isDeep ? DEEP_EXTRA_COVERS : STANDARD_EXTRA_COVERS;
+  const extras = (isDeep ? DEEP_EXTRAS : addons).map((e) => ({
+    label: e.label,
+    covers: covers[e.key]?.text,
+  }));
 
   const schema = [
     {
@@ -161,23 +159,71 @@ export default async function ServicePage({ slug }: { slug: ServiceSlug }) {
         <section className="bg-slate-50 py-16">
           <div className="mx-auto max-w-6xl px-5 sm:px-8">
             <h2 className="font-display text-3xl font-bold tracking-tight text-slate-900">
-              What&apos;s included
+              What&apos;s included, room by room
             </h2>
-            <div className="mt-8 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
-              {included.map((i) => (
-                <div key={i.title} className="bg-white p-6">
-                  <h3 className="font-semibold text-slate-900">{i.title}</h3>
-                  <p className="mt-2 text-sm leading-relaxed text-slate-600">{i.text}</p>
+            <p className="mt-3 max-w-2xl text-slate-600">
+              {isDeep
+                ? "This is the list our cleaners work through on every deep clean, in every room you book."
+                : "This is the list our cleaners work through on every visit, in every room you book."}
+            </p>
+            <div className="mt-8 grid gap-6 sm:grid-cols-2">
+              {rooms.map((r) => (
+                <div key={r.title} className="bg-white p-6">
+                  <h3 className="font-semibold text-slate-900">{r.title}</h3>
+                  <ul className="mt-3 space-y-2 text-sm leading-relaxed text-slate-600">
+                    {r.items.map((i) => (
+                      <li key={i.text} className="flex gap-2.5">
+                        <Icon glyph={Check} className="mt-0.5 size-4 shrink-0 text-brand-600" />
+                        {i.text}
+                      </li>
+                    ))}
+                  </ul>
                 </div>
               ))}
             </div>
+
             {extras.length > 0 && (
-              <p className="mt-8 text-sm text-slate-600">
-                <span className="font-semibold text-slate-900">Extras you can add: </span>
-                {extras.join(", ")}
-                {isDeep && ` — ${formatGBP(deepConfig.extraPrice)} each`}.
-              </p>
+              <div className="mt-10">
+                <h3 className="font-semibold text-slate-900">
+                  Extras, only if you add them
+                  {isDeep && (
+                    <span className="font-normal text-slate-600"> — {formatGBP(deepConfig.extraPrice)} each</span>
+                  )}
+                </h3>
+                <ul className="mt-3 grid gap-x-6 gap-y-2 text-sm text-slate-600 sm:grid-cols-2">
+                  {extras.map((e) => (
+                    <li key={e.label}>
+                      <span className="font-medium text-slate-900">{e.label}</span>
+                      {e.covers && <> — {e.covers.charAt(0).toLowerCase() + e.covers.slice(1)}</>}
+                    </li>
+                  ))}
+                </ul>
+              </div>
             )}
+          </div>
+        </section>
+
+        {/* limits and the final check — the SOP's company-wide rules and sign-off */}
+        <section className="mx-auto grid max-w-6xl gap-10 px-5 py-16 sm:px-8 md:grid-cols-2">
+          <div>
+            <h2 className="font-display text-2xl font-bold tracking-tight text-slate-900">Before we leave</h2>
+            <ul className="mt-5 space-y-2.5 text-[15px] leading-relaxed text-slate-600">
+              {BEFORE_WE_LEAVE.map((b) => (
+                <li key={b.text} className="flex gap-2.5">
+                  <Icon glyph={Check} className="mt-1 size-4 shrink-0 text-brand-600" />
+                  {b.text}
+                </li>
+              ))}
+            </ul>
+          </div>
+          <div>
+            <h2 className="font-display text-2xl font-bold tracking-tight text-slate-900">What we won&apos;t do</h2>
+            <p className="mt-2 text-sm text-slate-500">To keep your home, and our cleaners, safe, we don&apos;t:</p>
+            <ul className="mt-4 list-disc space-y-2.5 pl-5 text-[15px] leading-relaxed text-slate-600 marker:text-slate-400">
+              {WE_DONT.map((w) => (
+                <li key={w.text}>{w.text}</li>
+              ))}
+            </ul>
           </div>
         </section>
 

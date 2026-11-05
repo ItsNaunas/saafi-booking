@@ -91,8 +91,14 @@ export default function Body({ p }: { p: GuidePrices }) {
         If you&apos;d rather hand it over, we do end of tenancy cleans as a deep clean: two cleaners,
         top to bottom, with the kitchen and oven always included. It&apos;s priced by the size of the
         property — from {formatGBP(p.deepBase)}, plus {formatGBP(p.deepRoom)} for each room beyond a
-        one-bedroom home — and inside windows or the fridge can be added for {formatGBP(p.deepExtra)}{" "}
+        one-bedroom home — and windows or the fridge can be added for {formatGBP(p.deepExtra)}{" "}
         each.
+      </p>
+      <p>
+        The list above is a general checklist for tenants, not our job sheet. You can see{" "}
+        <Link href="/deep-cleaning">exactly what our deep clean covers, room by room</Link>, and if your
+        inventory asks for something beyond it, like inside wardrobes or the extractor filter, mention it
+        when we ring to confirm.
       </p>
       <p>
         Choose <strong>&ldquo;Moving out — end of tenancy&rdquo;</strong> when you get your quote, so

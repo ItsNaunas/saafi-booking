@@ -67,7 +67,7 @@ export default function Body({ p }: { p: GuidePrices }) {
         A deep clean is priced differently: by the size of your home, not the hour, and always with
         two cleaners. {formatGBP(p.deepBase)} covers a home with one bedroom, one bathroom, a living
         room, a dining room, the kitchen with the oven, and the hallways. Each room beyond that adds{" "}
-        {formatGBP(p.deepRoom)}, and extras like inside windows or the fridge are{" "}
+        {formatGBP(p.deepRoom)}, and extras like windows or the fridge are{" "}
         {formatGBP(p.deepExtra)} each.
       </p>
       <PriceTable homes={p.homes} cols={["deep"]} />

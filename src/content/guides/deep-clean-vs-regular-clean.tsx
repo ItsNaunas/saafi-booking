@@ -58,7 +58,8 @@ export default function Body({ p }: { p: GuidePrices }) {
           <strong>The oven</strong>, as part of every deep clean rather than an extra.
         </li>
         <li>
-          <strong>Living and dining rooms</strong>, included as standard.
+          <strong>The places a regular clean doesn&apos;t reach</strong>: grease and limescale, tiles
+          and grout, skirting boards and door frames, and behind and under the furniture.
         </li>
         <li>
           <strong>A fixed price by home size</strong>, not by the hour, so you know the whole cost

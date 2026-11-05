@@ -94,8 +94,8 @@ const ROOMS: {
   },
   {
     n: "04",
-    title: "Floors & finishing touches",
-    copy: "Hard floors mopped, carpets vacuumed and bins emptied where needed.",
+    title: "Bedrooms & living spaces",
+    copy: "Dusted and wiped, carpets vacuumed, hard floors mopped and anything we move put back.",
     image: roomFloors,
     imagePos: "center 62%",
     tone: "bg-brand-50",
@@ -376,7 +376,7 @@ export default async function Home() {
             points={[
               "Two cleaners as standard",
               "Priced by home size, not the hour",
-              "Living and dining rooms included",
+              "Limescale, grease and behind the furniture",
             ]}
             href="/quote?service=deep"
           />

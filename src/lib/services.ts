@@ -46,7 +46,7 @@ export const SERVICES: Record<ServiceSlug, ServiceContent> = {
       },
       {
         title: "Keeping on top of it",
-        text: "Kitchen, bathrooms, hallways, landings and floors every visit, so nothing gets the chance to build up.",
+        text: "Kitchen, bathrooms, bedrooms, living spaces and floors every visit, so nothing gets the chance to build up.",
       },
       {
         title: "Homes with pets",
@@ -81,7 +81,7 @@ export const SERVICES: Record<ServiceSlug, ServiceContent> = {
     name: "One-off cleaning",
     h1: "One-off house cleaning in Oxford & Oxfordshire",
     intro: [
-      "A single visit, whenever you need it, with no commitment. The same standard our regular customers get — kitchen, bathrooms, hallways, landings and floors.",
+      "A single visit, whenever you need it, with no commitment. The same standard our regular customers get — kitchen, bathrooms, bedrooms, living spaces and floors.",
       "Tell us your rooms and we'll suggest how long it needs. You can adjust it, and the price follows — nothing is added afterwards without asking you first.",
     ],
     quoteHref: "/quote?frequency=one_off",
@@ -152,7 +152,7 @@ export const SERVICES: Record<ServiceSlug, ServiceContent> = {
     faqs: [
       {
         q: "What's the difference between a deep clean and a regular clean?",
-        a: "A regular clean keeps a house on top of itself. A deep clean is two cleaners going through the whole home top to bottom, with the oven, living and dining rooms included, and it's priced by the size of the home rather than by the hour.",
+        a: "A regular clean keeps a house on top of itself. A deep clean is two cleaners going through the whole home top to bottom: grease and limescale removed, tiles and grout, skirting boards and door frames, and behind and under the furniture. The oven is included, and it's priced by the size of the home rather than by the hour.",
       },
       {
         q: "Do you do end of tenancy cleans?",
@@ -160,7 +160,7 @@ export const SERVICES: Record<ServiceSlug, ServiceContent> = {
       },
       {
         q: "How is the price worked out?",
-        a: "A set price covers a home with one bedroom, one bathroom, one living room, one dining room, the kitchen with the oven, and the hallways. Each room beyond that adds the same flat amount, and extras like inside windows or the fridge are priced on top. You see the total before you book.",
+        a: "A set price covers a home with one bedroom, one bathroom, one living room, one dining room, the kitchen with the oven, and the hallways. Each room beyond that adds the same flat amount, and extras like windows or the fridge are priced on top. You see the total before you book.",
       },
       {
         q: "Why do you ask why I need a deep clean?",

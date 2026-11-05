@@ -53,7 +53,8 @@ export const deepConfig = {
  * oven twice. (The sheet lists it in both places; flagged with SAAFI.)
  */
 export const DEEP_EXTRAS = [
-  { key: "windows", label: "Inside windows" },
+  // Not "Inside windows": the SOP's deep level includes external glass where safe.
+  { key: "windows", label: "Windows" },
   { key: "laundry", label: "Laundry" },
   { key: "dusting", label: "Detailed dusting" },
   { key: "fridge", label: "Inside the fridge" },

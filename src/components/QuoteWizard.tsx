@@ -29,6 +29,7 @@ import {
   DEEP_REASONS,
   deepConfig,
 } from "@/lib/deepClean";
+import { DEEP_EXTRA_COVERS, STANDARD_EXTRA_COVERS } from "@/lib/included";
 
 /** Which field a validation message belongs to, so it can be shown in place. */
 type FieldKey =
@@ -946,8 +947,13 @@ export default function QuoteWizard({
                           : "border-slate-200 hover:border-slate-300"
                       }`}
                     >
-                      <span className="font-medium text-slate-800">{e.label}</span>
-                      <span className={on ? "font-semibold text-brand-700" : "text-slate-500"}>
+                      <span>
+                        <span className="block font-medium text-slate-800">{e.label}</span>
+                        {DEEP_EXTRA_COVERS[e.key] && (
+                          <span className="block text-xs text-slate-500">{DEEP_EXTRA_COVERS[e.key].text}</span>
+                        )}
+                      </span>
+                      <span className={`shrink-0 pl-3 ${on ? "font-semibold text-brand-700" : "text-slate-500"}`}>
                         +{formatGBP(deepConfig.extraPrice)}
                       </span>
                     </button>
@@ -987,8 +993,13 @@ export default function QuoteWizard({
                           : "border-slate-200 hover:border-slate-300"
                       }`}
                     >
-                      <span className="font-medium text-slate-800">{a.label}</span>
-                      <span className={on ? "font-semibold text-brand-700" : "text-slate-500"}>
+                      <span>
+                        <span className="block font-medium text-slate-800">{a.label}</span>
+                        {STANDARD_EXTRA_COVERS[a.key] && (
+                          <span className="block text-xs text-slate-500">{STANDARD_EXTRA_COVERS[a.key].text}</span>
+                        )}
+                      </span>
+                      <span className={`shrink-0 pl-3 ${on ? "font-semibold text-brand-700" : "text-slate-500"}`}>
                         {a.price > 0 ? `+${formatGBP(a.price)}` : `+${formatDuration(a.hours)}`}
                       </span>
                     </button>
