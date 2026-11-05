@@ -112,6 +112,18 @@ export function isBlock(summary: string | null): boolean {
   return /not available|blocked/i.test(summary ?? "");
 }
 
+/**
+ * Airbnb's preparation time arrives as a "Not available" block starting the
+ * day a guest leaves. It isn't a stay, so its end isn't a checkout — left in,
+ * it suggests a phantom clean the day after the real one (2026-10-18: a block
+ * 18→19 Oct put a clean on Mon 19 that nobody needed, then flickered away).
+ * A block standing on its own (a Booking.com stay synced in, say) is kept.
+ */
+export function dropPrepBlocks(events: IcalEvent[]): IcalEvent[] {
+  const checkouts = new Set(events.filter((e) => !isBlock(e.summary)).map((e) => e.end));
+  return events.filter((e) => !(isBlock(e.summary) && checkouts.has(e.start)));
+}
+
 export type SyncPlan = {
   inserts: Omit<SuggestionRow, "id" | "status" | "booking_id" | "changed_at" | "change_note" | "created_at" | "updated_at">[];
   updates: { id: string; fields: Partial<SuggestionRow> }[];
@@ -256,6 +268,23 @@ export function releaseCancelledLinks(
   return rows
     .filter((r) => r.status === "confirmed" && r.checkout_date >= today && (!r.booking_id || !live.has(r.booking_id)))
     .map((r) => r.id);
+}
+
+/**
+ * The turnovers still waiting for a yes — what the admin calendar and the
+ * subscribed Google feed both show. Suggested ones, plus confirmed ones whose
+ * clean was cancelled or deleted (before the next sync releases them), minus
+ * any day already booked at that address.
+ */
+export function openTurnovers<
+  T extends Pick<SuggestionRow, "status" | "booking_id" | "checkout_date"> & { ical_feeds?: { postcode: string | null } | null },
+>(rows: T[], bookings: { id: string; postcode: string; preferred_date: string; status: string }[]): T[] {
+  const live = new Set(bookings.filter((b) => b.status !== "cancelled").map((b) => b.id));
+  return rows.filter(
+    (x) =>
+      (x.status === "suggested" || (x.status === "confirmed" && !(x.booking_id && live.has(x.booking_id)))) &&
+      !alreadyBooked(x.ical_feeds?.postcode ?? null, x.checkout_date, bookings)
+  );
 }
 
 /** Whole days from `today` to `date` (both YYYY-MM-DD). Negative = past. */

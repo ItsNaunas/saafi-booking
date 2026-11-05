@@ -1,8 +1,8 @@
 import Link from "next/link";
 import { headers } from "next/headers";
-import { listBookings, listCleaners, listOpenSuggestions, type BookingRow } from "@/lib/supabaseAdmin";
+import { listBookings, listCleaners, listOpenSuggestions, listIcalFeeds, type BookingRow, type IcalFeedRow } from "@/lib/supabaseAdmin";
 import { syncIfStale, FRESH_MINUTES } from "@/lib/airbnbSync";
-import { isBlock, alreadyBooked } from "@/lib/icalImport";
+import { isBlock, openTurnovers } from "@/lib/icalImport";
 import { dismissSuggestion, clearSuggestionFlag } from "@/app/admin/actions";
 import PendingButton from "@/components/PendingButton";
 import { formatGBP } from "@/lib/pricing";
@@ -51,13 +51,14 @@ export default async function CalendarPage({
   // first, but never hold the page more than a few seconds for Airbnb.
   await syncIfStale(FRESH_MINUTES, 6000);
   const todayForFeeds = londonWallClock(new Date()).date;
-  const [allBookings, cleaners, allSuggestions] = await Promise.all([
+  const [allBookings, cleaners, allSuggestions, feeds] = await Promise.all([
     listBookings(),
     listCleaners(),
     // Airbnb turnovers. Empty (never an error page) until the 2026-10-12
     // migration is pasted or if the read hiccups — the calendar must not
     // depend on a convenience feature.
     listOpenSuggestions(todayForFeeds).catch(() => [] as Suggestion[]),
+    listIcalFeeds().catch(() => [] as IcalFeedRow[]),
   ]);
   const cleanerName = new Map<string, string>(cleaners.map((c) => [c.id, c.name]));
   const activeCleaners = cleaners.filter((c) => c.active);
@@ -105,12 +106,14 @@ export default async function CalendarPage({
   // again right away, without waiting for the next sync to release it.
   const liveBookingIds = new Set(allBookings.filter((b) => b.status !== "cancelled").map((b) => b.id));
   const linkedLive = (x: Suggestion) => x.status === "confirmed" && !!x.booking_id && liveBookingIds.has(x.booking_id);
-  const needsClean = (x: Suggestion) => x.status === "suggested" || (x.status === "confirmed" && !linkedLive(x));
-  const suggested = showSuggestions
-    ? allSuggestions.filter(
-        (x) => needsClean(x) && !alreadyBooked(x.ical_feeds?.postcode ?? null, x.checkout_date, allBookings)
-      )
-    : [];
+  const suggested = showSuggestions ? openTurnovers(allSuggestions, allBookings) : [];
+  // "Last checked with Airbnb" — the oldest active calendar, so it never
+  // claims fresher than the stalest one.
+  const lastChecked = feeds
+    .filter((f) => f.active && f.last_synced_at)
+    .map((f) => f.last_synced_at!)
+    .sort()[0];
+  const anyFailing = feeds.some((f) => f.active && f.last_error);
   const flagged = allSuggestions.filter((x) => linkedLive(x) && x.changed_at);
   const suggestedByDate = new Map<string, Suggestion[]>();
   for (const x of suggested) {
@@ -250,7 +253,10 @@ export default async function CalendarPage({
             <div className="absolute right-0 z-10 mt-1 w-80 border border-slate-200 bg-white p-3 text-slate-600 shadow-lg">
               <p className="mb-2">
                 Add live cleans to Google/Apple Calendar — paste this secret URL as a subscribed calendar
-                {cleaner && cleaner !== "none" ? " (this cleaner only)" : ""}:
+                {cleaner && cleaner !== "none"
+                  ? " (this cleaner only)"
+                  : ". Airbnb checkouts show on the checkout day, marked NOT booked until confirmed"}
+                :
               </p>
               <code className="block break-all bg-slate-50 p-2 text-[11px] text-slate-700 ring-1 ring-slate-200">
                 {feedUrl}
@@ -293,12 +299,21 @@ export default async function CalendarPage({
           </div>
         </div>
       )}
+      {feeds.some((f) => f.active) && showSuggestions && (
+        <p className={`mb-2 text-xs ${anyFailing ? "font-medium text-rose-700" : "text-slate-400"}`}>
+          {anyFailing ? "⚠ An Airbnb calendar isn't syncing — check Admin → Airbnb. " : ""}
+          Last checked with Airbnb: {lastChecked ? ago(lastChecked) : "not yet"} · checks every 15 minutes
+        </p>
+      )}
       {suggested.length > 0 && (
         <details className="mb-4 bg-white p-4 shadow-sm ring-1 ring-sky-200" open={suggested.length <= 6}>
           <summary className="cursor-pointer text-sm font-semibold text-sky-900">
-            {suggested.length} Airbnb turnover{suggested.length === 1 ? "" : "s"} to confirm
-            <span className="ml-2 font-normal text-slate-400">nothing is booked until you confirm</span>
+            {suggested.length} Airbnb checkout{suggested.length === 1 ? "" : "s"} — not booked yet
           </summary>
+          <p className="mt-2 bg-amber-50 px-2 py-1.5 text-xs font-medium text-amber-900 ring-1 ring-amber-200">
+            These come straight from Airbnb and can still change. Only send a cleaner once you&apos;ve pressed
+            Confirm and it shows as a booked clean.
+          </p>
           <div className="mt-2 space-y-1.5">
             {suggested.map((x) => (
               <SuggestionRow key={x.id} x={x} />
@@ -529,10 +544,11 @@ function DayCell({
           <Link
             key={x.id}
             href={`/admin/new?suggestion=${x.id}`}
-            title={`Airbnb checkout · ${x.ical_feeds?.label ?? ""}${x.next_checkin_date ? ` · next check-in ${x.next_checkin_date}` : ""} · click to confirm`}
+            title={`Airbnb checkout, NOT booked · ${x.ical_feeds?.label ?? ""}${x.next_checkin_date ? ` · next guest in ${fmtDay(x.next_checkin_date)}` : ""} · click to confirm`}
             className="block truncate border border-dashed border-sky-400 bg-sky-50/60 px-1.5 py-0.5 text-[11px] font-medium text-sky-800 hover:bg-sky-100"
           >
-            ↺ {x.ical_feeds?.label ?? "Airbnb"}
+            {justChanged(x) && <span className="mr-1 font-bold text-amber-600">NEW</span>}
+            Not booked · {x.ical_feeds?.label ?? "Airbnb"}
           </Link>
         ))}
         {extra > 0 && (
@@ -599,18 +615,41 @@ function AgendaRow({
   );
 }
 
+/** Appeared or changed on Airbnb in the last 24 hours. */
+function justChanged(x: Suggestion): boolean {
+  return Date.now() - Date.parse(x.updated_at) < 86_400_000;
+}
+
+function ago(iso: string): string {
+  const mins = Math.round((Date.now() - Date.parse(iso)) / 60_000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins} min ago`;
+  const h = Math.round(mins / 60);
+  return h < 48 ? `${h}h ago` : `${Math.round(h / 24)} days ago`;
+}
+
 function SuggestionRow({ x }: { x: Suggestion }) {
   const sameDay = x.next_checkin_date === x.checkout_date;
+  const block = isBlock(x.summary);
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border border-dashed border-sky-300 bg-sky-50/40 px-2 py-1.5 text-sm">
       <span className="w-24 shrink-0 text-xs font-medium text-slate-600">{fmtDay(x.checkout_date)}</span>
       <span className="min-w-0 flex-1 truncate">
+        {justChanged(x) && (
+          <span className="mr-1.5 bg-amber-100 px-1 py-0.5 text-[10px] font-bold text-amber-800">NEW / CHANGED</span>
+        )}
         <span className="font-medium text-slate-900">{x.ical_feeds?.label ?? "Airbnb"}</span>
         <span className="text-xs text-slate-500">
-          {" "}· {isBlock(x.summary) ? "host block ends" : "guest checks out"}
+          {block ? (
+            <span className="font-medium text-amber-700">
+              {" "}· blocked on Airbnb {fmtDay(x.checkin_date)}–{fmtDay(x.checkout_date)}, not a guest — check a clean is needed
+            </span>
+          ) : (
+            <> · guest in {fmtDay(x.checkin_date)}, out {fmtDay(x.checkout_date)}</>
+          )}
           {x.next_checkin_date && (
             <span className={sameDay ? "font-semibold text-rose-700" : ""}>
-              {" "}· next in {sameDay ? "same day" : fmtDay(x.next_checkin_date)}
+              {" "}· next guest {sameDay ? "arrives same day" : `in ${fmtDay(x.next_checkin_date)}`}
             </span>
           )}
         </span>

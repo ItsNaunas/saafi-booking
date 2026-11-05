@@ -48,8 +48,9 @@ export default async function AirbnbPage({ searchParams }: { searchParams: Promi
         <Link href="/admin/calendar" className="font-medium text-brand-700 hover:underline">
           calendar
         </Link>{" "}
-        as a suggested clean. Nothing is booked until you confirm it. Calendars refresh every morning
-        and whenever the calendar page is opened.
+        as a suggested clean. Nothing is booked until you confirm it. Calendars are checked every 15
+        minutes. Airbnb&apos;s own &quot;Not available&quot; prep day after a checkout is ignored, so it
+        doesn&apos;t show as an extra clean.
       </p>
 
       {missing && (

@@ -1192,7 +1192,7 @@ export function renderMarketingPreview(opts: Omit<MarketingMail, "to" | "unsubsc
 
 export type AirbnbAlertItem = {
   /** new checkout · clean cancelled so it needs booking again · a booked stay changed · the link stopped working */
-  kind: "new" | "released" | "changed" | "failing";
+  kind: "new" | "released" | "changed" | "removed" | "failing";
   checkout?: string;
   nextCheckin?: string | null;
   daysAway?: number;
@@ -1210,7 +1210,8 @@ export async function sendAirbnbAlertEmail(feedLabel: string, items: AirbnbAlert
   const to = officeAddress();
   if (!to || items.length === 0) return;
   const cleans = items.filter((i) => i.kind !== "failing");
-  const urgent = cleans.filter((i) => i.kind !== "changed" && (i.daysAway ?? 99) <= 2);
+  const urgent = cleans.filter((i) => (i.kind === "new" || i.kind === "released") && (i.daysAway ?? 99) <= 2);
+  const onlyRemoved = cleans.length > 0 && cleans.every((i) => i.kind === "removed");
   const failing = items.find((i) => i.kind === "failing");
   const sameDay = (i: AirbnbAlertItem) => !!i.checkout && i.nextCheckin === i.checkout;
 
@@ -1219,7 +1220,13 @@ export async function sendAirbnbAlertEmail(feedLabel: string, items: AirbnbAlert
     const soon = i.daysAway === 0 ? " · TODAY" : i.daysAway === 1 ? " · TOMORROW" : (i.daysAway ?? 99) <= 2 ? " · in 2 days" : "";
     const turnover = sameDay(i) ? " · same-day turnover" : i.nextCheckin ? ` · next guest ${fmtDay(i.nextCheckin)}` : "";
     const what =
-      i.kind === "new" ? "New checkout — clean needed" : i.kind === "released" ? "Clean was cancelled — needs booking again" : "Booked stay changed on Airbnb";
+      i.kind === "new"
+        ? "New checkout — clean needed"
+        : i.kind === "released"
+          ? "Clean was cancelled — needs booking again"
+          : i.kind === "removed"
+            ? "Airbnb removed this checkout — no clean needed"
+            : "Booked stay changed on Airbnb";
     return [`${when}${soon}`, `${what}${turnover}${i.kind === "changed" && i.note ? ` — ${i.note}` : ""}`];
   };
 
@@ -1227,7 +1234,9 @@ export async function sendAirbnbAlertEmail(feedLabel: string, items: AirbnbAlert
     ? `⚠ Airbnb calendar not syncing: ${feedLabel}`
     : urgent.length
       ? `URGENT: Airbnb clean needed ${urgent[0].daysAway === 0 ? "today" : urgent[0].daysAway === 1 ? "tomorrow" : "within 48h"} — ${feedLabel}`
-      : `New Airbnb ${cleans.length === 1 ? "checkout" : `checkouts (${cleans.length})`} — ${feedLabel}`;
+      : onlyRemoved
+        ? `Airbnb checkout removed — no clean needed — ${feedLabel}`
+        : `Airbnb calendar ${cleans.length === 1 ? "update" : `updates (${cleans.length})`} — ${feedLabel}`;
 
   await send({
     to,

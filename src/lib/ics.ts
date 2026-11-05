@@ -64,10 +64,18 @@ function stamp(): string {
   return new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
 }
 
+/** An Airbnb checkout not yet booked as a clean — see bookingsToICS. */
+export type TurnoverEvent = {
+  id: string;
+  label: string;
+  checkout_date: string;
+  next_checkin_date: string | null;
+};
+
 export function bookingsToICS(
   rows: BookingRow[],
   cleanerName: Map<string, string>,
-  opts: { calName?: string } = {}
+  opts: { calName?: string; turnovers?: TurnoverEvent[] } = {}
 ): string {
   const now = stamp();
   const lines: string[] = [
@@ -121,6 +129,34 @@ export function bookingsToICS(
       fold(`LOCATION:${esc(`${b.address_line}, ${b.postcode}`)}`),
       fold(`DESCRIPTION:${esc(descParts.join("\n"))}`),
       `STATUS:${b.status === "cancelled" ? "CANCELLED" : "CONFIRMED"}`,
+      "END:VEVENT"
+    );
+  }
+
+  // Airbnb checkouts on the checkout day itself. Airbnb's own feed marks a
+  // stay with an exclusive end date, so Google draws it finishing the night
+  // before — the office read a Friday checkout as Thursday (2026-10-19). This
+  // one-day event sits on the day the clean actually happens.
+  for (const t of opts.turnovers ?? []) {
+    const next = t.next_checkin_date
+      ? t.next_checkin_date === t.checkout_date
+        ? "Next guest arrives the same day."
+        : `Next guest arrives ${t.next_checkin_date}.`
+      : "No next guest on the calendar yet.";
+    lines.push(
+      "BEGIN:VEVENT",
+      `UID:${t.id}@saafi-turnover`,
+      `DTSTAMP:${now}`,
+      `DTSTART;VALUE=DATE:${dateVal(t.checkout_date)}`,
+      `DTEND;VALUE=DATE:${nextDay(t.checkout_date)}`,
+      fold(`SUMMARY:${esc(`Airbnb checkout (NOT booked) — ${t.label}`)}`),
+      fold(
+        `DESCRIPTION:${esc(
+          `The guest leaves today. This is from the Airbnb calendar and is not a booked clean yet — confirm it in the CRM before sending a cleaner.\n${next}`
+        )}`
+      ),
+      "STATUS:TENTATIVE",
+      "TRANSP:TRANSPARENT",
       "END:VEVENT"
     );
   }

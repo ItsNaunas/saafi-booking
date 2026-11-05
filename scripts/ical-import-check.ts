@@ -1,7 +1,7 @@
 // Assertion harness for the Airbnb calendar import: `npx tsx scripts/ical-import-check.ts`
 //
 // Every case passes an explicit `today`, so these never go stale.
-import { parseIcal, planSync, isBlock, linkSuggestionsToBookings, alreadyBooked, releaseCancelledLinks, type SuggestionRow } from "../src/lib/icalImport";
+import { parseIcal, planSync, isBlock, linkSuggestionsToBookings, alreadyBooked, releaseCancelledLinks, dropPrepBlocks, openTurnovers, type SuggestionRow } from "../src/lib/icalImport";
 
 let failed = 0;
 function check(label: string, actual: unknown, expected: unknown) {
@@ -204,6 +204,40 @@ check(
   releaseCancelledLinks([row({ id: "c4", status: "confirmed", booking_id: null, checkout_date: "2026-10-01" })], [], TODAY),
   []
 );
+
+// --- Airbnb prep-day blocks (2026-10-19) ---
+{
+  const ev = (uid: string, summary: string, start: string, end: string) => ({ uid, summary, start, end });
+  const stay = ev("s", "Reserved", "2026-10-16", "2026-10-18");
+  const prep = ev("p", "Airbnb (Not available)", "2026-10-18", "2026-10-19");
+  const lone = ev("l", "Airbnb (Not available)", "2026-11-02", "2026-11-05");
+  check(
+    "a block starting on a checkout day is Airbnb's prep day, dropped",
+    dropPrepBlocks([stay, prep, lone]).map((e) => e.uid),
+    ["s", "l"]
+  );
+  check("a block on its own is kept", dropPrepBlocks([lone]).map((e) => e.uid), ["l"]);
+  check("guest stays are never dropped", dropPrepBlocks([stay]).map((e) => e.uid), ["s"]);
+}
+
+// --- what the calendar + Google feed show ---
+{
+  const row = (id: string, status: SuggestionRow["status"], date: string, booking_id: string | null = null) => ({
+    id, status, checkout_date: date, booking_id, ical_feeds: { postcode: "OX43DE" },
+  });
+  const bookings = [
+    { id: "b1", postcode: "OX4 3DE", preferred_date: "2026-10-23", status: "confirmed" },
+    { id: "b2", postcode: "OX43DE", preferred_date: "2026-10-25", status: "cancelled" },
+  ];
+  check(
+    "openTurnovers: suggested shows, booked day hides, cancelled clean shows again",
+    openTurnovers(
+      [row("a", "suggested", "2026-10-21"), row("b", "suggested", "2026-10-23"), row("c", "confirmed", "2026-10-25", "b2"), row("d", "confirmed", "2026-10-23", "b1")],
+      bookings
+    ).map((x) => x.id),
+    ["a", "c"]
+  );
+}
 
 if (failed) {
   console.error(`\n${failed} check(s) FAILED`);

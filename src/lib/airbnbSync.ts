@@ -11,7 +11,7 @@
 // only the run whose insert actually lands counts a checkout as new.
 
 import { londonWallClock } from "@/lib/scheduling";
-import { parseIcal, planSync, linkSuggestionsToBookings, releaseCancelledLinks, daysUntil } from "@/lib/icalImport";
+import { parseIcal, dropPrepBlocks, planSync, linkSuggestionsToBookings, releaseCancelledLinks, daysUntil } from "@/lib/icalImport";
 import { sendAirbnbAlertEmail, type AirbnbAlertItem } from "@/lib/email";
 import {
   listIcalFeeds,
@@ -51,8 +51,9 @@ export async function syncFeed(feed: IcalFeedRow): Promise<FeedSyncResult> {
       headers: { Accept: "text/calendar, text/plain;q=0.9, */*;q=0.1" },
     });
     if (!res.ok) throw new Error(`calendar link answered ${res.status}`);
-    const events = parseIcal(await res.text());
-    if (!events) throw new Error("that link didn't return a calendar — check it's the Airbnb export link");
+    const parsed = parseIcal(await res.text());
+    if (!parsed) throw new Error("that link didn't return a calendar — check it's the Airbnb export link");
+    const events = dropPrepBlocks(parsed);
 
     const existing = await listSuggestionsForFeed(feed.id);
     const today = londonWallClock(new Date()).date;
@@ -85,6 +86,14 @@ export async function syncFeed(feed: IcalFeedRow): Promise<FeedSyncResult> {
     for (const r of fresh) {
       const kind = insertedUids.has(r.uid) && !linked.has(r.id) ? "new" : released.has(r.id) && !linked.has(r.id) ? "released" : null;
       if (kind) alerts.push({ kind, checkout: r.checkout_date, nextCheckin: r.next_checkin_date, daysAway: daysUntil(today, r.checkout_date) });
+    }
+    // A suggestion Airbnb took away close to the day: say so, or the office
+    // only sees it vanish and wonders whether to send a cleaner anyway.
+    for (const u of plan.updates) {
+      if (u.fields.status !== "gone") continue;
+      const r = existing.find((x) => x.id === u.id);
+      const away = r ? daysUntil(today, r.checkout_date) : 99;
+      if (r && away <= 2) alerts.push({ kind: "removed", checkout: r.checkout_date, daysAway: away });
     }
     for (const u of plan.updates) {
       if (!u.fields.changed_at) continue;
