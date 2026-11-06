@@ -1,6 +1,18 @@
 # PROGRESS — SAAFI Booking CRM
 
-*Updated: 2026-10-08 (site opened to search engines; Sept work recorded from git history)*
+*Updated: 2026-11-06 (catch-up from git history: 2026-10-14 to 2026-11-06)*
+
+**Last updated**: 2026-11-06
+
+*Caught up 2026-11-06 from git history (commit messages only, not re-checked against the live site). Later sessions: keep this header current.* Pushes do not auto-deploy this project, so "deployed" is not claimed for these.
+
+**2026-10-14 to 2026-11-06, from git history:**
+- 10-14: Contacts (search, filters, export, contact pages, consent by hand); Marketing UI (tabs, overview nudges, automation controls, 3-step campaigns).
+- 10-15/16: Airbnb sync every 15 minutes and fresh on open, office email alerts, duplicate guard, email when a calendar is removed, a cancelled or deleted clean puts its stay back as a suggestion; no automatic payment emails or charges for Airbnb cleans (SAAFI invoices these).
+- 11-05: "What's included", room by room, from SAAFI's cleaner SOP; Airbnb prep-day fix, removed-checkout alerts; cleaner pay set to £14/h.
+- 11-06: admin price fields accept pennies (£45.90 was rejected).
+
+
 
 **State: LIVE at https://saaficleaningservice.com — and indexable as of 2026-10-08.**
 
