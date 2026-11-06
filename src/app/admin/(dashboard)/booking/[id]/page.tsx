@@ -686,7 +686,7 @@ export default async function BookingDetailPage({
             <span className="mb-1 block text-sm font-medium text-slate-700">Price (£)</span>
             <input
               type="number"
-              step="0.5"
+              step="0.01"
               name="quoted_price"
               defaultValue={String(b.quoted_price)}
               className="w-full border border-slate-300 px-3 py-2"

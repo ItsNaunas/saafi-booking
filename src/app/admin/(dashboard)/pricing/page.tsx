@@ -5,8 +5,9 @@ import PendingButton from "@/components/PendingButton";
 export const dynamic = "force-dynamic";
 
 const FIELDS: { key: string; label: string; hint?: string; step?: string }[] = [
-  { key: "hourly_rate", label: "Hourly rate (£)", step: "0.5" },
-  { key: "product_surcharge", label: "Product surcharge (£)", hint: "added when SAAFI bring products", step: "0.5" },
+  // Money fields take pennies; a 0.5 step made the browser reject £45.90.
+  { key: "hourly_rate", label: "Hourly rate (£)", step: "0.01" },
+  { key: "product_surcharge", label: "Product surcharge (£)", hint: "added when SAAFI bring products", step: "0.01" },
   { key: "base_hours", label: "Base hours", hint: "kitchen, lounge & common areas — always included", step: "0.25" },
   { key: "hours_per_bedroom", label: "Hours per bedroom", step: "0.25" },
   { key: "hours_per_bathroom", label: "Hours per bathroom", step: "0.25" },
@@ -141,7 +142,7 @@ export default async function PricingPage({
                   <input
                     type="number"
                     name="price"
-                    step="0.5"
+                    step="0.01"
                     min="0"
                     defaultValue={a.price}
                     className="w-full border border-slate-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-200"
