@@ -1,8 +1,9 @@
 import { createManualBooking } from "@/app/admin/actions";
 import { loadPricingConfig } from "@/lib/pricingServer";
-import { getSuggestion } from "@/lib/supabaseAdmin";
+import { getSuggestion, listKnownCustomers } from "@/lib/supabaseAdmin";
 import { isBlock } from "@/lib/icalImport";
 import ManualPriceFields from "@/components/ManualPriceFields";
+import CustomerFields from "@/components/CustomerFields";
 import PendingButton from "@/components/PendingButton";
 
 export const dynamic = "force-dynamic";
@@ -12,7 +13,12 @@ export default async function NewBookingPage({
 }: {
   searchParams: Promise<{ error?: string; suggestion?: string }>;
 }) {
-  const [{ error, suggestion: suggestionId }, cfg] = await Promise.all([searchParams, loadPricingConfig()]);
+  const [{ error, suggestion: suggestionId }, cfg, known] = await Promise.all([
+    searchParams,
+    loadPricingConfig(),
+    // Autofill is a convenience: if the lookup fails, the form still works.
+    listKnownCustomers().catch(() => []),
+  ]);
   // Confirming an Airbnb turnover: the same form, pre-filled from the host's
   // calendar settings and the checkout date. Everything stays editable.
   const s = suggestionId ? await getSuggestion(suggestionId).catch(() => null) : null;
@@ -64,11 +70,7 @@ export default async function NewBookingPage({
       <form action={createManualBooking} className="bg-white p-5 shadow-sm ring-1 ring-slate-200">
         {s && <input type="hidden" name="suggestion_id" value={s.id} />}
         <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Customer name *" name="name" defaultValue={pre?.name} />
-          <Field label="Phone *" name="phone" type="tel" defaultValue={pre?.phone} />
-          <Field label="Email" name="email" type="email" hint="optional" defaultValue={pre?.email} />
-          <Field label="Postcode" name="postcode" defaultValue={pre?.postcode} />
-          <Field label="Address line" name="address_line" className="sm:col-span-2" defaultValue={pre?.address_line} />
+          <CustomerFields known={known} initial={pre} />
           <Field label="Bedrooms" name="bedrooms" type="number" hint="optional" />
           <Field label="Bathrooms" name="bathrooms" type="number" hint="optional" />
           <label className="block">

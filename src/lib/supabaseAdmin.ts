@@ -1371,3 +1371,41 @@ export async function listSendsForEmail(
     `email_sends?email=eq.${encodeURIComponent(email.toLowerCase())}&select=kind,campaign_id,status,created_at&order=created_at.desc&limit=100`
   );
 }
+
+/* ---------- manual-booking autofill ---------- */
+
+export type KnownCustomer = {
+  name: string;
+  phone: string;
+  email: string;
+  address_line: string;
+  postcode: string;
+};
+
+/**
+ * Everyone SAAFI has booked before, for the type-ahead on the manual booking
+ * form (Dulla, 2026-11-10: "if I type a name it can let me auto fill").
+ * Read from bookings, not customers: phone-only bookings never get a
+ * customers row (the trigger skips the @phone.saafi sentinel). Newest first,
+ * one entry per phone + address, so a host with two flats shows twice.
+ */
+export async function listKnownCustomers(): Promise<KnownCustomer[]> {
+  const rows = await rest<
+    { customer_name: string; customer_phone: string; customer_email: string; address_line: string | null; postcode: string | null }[]
+  >("bookings?select=customer_name,customer_phone,customer_email,address_line,postcode&order=created_at.desc&limit=3000");
+  const seen = new Set<string>();
+  const out: KnownCustomer[] = [];
+  for (const r of rows) {
+    const key = `${r.customer_phone.replace(/\D/g, "")}|${(r.address_line ?? "").trim().toLowerCase()}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({
+      name: r.customer_name,
+      phone: r.customer_phone,
+      email: r.customer_email.endsWith("@phone.saafi") ? "" : r.customer_email,
+      address_line: r.address_line ?? "",
+      postcode: r.postcode ?? "",
+    });
+  }
+  return out;
+}
