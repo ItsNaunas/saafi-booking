@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
 import { SESSION_COOKIE } from "@/lib/session";
 import {
+  setCustomerInvoiced,
   updateBookingStatus,
   updateBooking,
   insertBooking,
@@ -250,6 +251,25 @@ export async function addCleaner(formData: FormData) {
   }
   await createCleaner(name, phone, email);
   revalidatePath("/admin/cleaners");
+}
+
+/**
+ * Customers page switch: invoiced customers get no automatic payment links,
+ * chases or card charges. Checked live, so it also stops the chase on bookings
+ * already out. Manual buttons on the booking page still work.
+ */
+export async function toggleCustomerInvoiced(formData: FormData) {
+  const id = String(formData.get("id") ?? "");
+  const invoiced = String(formData.get("invoiced") ?? "") === "true";
+  if (!id) return;
+  try {
+    await setCustomerInvoiced(id, invoiced);
+  } catch (e) {
+    console.error("[admin] invoiced switch failed:", e);
+    redirect("/admin/customers?invoiced=fail");
+  }
+  revalidatePath("/admin/customers");
+  redirect("/admin/customers");
 }
 
 export async function toggleCleaner(formData: FormData) {

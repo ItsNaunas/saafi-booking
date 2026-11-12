@@ -128,6 +128,8 @@ export type CustomerRow = {
   card_brand: string | null;
   card_last4: string | null;
   card_saved_at: string | null;
+  /** Pays SAAFI by invoice: no automatic payment links, chases or charges. Optional so the app runs pre-migration. */
+  invoiced?: boolean;
 };
 
 function creds() {
@@ -1062,13 +1064,40 @@ export async function getSuggestionForBooking(bookingId: string): Promise<Sugges
  * admin's manual buttons still work — pressing one is a decision.
  */
 export async function isInvoicedBooking(bookingId: string): Promise<boolean> {
+  return (await invoicedReason(bookingId)) !== null;
+}
+
+/**
+ * Why a booking is billed outside the site, or null when the site bills it.
+ * "airbnb": booked from an Airbnb turnover. "customer": the office switched the
+ * customer to invoicing on the Customers page (client, 2026-11-12). Read live
+ * every time, so flicking the switch also stops the chase on bookings already out.
+ */
+export async function invoicedReason(bookingId: string): Promise<"airbnb" | "customer" | null> {
   try {
-    return (await getSuggestionForBooking(bookingId)) !== null;
+    if ((await getSuggestionForBooking(bookingId)) !== null) return "airbnb";
   } catch (e) {
     // Table missing = the 2026-10-12 migration isn't pasted, so no Airbnb bookings exist.
-    if (/PGRST205|42P01/.test(String(e))) return false;
+    if (!/PGRST205|42P01/.test(String(e))) throw e;
+  }
+  try {
+    const rows = await rest<{ customers: { invoiced: boolean } | null }[]>(
+      `bookings?id=eq.${encodeURIComponent(bookingId)}&select=customers(invoiced)&limit=1`
+    );
+    return rows[0]?.customers?.invoiced ? "customer" : null;
+  } catch (e) {
+    // Column missing = the 2026-11-12 migration isn't pasted, so nobody is switched yet.
+    if (/42703|PGRST204/.test(String(e))) return null;
     throw e;
   }
+}
+
+/** The Customers page switch. Throws if the 2026-11-12 migration isn't pasted. */
+export async function setCustomerInvoiced(id: string, invoiced: boolean): Promise<void> {
+  await rest(`customers?id=eq.${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: JSON.stringify({ invoiced }),
+  });
 }
 
 /** Insert new suggestions; returns the UIDs that actually landed (duplicates are skipped silently). */

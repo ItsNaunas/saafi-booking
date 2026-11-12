@@ -29,6 +29,7 @@ import {
   busyBlocksForDate,
   getBookingByReference,
   findRecentDuplicateBooking,
+  isInvoicedBooking,
 } from "@/lib/supabaseAdmin";
 import { raiseBookingPaymentLink } from "@/lib/paymentLink";
 import { sendBookingReceivedEmail, sendNewBookingAlertEmail } from "@/lib/email";
@@ -288,7 +289,11 @@ export async function POST(req: NextRequest) {
   let payUrl: string | null = null;
   try {
     const row = await getBookingByReference(stored.reference);
-    if (row) payUrl = await raiseBookingPaymentLink(row);
+    // Invoiced customers are never asked to pay on the site. A failed lookup
+    // skips the link too: "no link" is the settle-by-phone flow, the safe side.
+    if (row && !(await isInvoicedBooking(row.id).catch(() => true))) {
+      payUrl = await raiseBookingPaymentLink(row);
+    }
   } catch (e) {
     console.error("[bookings] pay-at-booking link failed:", e);
   }

@@ -7,6 +7,7 @@ import {
   agreedPriceFor,
   paidSoFar,
   isPaidInFull,
+  isInvoicedBooking,
 } from "@/lib/supabaseAdmin";
 import { formatTime, formatTimeRange, londonWallClock } from "@/lib/scheduling";
 import { formatGBP, FREQUENCY_LABEL } from "@/lib/pricing";
@@ -74,6 +75,8 @@ export default async function CustomerBookingPage({
   const line = STATUS_LINE[b.status] ?? STATUS_LINE.requested;
   const due = amountDueFor(b);
   const paid = paidSoFar(b);
+  // Invoiced (Airbnb, or switched on the Customers page): SAAFI bills them, so no pay button.
+  const invoiced = await isInvoicedBooking(b.id).catch(() => true);
   const canCancel = cancellationRoute(b);
   const active = ["requested", "confirmed"].includes(b.status);
   const icsUrl = `/b/${encodeURIComponent(reference)}/ics?t=${q.t}`;
@@ -162,7 +165,7 @@ export default async function CustomerBookingPage({
           </dl>
 
           {/* pay */}
-          {due > 0 && b.status !== "cancelled" && b.status !== "no_access" && (
+          {due > 0 && !invoiced && b.status !== "cancelled" && b.status !== "no_access" && (
             <form action={customerPayNow} className="mt-5">
               <input type="hidden" name="reference" value={reference} />
               <input type="hidden" name="t" value={q.t} />

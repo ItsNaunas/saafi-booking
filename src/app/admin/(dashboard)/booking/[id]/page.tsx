@@ -10,6 +10,7 @@ import {
   busyBlocksForDate,
   getCustomer,
   getSuggestionForBooking,
+  invoicedReason,
   type AdjustmentRow,
 } from "@/lib/supabaseAdmin";
 import { assignmentConflict, toMinutes, toHHMM, formatTimeRange } from "@/lib/scheduling";
@@ -75,6 +76,8 @@ export default async function BookingDetailPage({
 
   // Booked from an Airbnb checkout? Surfaces a change on Airbnb since then.
   const turnover = await getSuggestionForBooking(id).catch(() => null);
+  // Billed outside the site? Then nothing payment-related goes out by itself.
+  const invoiced = await invoicedReason(id).catch(() => null);
 
   // Tolerate the card columns not existing yet (pre-migration).
   const customer = b.customer_id ? await getCustomer(b.customer_id).catch(() => null) : null;
@@ -418,6 +421,14 @@ export default async function BookingDetailPage({
             </span>
           )}
         </div>
+
+        {invoiced && (
+          <p className="mb-3 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-900 ring-1 ring-amber-200">
+            {invoiced === "airbnb" ? "Airbnb clean" : "Invoiced customer"}: you bill this one directly. The site
+            won&apos;t send a payment link, a reminder or charge a saved card by itself. The buttons below still
+            work if you choose to use them.
+          </p>
+        )}
 
         {b.status === "paid" || isPaidInFull(b) ? (
           <>

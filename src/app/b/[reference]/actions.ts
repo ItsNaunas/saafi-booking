@@ -11,6 +11,7 @@ import {
   getBookingByReference,
   updateBookingStatus,
   isPaidInFull,
+  isInvoicedBooking,
   listCleaners,
   type BookingRow,
 } from "@/lib/supabaseAdmin";
@@ -43,6 +44,8 @@ export async function customerPayNow(formData: FormData) {
   const token = String(formData.get("t") ?? "");
   if (!booking) return;
   if (booking.status === "cancelled" || isPaidInFull(booking)) back(booking, token);
+  // The button is hidden for invoiced bookings; a stale page posting anyway gets nothing.
+  if (await isInvoicedBooking(booking.id).catch(() => true)) back(booking, token);
 
   const url = await raiseBookingPaymentLink(booking);
   if (!url) back(booking, token, "pay=unavailable");
