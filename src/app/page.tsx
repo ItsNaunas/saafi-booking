@@ -389,10 +389,18 @@ export default async function Home() {
           ,{" "}
           <Link href="/one-off-cleaning" className="font-semibold text-slate-900 underline underline-offset-4 hover:text-brand-600">
             one-off cleans
+          </Link>
+,{" "}
+          <Link href="/deep-cleaning" className="font-semibold text-slate-900 underline underline-offset-4 hover:text-brand-600">
+            deep cleans
+          </Link>
+          ,{" "}
+          <Link href="/end-of-tenancy-cleaning" className="font-semibold text-slate-900 underline underline-offset-4 hover:text-brand-600">
+            end of tenancy cleaning
           </Link>{" "}
           and{" "}
-          <Link href="/deep-cleaning" className="font-semibold text-slate-900 underline underline-offset-4 hover:text-brand-600">
-            deep &amp; end of tenancy cleaning
+          <Link href="/airbnb-cleaning" className="font-semibold text-slate-900 underline underline-offset-4 hover:text-brand-600">
+            Airbnb changeovers
           </Link>
           .
         </p>

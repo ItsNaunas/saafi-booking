@@ -33,19 +33,16 @@ const BTN_SECONDARY =
 
 export default async function ServicePage({ slug }: { slug: ServiceSlug }) {
   const s = SERVICES[slug];
-  const isDeep = slug === "deep-cleaning";
+  const isDeep = s.kind === "deep";
   const { cfg, addons } = await loadPricingAndAddons();
 
   const hours = recommendedHours(EXAMPLE_ROOMS, cfg);
-  const regularVisit = quotePrice(hours, true, cfg, "fortnightly");
-  const oneOffVisit = quotePrice(hours, true, cfg, "one_off");
-  const deepVisit = deepPrice({ ...EXAMPLE_ROOMS, additionalRooms: 0 });
-
-  const price = isDeep
-    ? { label: "Deep clean, 2-bed home", amount: deepVisit }
-    : slug === "regular-cleaning"
-      ? { label: "2-bed home, fortnightly", amount: regularVisit }
-      : { label: "2-bed home, one visit", amount: oneOffVisit };
+  const price = {
+    label: s.priceLabel,
+    amount: isDeep
+      ? deepPrice({ ...EXAMPLE_ROOMS, additionalRooms: 0 })
+      : quotePrice(hours, true, cfg, s.priceFrequency ?? "one_off"),
+  };
 
   const url = `${site.url}/${slug}`;
   // Room by room, from SAAFI's cleaner SOP — see lib/included.ts.
@@ -230,14 +227,14 @@ export default async function ServicePage({ slug }: { slug: ServiceSlug }) {
         {/* who it's for */}
         <section className="mx-auto max-w-6xl px-5 py-16 sm:px-8">
           <h2 className="font-display text-3xl font-bold tracking-tight text-slate-900">
-            {isDeep ? "When people book a deep clean" : "Who it suits"}
+            {slug === "deep-cleaning" ? "When people book a deep clean" : "Who it suits"}
           </h2>
           <div className="mt-8 grid gap-6 sm:grid-cols-2">
             {s.goodFor.map((g, i) => (
               <div
                 key={g.title}
-                // The footer links straight to the end-of-tenancy card.
-                id={isDeep && i === 0 ? "end-of-tenancy" : undefined}
+                // Old links to /deep-cleaning#end-of-tenancy still land on the card.
+                id={slug === "deep-cleaning" && i === 0 ? "end-of-tenancy" : undefined}
                 className="flex scroll-mt-20 gap-4"
               >
                 <Icon glyph={Check} className="mt-1 size-5 shrink-0 text-brand-600" />

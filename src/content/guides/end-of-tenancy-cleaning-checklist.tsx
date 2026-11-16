@@ -96,14 +96,14 @@ export default function Body({ p }: { p: GuidePrices }) {
       </p>
       <p>
         The list above is a general checklist for tenants, not our job sheet. You can see{" "}
-        <Link href="/deep-cleaning">exactly what our deep clean covers, room by room</Link>, and if your
+        <Link href="/end-of-tenancy-cleaning">exactly what our end of tenancy clean covers, room by room</Link>, and if your
         inventory asks for something beyond it, like inside wardrobes or the extractor filter, mention it
         when we ring to confirm.
       </p>
       <p>
         Choose <strong>&ldquo;Moving out — end of tenancy&rdquo;</strong> when you get your quote, so
         we know what we&apos;re preparing for. More on the{" "}
-        <Link href="/deep-cleaning">deep cleaning page</Link>, or see{" "}
+        <Link href="/end-of-tenancy-cleaning">end of tenancy cleaning page</Link>, or see{" "}
         <Link href="/guides/deep-clean-vs-regular-clean">deep clean vs regular clean</Link>.
       </p>
     </>

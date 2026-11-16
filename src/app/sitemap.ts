@@ -2,6 +2,7 @@ import type { MetadataRoute } from "next";
 import { site } from "@/lib/business";
 import { SERVICES } from "@/lib/services";
 import { publishedGuides } from "@/lib/guides";
+import { AREAS } from "@/lib/areas";
 
 // The public routes only. /admin is middleware-guarded, /c/[token] is a
 // per-cleaner magic link and /paid already sets robots noindex — none of them
@@ -17,6 +18,11 @@ export default function sitemap(): MetadataRoute.Sitemap {
       url: `${site.url}/${slug}`,
       changeFrequency: "monthly" as const,
       priority: 0.9,
+    })),
+    ...AREAS.map((a) => ({
+      url: `${site.url}/cleaners/${a.slug}`,
+      changeFrequency: "monthly" as const,
+      priority: 0.8,
     })),
     { url: `${site.url}/guides`, changeFrequency: "weekly", priority: 0.7 },
     ...publishedGuides().map((g) => ({

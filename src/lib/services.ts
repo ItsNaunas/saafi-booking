@@ -9,10 +9,21 @@
  * are NOT written here — ServicePage computes them from the live config.
  */
 
-export type ServiceSlug = "regular-cleaning" | "one-off-cleaning" | "deep-cleaning";
+export type ServiceSlug =
+  | "regular-cleaning"
+  | "one-off-cleaning"
+  | "deep-cleaning"
+  | "end-of-tenancy-cleaning"
+  | "airbnb-cleaning";
 
 export type ServiceContent = {
   slug: ServiceSlug;
+  /** Which price engine and room-by-room list the page uses. */
+  kind: "standard" | "deep";
+  /** The example price on the page, for a 2-bed home. */
+  priceLabel: string;
+  /** How the example price is worked out (standard kind only). */
+  priceFrequency?: "one_off" | "fortnightly";
   /** <title> — leads with the search, keeps the brand. */
   metaTitle: string;
   metaDescription: string;
@@ -29,6 +40,9 @@ export type ServiceContent = {
 export const SERVICES: Record<ServiceSlug, ServiceContent> = {
   "regular-cleaning": {
     slug: "regular-cleaning",
+    kind: "standard",
+    priceLabel: "2-bed home, fortnightly",
+    priceFrequency: "fortnightly",
     metaTitle: "Regular House Cleaning in Oxford | SAAFI Cleaning",
     metaDescription:
       "Weekly or fortnightly home cleaning in Oxford & Oxfordshire. The same cleaner wherever we can, and a clear price per visit before you book.",
@@ -75,6 +89,9 @@ export const SERVICES: Record<ServiceSlug, ServiceContent> = {
 
   "one-off-cleaning": {
     slug: "one-off-cleaning",
+    kind: "standard",
+    priceLabel: "2-bed home, one visit",
+    priceFrequency: "one_off",
     metaTitle: "One-Off House Cleaning in Oxford | SAAFI Cleaning",
     metaDescription:
       "A single home clean whenever you need it — before guests, after a party or to reset the house. Oxford & Oxfordshire, priced online in a minute.",
@@ -121,9 +138,11 @@ export const SERVICES: Record<ServiceSlug, ServiceContent> = {
 
   "deep-cleaning": {
     slug: "deep-cleaning",
-    metaTitle: "Deep & End of Tenancy Cleaning in Oxford | SAAFI Cleaning",
+    kind: "deep",
+    priceLabel: "Deep clean, 2-bed home",
+    metaTitle: "Deep Cleaning in Oxford | Two Cleaners, Oven Included | SAAFI",
     metaDescription:
-      "Deep cleans and end of tenancy cleaning in Oxford & Oxfordshire. Two cleaners, kitchen and oven included, priced by the size of your home.",
+      "Top-to-bottom deep cleans in Oxford & Oxfordshire. Two cleaners, kitchen and oven always included, one fixed price by the size of your home.",
     name: "Deep cleaning",
     h1: "Deep cleaning in Oxford & Oxfordshire",
     intro: [
@@ -156,7 +175,7 @@ export const SERVICES: Record<ServiceSlug, ServiceContent> = {
       },
       {
         q: "Do you do end of tenancy cleans?",
-        a: "Yes — moving out is one of the most common reasons people book a deep clean with us. Choose \"Moving out — end of tenancy\" when you get your quote so we know what we're preparing for.",
+        a: "Yes — moving out is one of the most common reasons people book a deep clean with us. See our end of tenancy cleaning page for what's covered, and choose \"Moving out — end of tenancy\" when you get your quote so we know what we're preparing for.",
       },
       {
         q: "How is the price worked out?",
@@ -165,6 +184,106 @@ export const SERVICES: Record<ServiceSlug, ServiceContent> = {
       {
         q: "Why do you ask why I need a deep clean?",
         a: "So we know what we're walking into before we confirm the date and send the team — a just-vacated flat and a house after building work need different preparation.",
+      },
+    ],
+  },
+  "end-of-tenancy-cleaning": {
+    slug: "end-of-tenancy-cleaning",
+    kind: "deep",
+    priceLabel: "End of tenancy, 2-bed home",
+    metaTitle: "End of Tenancy Cleaning in Oxford | SAAFI Cleaning",
+    metaDescription:
+      "End of tenancy cleaning in Oxford & Oxfordshire for tenants, landlords and letting agents. Two cleaners, kitchen and oven included, one fixed price.",
+    name: "End of tenancy cleaning",
+    h1: "End of tenancy cleaning in Oxford & Oxfordshire",
+    intro: [
+      "Moving out? We'll leave the property properly clean for the handover. An end of tenancy clean is our deep clean: two cleaners working top to bottom, with the kitchen, the oven and the hallways always included.",
+      "It's one fixed price by the size of the property, not by the hour, so you know the whole cost before we arrive — and you can book it online in a minute.",
+    ],
+    quoteHref: "/quote?service=deep",
+    goodFor: [
+      {
+        title: "Tenants moving out",
+        text: "Hand the keys back on a property that's been cleaned top to bottom, with the kitchen and oven done as standard.",
+      },
+      {
+        title: "Landlords between tenants",
+        text: "Get the property ready for the next tenant or for viewings, without having to do it yourself.",
+      },
+      {
+        title: "Letting agents",
+        text: "Book the clean for the date the property is empty. We agree access with you on the confirmation call — keys, a keysafe, or someone there to let us in.",
+      },
+      {
+        title: "Selling or moving in",
+        text: "The same clean works for a house going on the market or a new home before your things arrive.",
+      },
+    ],
+    faqs: [
+      {
+        q: "What does an end of tenancy clean include?",
+        a: "Everything in our deep clean: two cleaners going through the whole property top to bottom — grease and limescale removed, tiles and grout, skirting boards and door frames, behind and under the furniture — with the kitchen, the oven and the hallways always included. The full room-by-room list is above.",
+      },
+      {
+        q: "How much does end of tenancy cleaning cost in Oxford?",
+        a: "A set price covers a home with one bedroom, one bathroom, one living room, one dining room, the kitchen with the oven, and the hallways. Each room beyond that adds the same flat amount, and extras like windows or the fridge are priced on top. The quote form shows your total before you book.",
+      },
+      {
+        q: "Does the property need to be empty?",
+        a: "It's best if it is — we can reach behind and under everything and the clean goes further. If some furniture is staying, tell us when you book.",
+      },
+      {
+        q: "Do I need to be there?",
+        a: "No. Plenty of people have already moved out by the day of the clean. We agree how we get in on the confirmation call.",
+      },
+    ],
+  },
+
+  "airbnb-cleaning": {
+    slug: "airbnb-cleaning",
+    kind: "standard",
+    priceLabel: "2-bed changeover clean",
+    priceFrequency: "one_off",
+    metaTitle: "Airbnb & Short Let Cleaning in Oxford | SAAFI Cleaning",
+    metaDescription:
+      "Airbnb and short let changeover cleaning in Oxford & Oxfordshire. We can follow your listing's calendar so every checkout gets a clean before the next guest.",
+    name: "Airbnb & short let cleaning",
+    h1: "Airbnb & short let cleaning in Oxford",
+    intro: [
+      "Changeover cleans between guests for Airbnb hosts and short let owners across Oxford & Oxfordshire, from a family-run local team.",
+      "Send us your listing's calendar link and we can see your checkouts as they're booked, so each changeover is planned in — rather than you messaging us every time a guest books.",
+    ],
+    quoteHref: "/quote?frequency=one_off",
+    goodFor: [
+      {
+        title: "Hosts with one property",
+        text: "Book a changeover for each checkout, or let us follow your calendar so it's planned for you.",
+      },
+      {
+        title: "Hosts and managers with several",
+        text: "Each property's calendar can be linked separately, so every checkout across all of them is in our diary.",
+      },
+      {
+        title: "Hosts who aren't nearby",
+        text: "We agree access once — a keysafe or a lockbox works well — so you don't need to be there for each clean.",
+      },
+    ],
+    faqs: [
+      {
+        q: "How does the calendar link work?",
+        a: "Airbnb and most booking sites give each listing a calendar link. Send it to us and new checkouts show up on our side as they're booked. We confirm each changeover clean before it goes in the diary.",
+      },
+      {
+        q: "How is a changeover clean priced?",
+        a: "The same way as our one-off cleans: by your rooms and the hours the clean needs. The quote form shows the price for your property before you book.",
+      },
+      {
+        q: "What time do you clean?",
+        a: "Between your guests' checkout and the next check-in. Tell us your usual times and we'll plan around them.",
+      },
+      {
+        q: "Who brings the cleaning products?",
+        a: "Whichever you prefer — we can bring everything, or use the products you keep at the property.",
       },
     ],
   },

@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { contact, socials } from "@/lib/business";
+import { AREAS } from "@/lib/areas";
 
 /**
  * The footer on every public page. Shared so the service pages carry the
@@ -45,10 +46,25 @@ export default function SiteFooter() {
               </Link>
             </li>
             <li>
-              <Link href="/deep-cleaning#end-of-tenancy" className={LINK}>
+              <Link href="/end-of-tenancy-cleaning" className={LINK}>
                 End of tenancy cleaning
               </Link>
             </li>
+            <li>
+              <Link href="/airbnb-cleaning" className={LINK}>
+                Airbnb &amp; short let cleaning
+              </Link>
+            </li>
+          </ul>
+          <h4 className="mt-8 text-sm font-semibold uppercase tracking-wider text-white">Areas</h4>
+          <ul className="mt-4 space-y-2 text-sm">
+            {AREAS.map((a) => (
+              <li key={a.slug}>
+                <Link href={`/cleaners/${a.slug}`} className={LINK}>
+                  Cleaners in {a.name}
+                </Link>
+              </li>
+            ))}
           </ul>
         </div>
         <div>
