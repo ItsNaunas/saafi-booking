@@ -258,7 +258,9 @@ async function send(mail: Mail): Promise<{ ok: boolean; reason?: string }> {
   return { ok: true };
 }
 
-const officeAddress = () => process.env.ALERT_EMAIL_TO ?? "";
+// Trimmed: a stray space or newline pasted into Vercel silently killed every
+// office email for weeks (fixed 2026-11-16).
+const officeAddress = () => (process.env.ALERT_EMAIL_TO ?? "").trim();
 const first = (name: string) => name.split(" ")[0];
 const adminUrl = (id: string) =>
   `${process.env.NEXT_PUBLIC_SITE_URL ?? site.url}/admin/booking/${id}`;
@@ -846,11 +848,16 @@ export async function sendNewBookingAlertEmail(opts: {
   deepReason?: string | null;
   notes: string;
   reference: string;
+  /** "office" = entered by hand in admin: the same email, kept as a record. */
+  source?: "website" | "office";
 }): Promise<void> {
-  await send({
+  const byOffice = opts.source === "office";
+  const r = await send({
     to: officeAddress(),
-    subject: `New booking request — ${opts.name}, ${opts.preferredDate} (£${opts.quotedPrice})`,
-    heading: `New booking — ${opts.name}`,
+    subject: byOffice
+      ? `Booking added — ${opts.name}, ${opts.preferredDate} (£${opts.quotedPrice})`
+      : `New booking request — ${opts.name}, ${opts.preferredDate} (£${opts.quotedPrice})`,
+    heading: byOffice ? `Booked by the office — ${opts.name}` : `New booking — ${opts.name}`,
     rows: [
       ["Phone", opts.phone],
       ["Email", opts.email],
@@ -874,7 +881,9 @@ export async function sendNewBookingAlertEmail(opts: {
       opts.notes ? ["Notes", opts.notes] : null,
     ],
     reference: opts.reference,
-  }).catch(() => {});
+  }).catch((e) => ({ ok: false, reason: String(e) }));
+  // A missed office alert is a lost booking — never fail quietly.
+  if (!r.ok) console.error(`[email] office booking alert NOT sent (${opts.reference}): ${r.reason}`);
 }
 
 /* ------------------------------------------------------------------ *

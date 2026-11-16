@@ -64,6 +64,7 @@ import {
   sendBookingChangedEmail,
   sendCleanerJobChangedEmail,
   sendOpsAlertEmail,
+  sendNewBookingAlertEmail,
 } from "@/lib/email";
 import {
   raiseBookingPaymentLink,
@@ -391,6 +392,25 @@ export async function createManualBooking(formData: FormData) {
     await ensureSeriesHorizon(row).catch((e) =>
       console.error("[admin] manual booking series top-up failed:", e)
     );
+    // The office keeps an email record of every booking, not just web ones.
+    await sendNewBookingAlertEmail({
+      name: row.customer_name,
+      phone: row.customer_phone,
+      email: row.customer_email.endsWith("@phone.saafi") ? "— (phone booking)" : row.customer_email,
+      addressLine: row.address_line,
+      postcode: row.postcode,
+      preferredDate: row.preferred_date,
+      startTime: row.start_time ?? null,
+      hours: Number(row.hours),
+      serviceType: serviceType,
+      cleanersNeeded: 1,
+      frequency: row.frequency,
+      quotedPrice: Number(row.quoted_price),
+      addonLabels: [],
+      notes: row.notes ?? "",
+      reference: row.reference,
+      source: "office",
+    }).catch((e) => console.error("[admin] manual booking office record failed:", e));
   }
   redirect(suggestionId && row ? `/admin/booking/${row.id}` : "/admin");
 }
